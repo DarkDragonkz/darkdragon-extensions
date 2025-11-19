@@ -20,10 +20,10 @@ import {
 import { Parser } from './parser'
 import { URLBuilder } from './helper'
 
-const MW_DOMAIN = 'https://www.mangaworld.ac'
+const MW_DOMAIN = 'https://www.mangaworld.mx'
 
 export const MangaWorldInfo: SourceInfo = {
-    version: '3.0.1',
+    version: '3.0.5',
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld (0.8).',
     author: 'NmN',
@@ -43,12 +43,14 @@ export const MangaWorldInfo: SourceInfo = {
 
 export class MangaWorld implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding { 
     baseUrl = MW_DOMAIN
-    constructor(private cheerio: CheerioAPI) {}
+    // CORREZIONE: Usiamo 'any' per evitare conflitti di versione con le definizioni di Cheerio
+    constructor(private cheerio: any) {}
     RETRIES = 10
     parser = new Parser()
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 8,
+        requestsPerSecond: 4,
+        requestTimeout: 20000,
     })
     
     getMangaShareUrl(mangaId: string): string {
@@ -135,11 +137,6 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
         })
     }
 
-
-    /**
-     * Parses a time string from a Madara source into a Date object.
-     * Copied from Madara.ts made by gamefuzzy
-     */
     protected convertTime(timeAgo: string): Date {
         let time: Date
         let trimmed = Number((/\d*/.exec(timeAgo) ?? [])[0])

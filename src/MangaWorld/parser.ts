@@ -25,9 +25,10 @@ export class Parser {
                 case 1:
                     $(obj)
                         .find('a')
-                        .each((_, e) => {
+                        // CORREZIONE IMPORTANTE: definiamo esplicitamente i tipi come any
+                        .each((_: any, e: any) => {
                             label_arr.push($(e).text()) &
-                                id_arr.push($(e).attr('href')?.replace('https://www.mangaworld.in/archive?genre=', '') ?? '')
+                                id_arr.push($(e).attr('href')?.replace('https://www.mangaworld.mx/archive?genre=', '') ?? '')
                         })
                     break
                 case 2:
