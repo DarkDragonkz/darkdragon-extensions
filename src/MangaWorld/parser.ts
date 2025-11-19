@@ -27,7 +27,7 @@ export class Parser {
                         .find('a')
                         .each((_, e) => {
                             label_arr.push($(e).text()) &
-                                id_arr.push($(e).attr('href')?.replace('https://www.mangaworld.in/archive?genre=', '') ?? '')
+                                id_arr.push($(e).attr('href')?.replace('https://www.mangaworld.mx/archive?genre=', '') ?? '')
                         })
                     break
                 case 2:
@@ -109,6 +109,7 @@ export class Parser {
         let first_label = ''
         let i = 0
         for (const item of $('.dropdown-menu.dropdown-multicol .dropdown-item').toArray()) {
+            // Qui era rimasto il vecchio .in, aggiornato a .mx
             const id = $(item).attr('href')?.replace(`${baseUrl}/archive?genre=`, '') ?? ''
 
             const label = $(item).text().trim()
