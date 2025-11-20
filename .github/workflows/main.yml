@@ -36,11 +36,20 @@ jobs:
 
       - run: npm install
       
-      # FIX: Aggiunte variabili d'ambiente per correggere il warning "noAddToPaperbackButton"
+      # Genera il bundle (crea una index.html automatica)
       - run: npm run bundle -- --folder=${{ steps.extract_branch.outputs.branch }}
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
-          baseURL: https://darkdragonkz.github.io/extensions-foreign/ (Opzionale, spesso basta GITHUB_REPOSITORY)
+
+      # NUOVO PASSAGGIO: Sovrascrive la homepage automatica con la tua personalizzata
+      - name: Override Homepage
+        run: |
+          if [ -f "homepage.html" ]; then
+            echo "Trovato file homepage.html personalizzato. Sovrascrittura in corso..."
+            cp homepage.html bundles/index.html
+          else
+            echo "Nessun file homepage.html trovato. Uso quella generata automaticamente."
+          fi
 
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
