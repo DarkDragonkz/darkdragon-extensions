@@ -36,7 +36,13 @@ export class NepNepParser {
         // This is only because they added some really jank alternate titles and didn't properly string escape
         const jsonWithoutAlternateName = json.replace(/"alternateName".*?],/g, '')
 
-        const parsedJson = JSON.parse(jsonWithoutAlternateName)
+        let parsedJson
+        try {
+            parsedJson = JSON.parse(jsonWithoutAlternateName)
+        } catch (e) {
+            throw new Error(`Failed to parse JSON for manga details: ${e}`)
+        }
+        
         const entity = parsedJson.mainEntity
         const info = $('.row')
 
@@ -94,7 +100,10 @@ export class NepNepParser {
     }
 
     parseChapters($: any, mangaId: string): Chapter[] {
-        const chapterJS: any[] = JSON.parse($.root().html()?.match(regex['chapters'])?.[1] ?? '').reverse()
+        const scriptContent = $.root().html()
+        const chapterMatch = scriptContent?.match(regex['chapters'])
+        const chapterJS: any[] = chapterMatch ? JSON.parse(chapterMatch[1]).reverse() : []
+        
         const chapters: Chapter[] = []
 
         // Following the url encoding that the website uses, same variables too
@@ -122,8 +131,9 @@ export class NepNepParser {
             }))
         }
 
+        // FIX: Rimosso throw error se vuoto, meglio ritornare array vuoto che crashare
         if (chapters.length == 0) {
-            throw new Error(`Couldn't find any chapters for mangaId: ${mangaId}!`)
+           console.log(`Couldn't find any chapters for mangaId: ${mangaId}!`)
         }
 
         return chapters.map(chapter => {
@@ -136,9 +146,21 @@ export class NepNepParser {
         const pages: string[] = []
 
         const variableName = data.match(/ng-src="https:\/\/{{([a-zA-Z0-9.]+)}}\/manga\/.+\.png/)?.[1]
-        const matchedPath = data.match(new RegExp(`${variableName} = "(.*)";`))?.[1]
+        
+        // FIX: Aggiunto controllo se match fallisce
+        if (!variableName) {
+             return App.createChapterDetails({ id: chapterId, mangaId: mangaId, pages: [] })
+        }
 
-        const chapterInfo = JSON.parse(data.match(/vm.CurChapter = (.*);/)?.[1])
+        const matchedPathMatch = data.match(new RegExp(`${variableName} = "(.*)";`))
+        const matchedPath = matchedPathMatch ? matchedPathMatch[1] : ''
+
+        const chapterInfoMatch = data.match(/vm.CurChapter = (.*);/)
+        if (!chapterInfoMatch) {
+            return App.createChapterDetails({ id: chapterId, mangaId: mangaId, pages: [] })
+        }
+        
+        const chapterInfo = JSON.parse(chapterInfoMatch[1])
         const pageNum = Number(chapterInfo.Page)
 
         const chapter = chapterInfo.Chapter.slice(1, -1)
@@ -268,6 +290,7 @@ export class NepNepParser {
     }
 
     parseSearchTags(data: any): TagSection[] {
+        // FIX: Aggiunti controlli "match ?" per evitare JSON.parse(undefined)
         const tagSections: TagSection[] = [
             App.createTagSection({ id: 'genres', label: 'Genres', tags: [] }),
             App.createTagSection({ id: 'format', label: 'Format', tags: [] }),
@@ -275,22 +298,27 @@ export class NepNepParser {
             App.createTagSection({ id: 'publish_status', label: 'Publish Status', tags: [] }),
             App.createTagSection({ id: 'translation', label: 'Translation', tags: [] })
         ]
-        const genres = JSON.parse(data.match(/"Genre"\s*: (.*)/)?.[1].replace(/'/g, '"'))
+        
+        const genresMatch = data.match(/"Genre"\s*: (.*)/)
+        const genres = genresMatch ? JSON.parse(genresMatch[1].replace(/'/g, '"')) : []
         tagSections[0]!.tags = genres.map((tag: any) => App.createTag({ id: `genre_${tag.toLowerCase()}`, label: tag }))
 
         const typesHTML = data.match(/"Type"\s*: (.*),/g)?.[1]
-        const types = JSON.parse(typesHTML.match(/(\[.*])/)?.[1].replace(/'/g, '"'))
+        const typesMatch = typesHTML?.match(/(\[.*])/)
+        const types = typesMatch ? JSON.parse(typesMatch[1].replace(/'/g, '"')) : []
         tagSections[1]!.tags = types.map((tag: any) => App.createTag({ id: `type_${tag.toLowerCase()}`, label: tag }))
 
         const scanStatusHTML = data.match(/"ScanStatus"\s*: (.*),/g)?.[1]
-        const scanStatus = JSON.parse(scanStatusHTML.match(/(\[.*])/)?.[1].replace(/'/g, '"'))
+        const scanStatusMatch = scanStatusHTML?.match(/(\[.*])/)
+        const scanStatus = scanStatusMatch ? JSON.parse(scanStatusMatch[1].replace(/'/g, '"')) : []
         tagSections[2]!.tags = scanStatus.map((tag: any) => App.createTag({
             id: `scan_status_${tag.toLowerCase()}`,
             label: tag
         }))
 
         const publishStatusHTML = data.match(/"PublishStatus"\s*: (.*),/g)?.[1]
-        const publishStatus = JSON.parse(publishStatusHTML.match(/(\[.*])/)?.[1].replace(/'/g, '"'))
+        const publishStatusMatch = publishStatusHTML?.match(/(\[.*])/)
+        const publishStatus = publishStatusMatch ? JSON.parse(publishStatusMatch[1].replace(/'/g, '"')) : []
         tagSections[3]!.tags = publishStatus.map((tag: any) => App.createTag({
             id: `publish_status_${tag.toLowerCase()}`,
             label: tag
@@ -313,6 +341,7 @@ export class NepNepParser {
     }
 
     parseHomeSections($: any, data: any, sectionCallback: (section: HomeSection) => void): void {
+        // FIX: Aggiunti controlli per evitare crash se la regex non trova nulla
         const topTenSection = App.createHomeSection({
             id: 'top_ten',
             title: 'Top Ten',
@@ -344,11 +373,20 @@ export class NepNepParser {
             type: HomeSectionType.singleRowNormal
         })
 
-        const topTen = JSON.parse((data.match(regex[topTenSection.id])?.[1])).slice(0, 15)
-        const hot = JSON.parse((data.match(regex[hotSection.id])?.[1])).slice(0, 15)
-        const latest = JSON.parse((data.match(regex[latestSection.id])?.[1])).slice(0, 15)
-        const newTitles = JSON.parse((data.match(regex[newTitlesSection.id]))?.[1]).slice(0, 15)
-        const recommended = JSON.parse((data.match(regex[recommendedSection.id])?.[1])).slice(0, 15)
+        const topTenMatch = data.match(regex[topTenSection.id])
+        const topTen = topTenMatch ? JSON.parse(topTenMatch[1]).slice(0, 15) : []
+
+        const hotMatch = data.match(regex[hotSection.id])
+        const hot = hotMatch ? JSON.parse(hotMatch[1]).slice(0, 15) : []
+
+        const latestMatch = data.match(regex[latestSection.id])
+        const latest = latestMatch ? JSON.parse(latestMatch[1]).slice(0, 15) : []
+
+        const newTitlesMatch = data.match(regex[newTitlesSection.id])
+        const newTitles = newTitlesMatch ? JSON.parse(newTitlesMatch[1]).slice(0, 15) : []
+
+        const recommendedMatch = data.match(regex[recommendedSection.id])
+        const recommended = recommendedMatch ? JSON.parse(recommendedMatch[1]).slice(0, 15) : []
 
         const sections = [topTenSection, hotSection, latestSection, newTitlesSection, recommendedSection]
         const sectionData = [topTen, hot, latest, newTitles, recommended]
@@ -385,9 +423,12 @@ export class NepNepParser {
 
         if (!regex[homepageSectionId]) {
             App.createPagedResults({ results: [] })
+            return []
         }
 
-        const items = JSON.parse((data.match(regex[homepageSectionId]))?.[1])
+        const itemsMatch = data.match(regex[homepageSectionId])
+        const items = itemsMatch ? JSON.parse(itemsMatch[1]) : []
+
         for (const item of items) {
             const id = item.IndexName
             if (!mangaIds.has(id)) {
@@ -410,8 +451,8 @@ export class NepNepParser {
     }
 
     getDirectory(data: any): any {
-        return JSON.parse(data?.replace(/(\r\n|\n|\r)/gm, '')
-            .match(regex['directory'])?.[1].trim().replace(/;$/, '') ?? '')
+        const dirMatch = data?.replace(/(\r\n|\n|\r)/gm, '').match(regex['directory'])
+        return dirMatch ? JSON.parse(dirMatch[1].trim().replace(/;$/, '')) : []
     }
 
     decodeHTMLEntity(str: string): string {
