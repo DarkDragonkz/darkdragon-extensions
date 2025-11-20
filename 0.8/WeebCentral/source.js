@@ -466,7 +466,7 @@ const WeebCentralParser_1 = require("./WeebCentralParser");
 const helper_1 = require("../helper");
 const DOMAIN = 'https://weebcentral.com';
 exports.WeebCentralInfo = {
-    version: '1.0.6',
+    version: '1.0.7',
     name: 'WeebCentral',
     icon: 'icon.png',
     author: 'GameFuzzy',
@@ -592,12 +592,12 @@ class WeebCentral {
     constructSearchRequest(query) {
         var _a;
         const queryText = (_a = query === null || query === void 0 ? void 0 : query.title) !== null && _a !== void 0 ? _a : '';
-        // Sostituisce gli spazi con i trattini prima di codificare, simulando un URL slug
-        // Questo è il modo in cui molti server di manga si aspettano i titoli composti.
-        const encodedText = queryText.replace(/ /g, '-').replace(/'/g, '').toLowerCase();
+        // Tentativo di emulare come il sito invia la query, usando i trattini come separatori.
+        // Puliamo anche da apostrofi che potrebbero causare problemi.
+        const encodedText = queryText.replace(/'/g, '').trim().toLowerCase().replace(/ /g, '-');
         const url = new helper_1.URLBuilder(this.baseUrl)
             .addPathComponent('search')
-            .addQueryParameter('text', encodedText)
+            .addQueryParameter('text', encodedText) // Passiamo lo slug
             .addQueryParameter('display_mode', 'Full Display')
             .addQueryParameter('official', 'Any');
         return App.createRequest({
