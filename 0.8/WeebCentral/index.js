@@ -466,9 +466,10 @@ const WeebCentralParser_1 = require("./WeebCentralParser");
 const helper_1 = require("../helper");
 const DOMAIN = 'https://weebcentral.com';
 exports.WeebCentralInfo = {
-    version: '1.0.7',
+    version: '1.0.8',
     name: 'WeebCentral',
     icon: 'icon.png',
+    // --- AUTORE AGGIORNATO ---
     author: 'DarkDragonkzz',
     authorWebsite: 'https://github.com/DarkDragonkz',
     description: `Extension that pulls manga from ${DOMAIN}`,
@@ -535,6 +536,7 @@ class WeebCentral {
         const $ = this.cheerio.load(response.data);
         return this.parser.parseChapterDetails($, mangaId, chapterId);
     }
+    // --- LOGICA DI RICERCA CORRETTA ---
     async getSearchResults(query, metadata) {
         const request = this.constructSearchRequest(query);
         const response = await this.requestManager.schedule(request, 1);
@@ -592,9 +594,7 @@ class WeebCentral {
     constructSearchRequest(query) {
         var _a;
         const queryText = (_a = query === null || query === void 0 ? void 0 : query.title) !== null && _a !== void 0 ? _a : '';
-        // CORREZIONE DEFINITIVA PER LA RICERCA CON PIÙ PAROLE:
-        // Convertiamo la query in slug (trattini) per emulare il formato URL atteso dal server.
-        // Questo risolve i problemi di ricerca con spazi.
+        // FIX: Correzione dello slug per titoli multipli (es. One-Piece)
         const encodedText = queryText.replace(/'/g, '').trim().toLowerCase().replace(/ /g, '-');
         const url = new helper_1.URLBuilder(this.baseUrl)
             .addPathComponent('search')
