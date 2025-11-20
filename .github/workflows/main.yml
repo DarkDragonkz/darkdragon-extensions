@@ -11,7 +11,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [16.x] # Aggiornato a 16.x per stabilità con le nuove actions
+        node-version: [16.x]
 
     steps:
       - name: Checkout Branch
@@ -24,7 +24,6 @@ jobs:
       
       - name: Extract branch name
         shell: bash
-        # FIX: Nuova sintassi per gli output di GitHub Actions
         run: echo "branch=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_OUTPUT
         id: extract_branch
 
@@ -36,11 +35,11 @@ jobs:
           path: bundles
 
       - run: npm install
-      # Nota: Assicurati che lo script 'bundle' nel package.json supporti l'argomento --folder
       - run: npm run bundle -- --folder=${{ steps.extract_branch.outputs.branch }}
 
       - name: Deploy to GitHub Pages
-        uses: JamesIves/github-pages-deploy-action@4.1.0
+        # FIX: Aggiornato alla versione v4 (l'ultima) per rimuovere l'errore set-output deprecato
+        uses: JamesIves/github-pages-deploy-action@v4
         with:
           branch: gh-pages
           folder: bundles
