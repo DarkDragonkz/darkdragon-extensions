@@ -94,8 +94,9 @@ export class WeebCentralParser {
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         
-        $('article, a[href*="/series/"]').each((_: any, item: any) => {
-            // Identifica il link della serie
+        // Cerca tutti gli articoli e i div che contengono link alle serie
+        $('article, div.bg-base-100, a[href*="/series/"]').each((_: any, item: any) => {
+            // Trova il link della serie
             let linkElement = $(item)
             if (!linkElement.is('a')) {
                 linkElement = $('a[href*="/series/"]', item).first()
@@ -104,46 +105,47 @@ export class WeebCentralParser {
             const href = linkElement.attr('href')
             if (!href) return // Salta se non c'è link
             
-            // Estrae ID e Slug dal link (es: .../series/ID/Slug-Del-Manga)
+            // --- FIX TITOLO INFALLIBILE ---
+            // Estrae ID e Slug (Titolo) direttamente dall'URL
+            // URL tipico: https://weebcentral.com/series/01J76XY7VSG3R5ANYPDWTXDVP6/One-Piece
             const parts = href.split('/series/')[1]?.split('/')
             const id = parts?.[0]
-            const slug = parts?.[1] // Questo contiene il titolo "grezzo" (es: One-Piece)
+            const slug = parts?.[1] 
 
-            // Tenta di trovare l'immagine
-            const image = $('img', item).attr('src') ?? ''
+            // Prova a cercare l'immagine
+            let image = $('img', item).attr('src') 
+            // Se l'elemento corrente è un link nudo (senza immagine dentro), cerca nel genitore
+            if (!image) image = linkElement.find('img').attr('src')
 
-            // --- LOGICA TITOLO (Priorità) ---
+            // Logica di recupero titolo
             let title = ''
 
-            // 1. Cerca data-tip (se presente è il migliore)
+            // 1. Priorità assoluta: Attributo data-tip (usato nei tooltip del sito)
             title = $(item).attr('data-tip')?.trim() ?? ''
 
-            // 2. Se manca, cerca elementi di testo specifici escludendo "Official"
-            if (!title) {
-                const potentialTitles: string[] = []
-                $(item).find('.text-lg, .font-semibold, .font-bold, .text-white').each((_: any, el: any) => {
-                    const t = $(el).text().trim()
-                    // Ignora parole chiave di sistema
-                    if (t && t !== 'Official' && t !== 'Manga' && t !== 'Manhwa' && !t.includes('Chapter')) {
-                        potentialTitles.push(t)
-                    }
-                })
-                if (potentialTitles.length > 0) title = potentialTitles[0]
-            }
-
-            // 3. ULTIMA SPIAGGIA (Fallback sicuro): Usa lo slug dell'URL
+            // 2. Seconda scelta: Slug dall'URL (pulito dai trattini)
             // Trasforma "One-Piece" in "One Piece"
             if ((!title || title === 'Official') && slug) {
                 title = slug.replace(/-/g, ' ')
             }
+            
+            // 3. Terza scelta: Testo dentro il link (ma ignoriamo "Official")
+            if (!title || title === 'Official') {
+                 // Prendi il testo più grande o in grassetto
+                 const text = linkElement.find('.font-semibold, .text-lg').first().text().trim()
+                 if (text && text !== 'Official' && !text.includes('Chapter')) {
+                     title = text
+                 }
+            }
 
-            if (id && title && title !== 'Official') {
-                // Evita duplicati
+            // Filtro finale per evitare risultati spazzatura
+            if (id && title && title !== 'Official' && !title.includes('Chapter')) {
+                // Evita duplicati controllando se l'ID è già stato aggiunto
                 const exists = results.some(m => m.mangaId === id)
                 if (!exists) {
                     results.push(App.createPartialSourceManga({
                         mangaId: id,
-                        image: image,
+                        image: image ?? '',
                         title: title,
                         subtitle: undefined
                     }))
@@ -176,10 +178,14 @@ export class WeebCentralParser {
         
         $('article', hotContainer).each((_: any, manga: any) => {
             const link = $('a', manga).attr('href')
-            const id = link?.split('/series/')?.[1]?.split('/')?.[0]
+            const parts = link?.split('/series/')[1]?.split('/')
+            const id = parts?.[0]
+            const slug = parts?.[1]
             
             let title = $(manga).attr('data-tip')?.trim()
-            if (!title) title = $('.text-white.text-center.text-lg', manga).first().text().trim()
+            // Fallback titolo dallo slug se manca data-tip
+            if (!title && slug) title = slug.replace(/-/g, ' ')
+            if (!title) title = $('.text-white', manga).first().text().trim()
             
             const image = $('img', manga).attr('src') ?? ''
             
@@ -203,9 +209,12 @@ export class WeebCentralParser {
         $('article', latestContainer).each((_: any, manga: any) => {
             const linkElement = $('a[href*="/series/"]', manga)
             const link = linkElement.attr('href')
-            const id = link?.split('/series/')?.[1]?.split('/')?.[0]
+            const parts = link?.split('/series/')[1]?.split('/')
+            const id = parts?.[0]
+            const slug = parts?.[1]
             
             let title = $(manga).attr('data-tip')?.trim()
+            if ((!title || title === 'Official') && slug) title = slug.replace(/-/g, ' ')
             if (!title) title = $('.font-semibold.text-lg', manga).text().trim()
 
             const image = $('img', manga).attr('src') ?? ''
