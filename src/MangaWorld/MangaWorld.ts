@@ -23,7 +23,7 @@ import { URLBuilder } from './helper'
 const MW_DOMAIN = 'https://www.mangaworld.mx'
 
 export const MangaWorldInfo: SourceInfo = {
-    version: '3.0.3',
+    version: '3.0.4',
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld (0.8).',
     author: 'NmN',
@@ -44,7 +44,8 @@ export const MangaWorldInfo: SourceInfo = {
 export class MangaWorld implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding { 
     baseUrl = MW_DOMAIN
     
-    // MODIFICA: Usiamo 'any' per evitare errori di importazione di CheerioAPI
+    // NOTA: Abbiamo rimosso l'import di CheerioAPI e usiamo 'any' qui.
+    // Questo risolve definitivamente l'errore TS2305.
     constructor(private cheerio: any) {}
     
     RETRIES = 10
