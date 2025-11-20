@@ -666,9 +666,10 @@ class WeebCentralParser {
     }
     parseSearchResults($) {
         const results = [];
-        $('article, a[href*="/series/"]').each((_, item) => {
-            var _a, _b, _c, _d;
-            // Identifica il link della serie
+        // Cerca tutti gli articoli e i div che contengono link alle serie
+        $('article, div.bg-base-100, a[href*="/series/"]').each((_, item) => {
+            var _a, _b, _c;
+            // Trova il link della serie
             let linkElement = $(item);
             if (!linkElement.is('a')) {
                 linkElement = $('a[href*="/series/"]', item).first();
@@ -676,41 +677,42 @@ class WeebCentralParser {
             const href = linkElement.attr('href');
             if (!href)
                 return; // Salta se non c'è link
-            // Estrae ID e Slug dal link (es: .../series/ID/Slug-Del-Manga)
+            // --- FIX TITOLO INFALLIBILE ---
+            // Estrae ID e Slug (Titolo) direttamente dall'URL
+            // URL tipico: https://weebcentral.com/series/01J76XY7VSG3R5ANYPDWTXDVP6/One-Piece
             const parts = (_a = href.split('/series/')[1]) === null || _a === void 0 ? void 0 : _a.split('/');
             const id = parts === null || parts === void 0 ? void 0 : parts[0];
-            const slug = parts === null || parts === void 0 ? void 0 : parts[1]; // Questo contiene il titolo "grezzo" (es: One-Piece)
-            // Tenta di trovare l'immagine
-            const image = (_b = $('img', item).attr('src')) !== null && _b !== void 0 ? _b : '';
-            // --- LOGICA TITOLO (Priorità) ---
+            const slug = parts === null || parts === void 0 ? void 0 : parts[1];
+            // Prova a cercare l'immagine
+            let image = $('img', item).attr('src');
+            // Se l'elemento corrente è un link nudo (senza immagine dentro), cerca nel genitore
+            if (!image)
+                image = linkElement.find('img').attr('src');
+            // Logica di recupero titolo
             let title = '';
-            // 1. Cerca data-tip (se presente è il migliore)
-            title = (_d = (_c = $(item).attr('data-tip')) === null || _c === void 0 ? void 0 : _c.trim()) !== null && _d !== void 0 ? _d : '';
-            // 2. Se manca, cerca elementi di testo specifici escludendo "Official"
-            if (!title) {
-                const potentialTitles = [];
-                $(item).find('.text-lg, .font-semibold, .font-bold, .text-white').each((_, el) => {
-                    const t = $(el).text().trim();
-                    // Ignora parole chiave di sistema
-                    if (t && t !== 'Official' && t !== 'Manga' && t !== 'Manhwa' && !t.includes('Chapter')) {
-                        potentialTitles.push(t);
-                    }
-                });
-                if (potentialTitles.length > 0)
-                    title = potentialTitles[0];
-            }
-            // 3. ULTIMA SPIAGGIA (Fallback sicuro): Usa lo slug dell'URL
+            // 1. Priorità assoluta: Attributo data-tip (usato nei tooltip del sito)
+            title = (_c = (_b = $(item).attr('data-tip')) === null || _b === void 0 ? void 0 : _b.trim()) !== null && _c !== void 0 ? _c : '';
+            // 2. Seconda scelta: Slug dall'URL (pulito dai trattini)
             // Trasforma "One-Piece" in "One Piece"
             if ((!title || title === 'Official') && slug) {
                 title = slug.replace(/-/g, ' ');
             }
-            if (id && title && title !== 'Official') {
-                // Evita duplicati
+            // 3. Terza scelta: Testo dentro il link (ma ignoriamo "Official")
+            if (!title || title === 'Official') {
+                // Prendi il testo più grande o in grassetto
+                const text = linkElement.find('.font-semibold, .text-lg').first().text().trim();
+                if (text && text !== 'Official' && !text.includes('Chapter')) {
+                    title = text;
+                }
+            }
+            // Filtro finale per evitare risultati spazzatura
+            if (id && title && title !== 'Official' && !title.includes('Chapter')) {
+                // Evita duplicati controllando se l'ID è già stato aggiunto
                 const exists = results.some(m => m.mangaId === id);
                 if (!exists) {
                     results.push(App.createPartialSourceManga({
                         mangaId: id,
-                        image: image,
+                        image: image !== null && image !== void 0 ? image : '',
                         title: title,
                         subtitle: undefined
                     }));
@@ -737,13 +739,18 @@ class WeebCentralParser {
         const hotHeader = $('h2').filter((_, el) => $(el).text().includes('Hot Updates')).first();
         const hotContainer = hotHeader.next('section');
         $('article', hotContainer).each((_, manga) => {
-            var _a, _b, _c, _d, _e;
+            var _a, _b, _c;
             const link = $('a', manga).attr('href');
-            const id = (_c = (_b = (_a = link === null || link === void 0 ? void 0 : link.split('/series/')) === null || _a === void 0 ? void 0 : _a[1]) === null || _b === void 0 ? void 0 : _b.split('/')) === null || _c === void 0 ? void 0 : _c[0];
-            let title = (_d = $(manga).attr('data-tip')) === null || _d === void 0 ? void 0 : _d.trim();
+            const parts = (_a = link === null || link === void 0 ? void 0 : link.split('/series/')[1]) === null || _a === void 0 ? void 0 : _a.split('/');
+            const id = parts === null || parts === void 0 ? void 0 : parts[0];
+            const slug = parts === null || parts === void 0 ? void 0 : parts[1];
+            let title = (_b = $(manga).attr('data-tip')) === null || _b === void 0 ? void 0 : _b.trim();
+            // Fallback titolo dallo slug se manca data-tip
+            if (!title && slug)
+                title = slug.replace(/-/g, ' ');
             if (!title)
-                title = $('.text-white.text-center.text-lg', manga).first().text().trim();
-            const image = (_e = $('img', manga).attr('src')) !== null && _e !== void 0 ? _e : '';
+                title = $('.text-white', manga).first().text().trim();
+            const image = (_c = $('img', manga).attr('src')) !== null && _c !== void 0 ? _c : '';
             if (id && title) {
                 hotManga.push(App.createPartialSourceManga({
                     mangaId: id,
@@ -760,14 +767,18 @@ class WeebCentralParser {
         const latestHeader = $('h2').filter((_, el) => $(el).text().includes('Latest Updates')).first();
         const latestContainer = latestHeader.next('section');
         $('article', latestContainer).each((_, manga) => {
-            var _a, _b, _c, _d, _e;
+            var _a, _b, _c;
             const linkElement = $('a[href*="/series/"]', manga);
             const link = linkElement.attr('href');
-            const id = (_c = (_b = (_a = link === null || link === void 0 ? void 0 : link.split('/series/')) === null || _a === void 0 ? void 0 : _a[1]) === null || _b === void 0 ? void 0 : _b.split('/')) === null || _c === void 0 ? void 0 : _c[0];
-            let title = (_d = $(manga).attr('data-tip')) === null || _d === void 0 ? void 0 : _d.trim();
+            const parts = (_a = link === null || link === void 0 ? void 0 : link.split('/series/')[1]) === null || _a === void 0 ? void 0 : _a.split('/');
+            const id = parts === null || parts === void 0 ? void 0 : parts[0];
+            const slug = parts === null || parts === void 0 ? void 0 : parts[1];
+            let title = (_b = $(manga).attr('data-tip')) === null || _b === void 0 ? void 0 : _b.trim();
+            if ((!title || title === 'Official') && slug)
+                title = slug.replace(/-/g, ' ');
             if (!title)
                 title = $('.font-semibold.text-lg', manga).text().trim();
-            const image = (_e = $('img', manga).attr('src')) !== null && _e !== void 0 ? _e : '';
+            const image = (_c = $('img', manga).attr('src')) !== null && _c !== void 0 ? _c : '';
             const chapter = $('span', manga).last().text().trim();
             if (id && title) {
                 latestManga.push(App.createPartialSourceManga({
