@@ -466,7 +466,7 @@ const parser_1 = require("./parser");
 const helper_1 = require("./helper");
 const MW_DOMAIN = 'https://www.mangaworld.mx';
 exports.MangaWorldInfo = {
-    version: '3.0.3',
+    version: '3.0.4',
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld (0.8).',
     author: 'NmN',
@@ -484,7 +484,8 @@ exports.MangaWorldInfo = {
     intents: types_1.SourceIntents.MANGA_CHAPTERS | types_1.SourceIntents.HOMEPAGE_SECTIONS | types_1.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,
 };
 class MangaWorld {
-    // MODIFICA: Usiamo 'any' per evitare errori di importazione di CheerioAPI
+    // NOTA: Abbiamo rimosso l'import di CheerioAPI e usiamo 'any' qui.
+    // Questo risolve definitivamente l'errore TS2305.
     constructor(cheerio) {
         this.cheerio = cheerio;
         this.baseUrl = MW_DOMAIN;
