@@ -477,7 +477,7 @@ exports.MangaWorldInfo = {
     websiteBaseURL: MW_DOMAIN,
     sourceTags: [
         {
-            text: 'ITALIAN',
+            text: 'Italian',
             type: types_1.BadgeColor.GREY,
         },
     ],
