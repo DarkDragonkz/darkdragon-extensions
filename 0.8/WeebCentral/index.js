@@ -592,6 +592,7 @@ const types_1 = require("@paperback/types");
 class WeebCentralParser {
     parseMangaDetails($, mangaId) {
         var _a;
+        // Titolo: Cerca l'h1 (visibile o nascosto)
         const title = $('h1').first().text().trim();
         const image = (_a = $('img[alt$=" cover"]').attr('src')) !== null && _a !== void 0 ? _a : 'https://paperback.moe/icons/logo-alt.svg';
         const desc = $('strong:contains("Description")').next('p').text().trim();
@@ -661,13 +662,24 @@ class WeebCentralParser {
     parseSearchResults($) {
         const results = [];
         $('article').each((_, article) => {
-            var _a, _b, _c, _d;
+            var _a, _b, _c, _d, _e, _f, _g;
             const link = $('a', article).attr('href');
             const id = (_c = (_b = (_a = link === null || link === void 0 ? void 0 : link.split('/series/')) === null || _a === void 0 ? void 0 : _a[1]) === null || _b === void 0 ? void 0 : _b.split('/')) === null || _c === void 0 ? void 0 : _c[0];
-            let title = $('.font-semibold', article).text().trim();
-            if (!title)
-                title = $('.text-white', article).text().trim();
-            const image = (_d = $('img', article).attr('src')) !== null && _d !== void 0 ? _d : '';
+            // STRATEGIA MIGLIORATA PER IL TITOLO
+            // 1. Prova a prendere il titolo dall'attributo 'data-tip' (Metodo più sicuro su WeebCentral)
+            let title = (_d = $(article).attr('data-tip')) === null || _d === void 0 ? void 0 : _d.trim();
+            // 2. Fallback: Se non c'è data-tip, cerca nel testo ma ignora "Official"
+            if (!title) {
+                // Cerca l'elemento di testo principale
+                const textElement = $('.font-semibold, .text-white', article).first();
+                title = textElement.text().trim();
+            }
+            // 3. Controllo finale: Se il titolo è "Official", significa che abbiamo preso il badge sbagliato.
+            // Proviamo a prendere l'alt dell'immagine come ultima risorsa.
+            if (title === 'Official' || !title) {
+                title = (_f = (_e = $('img', article).attr('alt')) === null || _e === void 0 ? void 0 : _e.replace(' cover', '')) !== null && _f !== void 0 ? _f : '';
+            }
+            const image = (_g = $('img', article).attr('src')) !== null && _g !== void 0 ? _g : '';
             if (id && title) {
                 results.push(App.createPartialSourceManga({
                     mangaId: id,
@@ -692,16 +704,18 @@ class WeebCentralParser {
             containsMoreItems: true,
             type: types_1.HomeSectionType.singleRowNormal,
         });
-        // --- 1. Parsing HOT UPDATES ---
+        // Parsing Hot Updates
         const hotManga = [];
-        // Strategia più robusta: Trova l'H2 che contiene il testo, poi prendi la sezione successiva
         const hotHeader = $('h2').filter((_, el) => $(el).text().includes('Hot Updates')).first();
         const hotContainer = hotHeader.next('section');
         $('article', hotContainer).each((_, manga) => {
-            var _a, _b, _c;
+            var _a, _b, _c, _d;
             const link = $('a', manga).attr('href');
             const id = (_c = (_b = (_a = link === null || link === void 0 ? void 0 : link.split('/series/')) === null || _a === void 0 ? void 0 : _a[1]) === null || _b === void 0 ? void 0 : _b.split('/')) === null || _c === void 0 ? void 0 : _c[0];
-            const title = $('.text-white.text-center.text-lg', manga).first().text().trim();
+            // Usa data-tip anche qui per sicurezza
+            let title = (_d = $(manga).attr('data-tip')) === null || _d === void 0 ? void 0 : _d.trim();
+            if (!title)
+                title = $('.text-white.text-center.text-lg', manga).first().text().trim();
             const image = $('img', manga).attr('src');
             if (id && title) {
                 hotManga.push(App.createPartialSourceManga({
@@ -714,17 +728,19 @@ class WeebCentralParser {
         });
         hotSection.items = hotManga;
         sectionCallback(hotSection);
-        // --- 2. Parsing LATEST UPDATES ---
+        // Parsing Latest Updates
         const latestManga = [];
-        // Stessa strategia robusta
         const latestHeader = $('h2').filter((_, el) => $(el).text().includes('Latest Updates')).first();
         const latestContainer = latestHeader.next('section');
         $('article', latestContainer).each((_, manga) => {
-            var _a, _b, _c;
+            var _a, _b, _c, _d;
             const linkElement = $('a[href*="/series/"]', manga);
             const link = linkElement.attr('href');
             const id = (_c = (_b = (_a = link === null || link === void 0 ? void 0 : link.split('/series/')) === null || _a === void 0 ? void 0 : _a[1]) === null || _b === void 0 ? void 0 : _b.split('/')) === null || _c === void 0 ? void 0 : _c[0];
-            const title = $('.font-semibold.text-lg', manga).text().trim();
+            // Usa data-tip anche qui per sicurezza
+            let title = (_d = $(manga).attr('data-tip')) === null || _d === void 0 ? void 0 : _d.trim();
+            if (!title)
+                title = $('.font-semibold.text-lg', manga).text().trim();
             const image = $('img', manga).attr('src');
             const chapter = $('span', manga).last().text().trim();
             if (id && title) {
