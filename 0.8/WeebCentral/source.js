@@ -466,7 +466,7 @@ const WeebCentralParser_1 = require("./WeebCentralParser");
 const helper_1 = require("../helper");
 const DOMAIN = 'https://weebcentral.com';
 exports.WeebCentralInfo = {
-    version: '1.0.3',
+    version: '1.0.4',
     name: 'WeebCentral',
     icon: 'icon.png',
     author: 'GameFuzzy',
@@ -495,7 +495,7 @@ class WeebCentral {
                     var _a;
                     request.headers = Object.assign(Object.assign({}, ((_a = request.headers) !== null && _a !== void 0 ? _a : {})), {
                         'referer': `${this.baseUrl}/`,
-                        'user-agent': await this.requestManager.getDefaultUserAgent(),
+                        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     });
                     return request;
                 },
@@ -518,7 +518,6 @@ class WeebCentral {
         return this.parser.parseMangaDetails($, mangaId);
     }
     async getChapters(mangaId) {
-        // Scarichiamo la lista completa dei capitoli direttamente
         const request = App.createRequest({
             url: `${this.baseUrl}/series/${mangaId}/full-chapter-list`,
             method: 'GET',
@@ -528,7 +527,6 @@ class WeebCentral {
         return this.parser.parseChapters($, mangaId);
     }
     async getChapterDetails(mangaId, chapterId) {
-        // WeebCentral carica le immagini nella pagina "images" con reading_style
         const request = App.createRequest({
             url: `${this.baseUrl}/chapters/${chapterId}/images?reading_style=long_strip`,
             method: 'GET',
@@ -565,7 +563,7 @@ class WeebCentral {
             method: 'GET',
             headers: {
                 'referer': `${this.baseUrl}/`,
-                'user-agent': await this.requestManager.getDefaultUserAgent()
+                'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
         });
     }
@@ -575,7 +573,8 @@ class WeebCentral {
             .addPathComponent('search')
             .addPathComponent('data')
             .addQueryParameter('text', encodeURIComponent((_a = query === null || query === void 0 ? void 0 : query.title) !== null && _a !== void 0 ? _a : ''))
-            .addQueryParameter('display_mode', 'Full Display');
+            .addQueryParameter('display_mode', 'Full Display')
+            .addQueryParameter('official', 'Any'); // Importante per non filtrare troppo
         return App.createRequest({
             url: url.buildUrl(),
             method: 'GET',
@@ -591,10 +590,13 @@ exports.WeebCentralParser = void 0;
 const types_1 = require("@paperback/types");
 class WeebCentralParser {
     parseMangaDetails($, mangaId) {
-        var _a;
+        var _a, _b;
         // Titolo: Cerca l'h1 (visibile o nascosto)
-        const title = $('h1').first().text().trim();
-        const image = (_a = $('img[alt$=" cover"]').attr('src')) !== null && _a !== void 0 ? _a : 'https://paperback.moe/icons/logo-alt.svg';
+        // Fallback al data-tip se h1 non è chiaro
+        let title = $('h1').first().text().trim();
+        if (!title)
+            title = (_a = $('section:has(picture)').first().attr('data-tip')) !== null && _a !== void 0 ? _a : '';
+        const image = (_b = $('img[alt$=" cover"]').attr('src')) !== null && _b !== void 0 ? _b : 'https://paperback.moe/icons/logo-alt.svg';
         const desc = $('strong:contains("Description")').next('p').text().trim();
         const author = $('strong:contains("Author(s)")').next().find('a').text().trim();
         const statusStr = $('strong:contains("Status")').next('a').text().trim();
@@ -608,7 +610,8 @@ class WeebCentralParser {
             const a = $('a', span);
             const id = a.text().trim();
             const label = a.text().trim();
-            arrayTags.push({ id, label });
+            if (id)
+                arrayTags.push({ id, label });
         });
         const tagSections = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags.map((x) => App.createTag(x)) })];
         return App.createSourceManga({
@@ -619,17 +622,27 @@ class WeebCentralParser {
                 status: status,
                 author: author,
                 tags: tagSections,
-                desc: desc
+                desc: desc || 'No description available'
             })
         });
     }
     parseChapters($, mangaId) {
         const chapters = [];
+        // Cerca tutti i link che portano a /chapters/
+        // WeebCentral mette i capitoli in dei blocchi <a>
         $('a[href*="/chapters/"]').each((_, element) => {
             const href = $(element).attr('href');
             const id = href === null || href === void 0 ? void 0 : href.split('/chapters/')[1];
-            const chapterTextSpan = $(element).find('span.grow span').first();
-            const name = chapterTextSpan.text().trim();
+            // Il nome del capitolo è spesso in uno span specifico
+            // Cerca uno span che contiene "Chapter" o "Episode"
+            let name = $(element).find('span:contains("Chapter"), span:contains("Episode")').first().text().trim();
+            // Se non lo trova, prova a prendere tutto il testo e pulirlo
+            if (!name) {
+                name = $(element).find('.grow span').first().text().trim();
+            }
+            if (!name)
+                name = $(element).text().trim();
+            // Estrazione numero capitolo
             const numMatch = name.match(/(\d+(\.\d+)?)/);
             const chapNum = numMatch ? parseFloat(numMatch[0]) : 0;
             const timeStr = $(element).find('time').attr('datetime');
@@ -650,8 +663,10 @@ class WeebCentralParser {
         const pages = [];
         $('img').each((_, img) => {
             const src = $(img).attr('src');
-            if (src)
+            // Filtra icone piccole o placeholder se necessario
+            if (src && !src.includes('logo') && !src.includes('icon')) {
                 pages.push(src);
+            }
         });
         return App.createChapterDetails({
             id: chapterId,
@@ -661,26 +676,29 @@ class WeebCentralParser {
     }
     parseSearchResults($) {
         const results = [];
-        $('article').each((_, article) => {
+        // Cerca sia <article> che <div> che potrebbero contenere i risultati
+        $('article, div.bg-base-100').each((_, item) => {
             var _a, _b, _c, _d, _e, _f, _g;
-            const link = $('a', article).attr('href');
+            const linkElement = $('a[href*="/series/"]', item).first();
+            const link = linkElement.attr('href');
             const id = (_c = (_b = (_a = link === null || link === void 0 ? void 0 : link.split('/series/')) === null || _a === void 0 ? void 0 : _a[1]) === null || _b === void 0 ? void 0 : _b.split('/')) === null || _c === void 0 ? void 0 : _c[0];
-            // STRATEGIA MIGLIORATA PER IL TITOLO
-            // 1. Prova a prendere il titolo dall'attributo 'data-tip' (Metodo più sicuro su WeebCentral)
-            let title = (_d = $(article).attr('data-tip')) === null || _d === void 0 ? void 0 : _d.trim();
-            // 2. Fallback: Se non c'è data-tip, cerca nel testo ma ignora "Official"
+            // --- FIX TITOLO ---
+            // 1. Cerca l'attributo data-tip (metodo più sicuro)
+            let title = (_d = $(item).attr('data-tip')) === null || _d === void 0 ? void 0 : _d.trim();
+            // 2. Se manca, cerca nel testo ma evita le parole chiave "trappola"
             if (!title) {
-                // Cerca l'elemento di testo principale
-                const textElement = $('.font-semibold, .text-white', article).first();
-                title = textElement.text().trim();
+                // Cerca specificamente il link del titolo (solitamente sotto l'immagine o a destra)
+                // Escludiamo elementi che contengono "Official", "Manga", ecc.
+                const potentialTitle = $('.text-lg, .font-semibold', item).not(':contains("Official"), :contains("Manga")').first().text().trim();
+                if (potentialTitle)
+                    title = potentialTitle;
             }
-            // 3. Controllo finale: Se il titolo è "Official", significa che abbiamo preso il badge sbagliato.
-            // Proviamo a prendere l'alt dell'immagine come ultima risorsa.
-            if (title === 'Official' || !title) {
-                title = (_f = (_e = $('img', article).attr('alt')) === null || _e === void 0 ? void 0 : _e.replace(' cover', '')) !== null && _f !== void 0 ? _f : '';
+            // 3. Fallback sull'alt dell'immagine
+            if (!title) {
+                title = (_f = (_e = $('img', item).attr('alt')) === null || _e === void 0 ? void 0 : _e.replace(' cover', '')) !== null && _f !== void 0 ? _f : '';
             }
-            const image = (_g = $('img', article).attr('src')) !== null && _g !== void 0 ? _g : '';
-            if (id && title) {
+            const image = (_g = $('img', item).attr('src')) !== null && _g !== void 0 ? _g : '';
+            if (id && title && title !== 'Official') {
                 results.push(App.createPartialSourceManga({
                     mangaId: id,
                     image: image,
@@ -704,23 +722,23 @@ class WeebCentralParser {
             containsMoreItems: true,
             type: types_1.HomeSectionType.singleRowNormal,
         });
-        // Parsing Hot Updates
+        // --- 1. Parsing HOT UPDATES ---
         const hotManga = [];
         const hotHeader = $('h2').filter((_, el) => $(el).text().includes('Hot Updates')).first();
         const hotContainer = hotHeader.next('section');
         $('article', hotContainer).each((_, manga) => {
-            var _a, _b, _c, _d;
+            var _a, _b, _c, _d, _e;
             const link = $('a', manga).attr('href');
             const id = (_c = (_b = (_a = link === null || link === void 0 ? void 0 : link.split('/series/')) === null || _a === void 0 ? void 0 : _a[1]) === null || _b === void 0 ? void 0 : _b.split('/')) === null || _c === void 0 ? void 0 : _c[0];
-            // Usa data-tip anche qui per sicurezza
+            // Usa data-tip se c'è
             let title = (_d = $(manga).attr('data-tip')) === null || _d === void 0 ? void 0 : _d.trim();
             if (!title)
-                title = $('.text-white.text-center.text-lg', manga).first().text().trim();
-            const image = $('img', manga).attr('src');
+                title = $('.text-white', manga).first().text().trim();
+            const image = (_e = $('img', manga).attr('src')) !== null && _e !== void 0 ? _e : '';
             if (id && title) {
                 hotManga.push(App.createPartialSourceManga({
                     mangaId: id,
-                    image: image !== null && image !== void 0 ? image : '',
+                    image: image,
                     title: title,
                     subtitle: undefined
                 }));
@@ -728,25 +746,24 @@ class WeebCentralParser {
         });
         hotSection.items = hotManga;
         sectionCallback(hotSection);
-        // Parsing Latest Updates
+        // --- 2. Parsing LATEST UPDATES ---
         const latestManga = [];
         const latestHeader = $('h2').filter((_, el) => $(el).text().includes('Latest Updates')).first();
         const latestContainer = latestHeader.next('section');
         $('article', latestContainer).each((_, manga) => {
-            var _a, _b, _c, _d;
+            var _a, _b, _c, _d, _e;
             const linkElement = $('a[href*="/series/"]', manga);
             const link = linkElement.attr('href');
             const id = (_c = (_b = (_a = link === null || link === void 0 ? void 0 : link.split('/series/')) === null || _a === void 0 ? void 0 : _a[1]) === null || _b === void 0 ? void 0 : _b.split('/')) === null || _c === void 0 ? void 0 : _c[0];
-            // Usa data-tip anche qui per sicurezza
             let title = (_d = $(manga).attr('data-tip')) === null || _d === void 0 ? void 0 : _d.trim();
             if (!title)
-                title = $('.font-semibold.text-lg', manga).text().trim();
-            const image = $('img', manga).attr('src');
+                title = $('.font-semibold', manga).text().trim();
+            const image = (_e = $('img', manga).attr('src')) !== null && _e !== void 0 ? _e : '';
             const chapter = $('span', manga).last().text().trim();
             if (id && title) {
                 latestManga.push(App.createPartialSourceManga({
                     mangaId: id,
-                    image: image !== null && image !== void 0 ? image : '',
+                    image: image,
                     title: title,
                     subtitle: chapter
                 }));
