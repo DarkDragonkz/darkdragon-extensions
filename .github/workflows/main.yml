@@ -9,7 +9,6 @@ jobs:
     name: Bundle and Publish Sources
     runs-on: ubuntu-latest
 
-    # Necessario per il deploy su gh-pages
     permissions:
       contents: write
 
@@ -28,7 +27,6 @@ jobs:
       
       - name: Extract branch name
         shell: bash
-        # FIX: Nuova sintassi per $GITHUB_OUTPUT
         run: echo "branch=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_OUTPUT
         id: extract_branch
 
@@ -40,7 +38,23 @@ jobs:
           path: bundles
 
       - run: npm install
+      
+      # Crea l'estensione (questo passaggio spesso svuota la cartella bundles)
       - run: npm run bundle -- --folder=${{ steps.extract_branch.outputs.branch }}
+
+      # FIX: Prende il file index.html dalla root e lo copia forzatamente dentro bundles
+      - name: Copy custom Homepage
+        run: |
+          if [ -f "index.html" ]; then
+            echo "Trovato index.html personalizzato. Lo copio in bundles..."
+            cp index.html bundles/index.html
+          else
+            echo "ATTENZIONE: index.html non trovato nella root!"
+          fi
+
+      # Disabilita Jekyll per evitare errori strani con i percorsi
+      - name: Disable Jekyll
+        run: touch bundles/.nojekyll
 
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
