@@ -35,10 +35,14 @@ jobs:
           path: bundles
 
       - run: npm install
+      
+      # FIX: Aggiunte variabili d'ambiente per correggere il warning "noAddToPaperbackButton"
       - run: npm run bundle -- --folder=${{ steps.extract_branch.outputs.branch }}
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          # baseURL: https://darkdragonkz.github.io/extensions-foreign/ (Opzionale, spesso basta GITHUB_REPOSITORY)
 
       - name: Deploy to GitHub Pages
-        # FIX: Aggiornato alla versione v4 (l'ultima) per rimuovere l'errore set-output deprecato
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           branch: gh-pages
