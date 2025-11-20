@@ -23,7 +23,7 @@ import { URLBuilder } from '../helper'
 const DOMAIN = 'https://weebcentral.com'
 
 export const WeebCentralInfo: SourceInfo = {
-    version: '1.0.3',
+    version: '1.0.4',
     name: 'WeebCentral',
     icon: 'icon.png',
     author: 'GameFuzzy',
@@ -55,7 +55,7 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
                     ...(request.headers ?? {}),
                     ...{
                         'referer': `${this.baseUrl}/`,
-                        'user-agent': await this.requestManager.getDefaultUserAgent(),
+                        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     }
                 }
                 return request
@@ -81,7 +81,6 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        // Scarichiamo la lista completa dei capitoli direttamente
         const request = App.createRequest({
             url: `${this.baseUrl}/series/${mangaId}/full-chapter-list`,
             method: 'GET',
@@ -92,7 +91,6 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // WeebCentral carica le immagini nella pagina "images" con reading_style
         const request = App.createRequest({
             url: `${this.baseUrl}/chapters/${chapterId}/images?reading_style=long_strip`,
             method: 'GET',
@@ -135,7 +133,7 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
             method: 'GET',
             headers: {
                 'referer': `${this.baseUrl}/`,
-                'user-agent': await this.requestManager.getDefaultUserAgent()
+                'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
         })
     }
@@ -146,6 +144,7 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
             .addPathComponent('data')
             .addQueryParameter('text', encodeURIComponent(query?.title ?? ''))
             .addQueryParameter('display_mode', 'Full Display')
+            .addQueryParameter('official', 'Any') // Importante per non filtrare troppo
             
         return App.createRequest({
             url: url.buildUrl(),
