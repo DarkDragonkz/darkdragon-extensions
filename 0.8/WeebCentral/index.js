@@ -469,8 +469,8 @@ exports.WeebCentralInfo = {
     version: '1.0.7',
     name: 'WeebCentral',
     icon: 'icon.png',
-    author: 'GameFuzzy',
-    authorWebsite: 'https://github.com/gamefuzzy',
+    author: 'DarkDragonkzz',
+    authorWebsite: 'https://github.com/DarkDragonkz',
     description: `Extension that pulls manga from ${DOMAIN}`,
     contentRating: types_1.ContentRating.MATURE,
     websiteBaseURL: DOMAIN,
@@ -592,8 +592,9 @@ class WeebCentral {
     constructSearchRequest(query) {
         var _a;
         const queryText = (_a = query === null || query === void 0 ? void 0 : query.title) !== null && _a !== void 0 ? _a : '';
-        // Tentativo di emulare come il sito invia la query, usando i trattini come separatori.
-        // Puliamo anche da apostrofi che potrebbero causare problemi.
+        // CORREZIONE DEFINITIVA PER LA RICERCA CON PIÙ PAROLE:
+        // Convertiamo la query in slug (trattini) per emulare il formato URL atteso dal server.
+        // Questo risolve i problemi di ricerca con spazi.
         const encodedText = queryText.replace(/'/g, '').trim().toLowerCase().replace(/ /g, '-');
         const url = new helper_1.URLBuilder(this.baseUrl)
             .addPathComponent('search')
