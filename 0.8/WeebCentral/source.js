@@ -466,11 +466,10 @@ const WeebCentralParser_1 = require("./WeebCentralParser");
 const helper_1 = require("../helper");
 const DOMAIN = 'https://weebcentral.com';
 exports.WeebCentralInfo = {
-    version: '1.0.9',
+    version: '1.0.10',
     name: 'WeebCentral',
     icon: 'icon.png',
-    // --- AUTORE AGGIORNATO ---
-    author: 'DarkDragonkzz',
+    author: 'DarkDragonkz',
     authorWebsite: 'https://github.com/DarkDragonkz',
     description: `Extension that pulls manga from ${DOMAIN}`,
     contentRating: types_1.ContentRating.MATURE,
@@ -594,19 +593,17 @@ class WeebCentral {
     constructSearchRequest(query) {
         var _a;
         const queryText = (_a = query === null || query === void 0 ? void 0 : query.title) !== null && _a !== void 0 ? _a : '';
-        // CORREZIONE DELLO SLUG (TRATTINI): Il server non accetta URL-encoding per gli spazi.
-        // Convertiamo il testo in un URL-slug (es. "One Piece" -> "one-piece").
-        // Rimuoviamo anche gli apostrofi (es. "L'app" -> "lapp").
+        // CORREZIONE FINALE:
+        // 1. Convertiamo gli spazi in trattini (slug) per la ricerca di titoli composti.
         const encodedText = queryText.replace(/'/g, '').trim().toLowerCase().replace(/ /g, '-');
         const url = new helper_1.URLBuilder(this.baseUrl)
             .addPathComponent('search')
+            .addPathComponent('data') // Rimuovi questo se la Soluzione 1 fallisce. Per ora, lo conserviamo come dato dall'HTML
             .addQueryParameter('text', encodedText) // Passiamo lo slug
             .addQueryParameter('display_mode', 'Full Display')
             .addQueryParameter('official', 'Any');
-        // NOTA: Aggiungiamo 'data' al percorso manualmente se necessario.
-        // Dal codice HTML, sembra che il sito usi AJAX per caricare i risultati in un secondo momento,
-        // ma per Paperback, proviamo a chiamare direttamente il percorso dei dati.
-        const finalUrl = url.buildUrl().replace('/search?', '/search/data?');
+        // Questa volta, usiamo il percorso dati completo con il parametro text codificato come slug
+        const finalUrl = url.buildUrl();
         return App.createRequest({
             url: finalUrl,
             method: 'GET',
