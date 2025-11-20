@@ -22,7 +22,7 @@ import { WeebCentralParser } from './WeebCentralParser'
 const DOMAIN = 'https://weebcentral.com'
 
 export const WeebCentralInfo: SourceInfo = {
-    version: '1.0.0',
+    version: '1.0.1',
     name: 'WeebCentral',
     icon: 'icon.png',
     author: 'GameFuzzy',
@@ -70,24 +70,23 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
-        // Placeholder: Richiede l'HTML della pagina dettaglio per essere implementato
+        // FIX: Aggiunta la proprietà 'desc' obbligatoria
         return App.createSourceManga({
             id: mangaId,
             mangaInfo: App.createMangaInfo({
                 titles: ['Title Placeholder'],
                 image: 'https://paperback.moe/icons/logo-alt.svg',
-                status: 'Unknown'
+                status: 'Unknown',
+                desc: 'Description not available yet' 
             })
         })
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        // Placeholder: Richiede l'HTML della pagina dettaglio per essere implementato
         return []
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // Placeholder: Richiede l'HTML del lettore per essere implementato
         return App.createChapterDetails({
             id: chapterId,
             mangaId: mangaId,
@@ -96,7 +95,6 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        // Placeholder: Richiede l'HTML della ricerca per essere implementato
          return App.createPagedResults({ results: [] })
     }
 
