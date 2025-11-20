@@ -463,9 +463,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.WeebCentral = exports.WeebCentralInfo = void 0;
 const types_1 = require("@paperback/types");
 const WeebCentralParser_1 = require("./WeebCentralParser");
+const helper_1 = require("../helper");
 const DOMAIN = 'https://weebcentral.com';
 exports.WeebCentralInfo = {
-    version: '1.0.1',
+    version: '1.0.3',
     name: 'WeebCentral',
     icon: 'icon.png',
     author: 'GameFuzzy',
@@ -508,29 +509,43 @@ class WeebCentral {
         return `${this.baseUrl}/series/${mangaId}`;
     }
     async getMangaDetails(mangaId) {
-        // FIX: Aggiunta la proprietà 'desc' obbligatoria
-        return App.createSourceManga({
-            id: mangaId,
-            mangaInfo: App.createMangaInfo({
-                titles: ['Title Placeholder'],
-                image: 'https://paperback.moe/icons/logo-alt.svg',
-                status: 'Unknown',
-                desc: 'Description not available yet'
-            })
+        const request = App.createRequest({
+            url: `${this.baseUrl}/series/${mangaId}`,
+            method: 'GET',
         });
+        const response = await this.requestManager.schedule(request, 1);
+        const $ = this.cheerio.load(response.data);
+        return this.parser.parseMangaDetails($, mangaId);
     }
     async getChapters(mangaId) {
-        return [];
+        // Scarichiamo la lista completa dei capitoli direttamente
+        const request = App.createRequest({
+            url: `${this.baseUrl}/series/${mangaId}/full-chapter-list`,
+            method: 'GET',
+        });
+        const response = await this.requestManager.schedule(request, 1);
+        const $ = this.cheerio.load(response.data);
+        return this.parser.parseChapters($, mangaId);
     }
     async getChapterDetails(mangaId, chapterId) {
-        return App.createChapterDetails({
-            id: chapterId,
-            mangaId: mangaId,
-            pages: []
+        // WeebCentral carica le immagini nella pagina "images" con reading_style
+        const request = App.createRequest({
+            url: `${this.baseUrl}/chapters/${chapterId}/images?reading_style=long_strip`,
+            method: 'GET',
         });
+        const response = await this.requestManager.schedule(request, 1);
+        const $ = this.cheerio.load(response.data);
+        return this.parser.parseChapterDetails($, mangaId, chapterId);
     }
     async getSearchResults(query, metadata) {
-        return App.createPagedResults({ results: [] });
+        const request = this.constructSearchRequest(query);
+        const response = await this.requestManager.schedule(request, 1);
+        const $ = this.cheerio.load(response.data);
+        const manga = this.parser.parseSearchResults($);
+        return App.createPagedResults({
+            results: manga,
+            metadata: undefined
+        });
     }
     async getHomePageSections(sectionCallback) {
         const request = App.createRequest({
@@ -554,33 +569,134 @@ class WeebCentral {
             }
         });
     }
+    constructSearchRequest(query) {
+        var _a;
+        const url = new helper_1.URLBuilder(this.baseUrl)
+            .addPathComponent('search')
+            .addPathComponent('data')
+            .addQueryParameter('text', encodeURIComponent((_a = query === null || query === void 0 ? void 0 : query.title) !== null && _a !== void 0 ? _a : ''))
+            .addQueryParameter('display_mode', 'Full Display');
+        return App.createRequest({
+            url: url.buildUrl(),
+            method: 'GET',
+        });
+    }
 }
 exports.WeebCentral = WeebCentral;
 
-},{"./WeebCentralParser":63,"@paperback/types":61}],63:[function(require,module,exports){
+},{"../helper":64,"./WeebCentralParser":63,"@paperback/types":61}],63:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WeebCentralParser = void 0;
 const types_1 = require("@paperback/types");
 class WeebCentralParser {
+    parseMangaDetails($, mangaId) {
+        var _a;
+        const title = $('h1').first().text().trim();
+        const image = (_a = $('img[alt$=" cover"]').attr('src')) !== null && _a !== void 0 ? _a : 'https://paperback.moe/icons/logo-alt.svg';
+        const desc = $('strong:contains("Description")').next('p').text().trim();
+        const author = $('strong:contains("Author(s)")').next().find('a').text().trim();
+        const statusStr = $('strong:contains("Status")').next('a').text().trim();
+        let status = 'Unknown';
+        if (statusStr.toLowerCase().includes('ongoing'))
+            status = 'Ongoing';
+        else if (statusStr.toLowerCase().includes('complete'))
+            status = 'Completed';
+        const arrayTags = [];
+        $('strong:contains("Tags(s)")').nextAll('span').each((_, span) => {
+            const a = $('a', span);
+            const id = a.text().trim();
+            const label = a.text().trim();
+            arrayTags.push({ id, label });
+        });
+        const tagSections = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags.map((x) => App.createTag(x)) })];
+        return App.createSourceManga({
+            id: mangaId,
+            mangaInfo: App.createMangaInfo({
+                titles: [title],
+                image: image,
+                status: status,
+                author: author,
+                tags: tagSections,
+                desc: desc
+            })
+        });
+    }
+    parseChapters($, mangaId) {
+        const chapters = [];
+        $('a[href*="/chapters/"]').each((_, element) => {
+            const href = $(element).attr('href');
+            const id = href === null || href === void 0 ? void 0 : href.split('/chapters/')[1];
+            const chapterTextSpan = $(element).find('span.grow span').first();
+            const name = chapterTextSpan.text().trim();
+            const numMatch = name.match(/(\d+(\.\d+)?)/);
+            const chapNum = numMatch ? parseFloat(numMatch[0]) : 0;
+            const timeStr = $(element).find('time').attr('datetime');
+            const time = timeStr ? new Date(timeStr) : new Date();
+            if (id) {
+                chapters.push(App.createChapter({
+                    id: id,
+                    name: name,
+                    chapNum: chapNum,
+                    langCode: 'en',
+                    time: time
+                }));
+            }
+        });
+        return chapters;
+    }
+    parseChapterDetails($, mangaId, chapterId) {
+        const pages = [];
+        $('img').each((_, img) => {
+            const src = $(img).attr('src');
+            if (src)
+                pages.push(src);
+        });
+        return App.createChapterDetails({
+            id: chapterId,
+            mangaId: mangaId,
+            pages: pages
+        });
+    }
+    parseSearchResults($) {
+        const results = [];
+        $('article').each((_, article) => {
+            var _a, _b, _c, _d;
+            const link = $('a', article).attr('href');
+            const id = (_c = (_b = (_a = link === null || link === void 0 ? void 0 : link.split('/series/')) === null || _a === void 0 ? void 0 : _a[1]) === null || _b === void 0 ? void 0 : _b.split('/')) === null || _c === void 0 ? void 0 : _c[0];
+            let title = $('.font-semibold', article).text().trim();
+            if (!title)
+                title = $('.text-white', article).text().trim();
+            const image = (_d = $('img', article).attr('src')) !== null && _d !== void 0 ? _d : '';
+            if (id && title) {
+                results.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image,
+                    title: title,
+                    subtitle: undefined
+                }));
+            }
+        });
+        return results;
+    }
     parseHomeSections($, sectionCallback) {
-        // 1. Hot Updates
         const hotSection = App.createHomeSection({
             id: 'hot_updates',
             title: 'Hot Updates',
             containsMoreItems: false,
             type: types_1.HomeSectionType.singleRowNormal,
         });
-        // 2. Latest Updates
         const latestSection = App.createHomeSection({
             id: 'latest_updates',
             title: 'Latest Updates',
             containsMoreItems: true,
             type: types_1.HomeSectionType.singleRowNormal,
         });
-        // Parsing Hot Updates (cerca la sezione con h2 "Hot Updates")
+        // --- 1. Parsing HOT UPDATES ---
         const hotManga = [];
-        const hotContainer = $('section:has(h2:contains("Hot Updates"))').first();
+        // Strategia più robusta: Trova l'H2 che contiene il testo, poi prendi la sezione successiva
+        const hotHeader = $('h2').filter((_, el) => $(el).text().includes('Hot Updates')).first();
+        const hotContainer = hotHeader.next('section');
         $('article', hotContainer).each((_, manga) => {
             var _a, _b, _c;
             const link = $('a', manga).attr('href');
@@ -598,12 +714,13 @@ class WeebCentralParser {
         });
         hotSection.items = hotManga;
         sectionCallback(hotSection);
-        // Parsing Latest Updates (cerca la sezione con h2 "Latest Updates")
+        // --- 2. Parsing LATEST UPDATES ---
         const latestManga = [];
-        const latestContainer = $('section:has(h2:contains("Latest Updates"))').first();
+        // Stessa strategia robusta
+        const latestHeader = $('h2').filter((_, el) => $(el).text().includes('Latest Updates')).first();
+        const latestContainer = latestHeader.next('section');
         $('article', latestContainer).each((_, manga) => {
             var _a, _b, _c;
-            // Latest updates structure is slightly different (flex row)
             const linkElement = $('a[href*="/series/"]', manga);
             const link = linkElement.attr('href');
             const id = (_c = (_b = (_a = link === null || link === void 0 ? void 0 : link.split('/series/')) === null || _a === void 0 ? void 0 : _a[1]) === null || _b === void 0 ? void 0 : _b.split('/')) === null || _c === void 0 ? void 0 : _c[0];
@@ -625,5 +742,49 @@ class WeebCentralParser {
 }
 exports.WeebCentralParser = WeebCentralParser;
 
-},{"@paperback/types":61}]},{},[62])(62)
+},{"@paperback/types":61}],64:[function(require,module,exports){
+"use strict";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.URLBuilder = void 0;
+class URLBuilder {
+    constructor(baseUrl) {
+        this.parameters = {};
+        this.pathComponents = [];
+        this.baseUrl = baseUrl.replace(/(^\/)?(?=.*)(\/$)?/gim, '');
+    }
+    addPathComponent(component) {
+        this.pathComponents.push(component.replace(/(^\/)?(?=.*)(\/$)?/gim, ''));
+        return this;
+    }
+    addQueryParameter(key, value) {
+        this.parameters[key] = value;
+        return this;
+    }
+    buildUrl({ addTrailingSlash, includeUndefinedParameters } = { addTrailingSlash: false, includeUndefinedParameters: false }) {
+        let finalUrl = this.baseUrl + '/';
+        finalUrl += this.pathComponents.join('/');
+        finalUrl += addTrailingSlash ? '/' : '';
+        finalUrl += Object.values(this.parameters).length > 0 ? '?' : '';
+        finalUrl += Object.entries(this.parameters).map(entry => {
+            if (entry[1] == null && !includeUndefinedParameters) {
+                return undefined;
+            }
+            if (Array.isArray(entry[1])) {
+                return `${entry[0]}=` + entry[1].map(value => value || includeUndefinedParameters ? `${value},` : undefined)
+                    .filter(x => x !== undefined)
+                    .join('');
+            }
+            if (typeof entry[1] === 'object') {
+                return Object.keys(entry[1]).map(key => `${entry[0]}[${key}]=${entry[1][key]}`)
+                    .join('&');
+            }
+            return `${entry[0]}=${entry[1]}`;
+        }).filter(x => x !== undefined).join('&');
+        return finalUrl;
+    }
+}
+exports.URLBuilder = URLBuilder;
+
+},{}]},{},[62])(62)
 });
