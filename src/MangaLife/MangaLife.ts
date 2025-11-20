@@ -6,11 +6,11 @@ import {
 
 import { NepNep, getExportVersion } from '../NepNep'
 
-const DOMAIN = 'https://weebcentral.com/'
+const DOMAIN = 'https://weebcentral.com'
 
 export const MangaLifeInfo: SourceInfo = {
     version: getExportVersion('0.0.0'),
-    name: 'WeebCentral',
+    name: 'Manga4Life',
     icon: 'icon.png',
     author: 'GameFuzzy',
     authorWebsite: 'https://github.com/gamefuzzy',
