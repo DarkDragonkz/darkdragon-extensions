@@ -23,11 +23,10 @@ import { URLBuilder } from '../helper'
 const DOMAIN = 'https://weebcentral.com'
 
 export const WeebCentralInfo: SourceInfo = {
-    version: '1.0.9',
+    version: '1.0.10', // Versione aggiornata
     name: 'WeebCentral',
     icon: 'icon.png',
-    // --- AUTORE AGGIORNATO ---
-    author: 'DarkDragonkzz',
+    author: 'DarkDragonkz',
     authorWebsite: 'https://github.com/DarkDragonkz',
     description: `Extension that pulls manga from ${DOMAIN}`,
     contentRating: ContentRating.MATURE,
@@ -169,21 +168,19 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
     constructSearchRequest(query: SearchRequest): any {
         const queryText = query?.title ?? ''
         
-        // CORREZIONE DELLO SLUG (TRATTINI): Il server non accetta URL-encoding per gli spazi.
-        // Convertiamo il testo in un URL-slug (es. "One Piece" -> "one-piece").
-        // Rimuoviamo anche gli apostrofi (es. "L'app" -> "lapp").
+        // CORREZIONE FINALE:
+        // 1. Convertiamo gli spazi in trattini (slug) per la ricerca di titoli composti.
         const encodedText = queryText.replace(/'/g, '').trim().toLowerCase().replace(/ /g, '-');
         
         const url = new URLBuilder(this.baseUrl)
             .addPathComponent('search')
+            .addPathComponent('data') // Rimuovi questo se la Soluzione 1 fallisce. Per ora, lo conserviamo come dato dall'HTML
             .addQueryParameter('text', encodedText) // Passiamo lo slug
             .addQueryParameter('display_mode', 'Full Display')
             .addQueryParameter('official', 'Any')
             
-        // NOTA: Aggiungiamo 'data' al percorso manualmente se necessario.
-        // Dal codice HTML, sembra che il sito usi AJAX per caricare i risultati in un secondo momento,
-        // ma per Paperback, proviamo a chiamare direttamente il percorso dei dati.
-        const finalUrl = url.buildUrl().replace('/search?', '/search/data?')
+        // Questa volta, usiamo il percorso dati completo con il parametro text codificato come slug
+        const finalUrl = url.buildUrl()
         
         return App.createRequest({
             url: finalUrl,
