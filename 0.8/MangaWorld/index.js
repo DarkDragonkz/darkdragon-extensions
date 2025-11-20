@@ -689,8 +689,8 @@ class Parser {
                     $(obj)
                         .find('a')
                         .each((_, e) => {
-                        label_arr.push($(e).text()) &
-                            id_arr.push($(e).attr('href')?.replace('https://www.mangaworld.in/archive?genre=', '') ?? '');
+                        label_arr.push($(e).text());
+                        id_arr.push($(e).attr('href')?.replace('https://www.mangaworld.in/archive?genre=', '') ?? '');
                     });
                     break;
                 case 2:
