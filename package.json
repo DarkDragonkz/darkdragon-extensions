@@ -1,8 +1,8 @@
 {
-  "name": "nmn-extension-foreign-0.8",
-  "repositoryName": "NmN's Foreign Extensions (0.8)",
-  "version": "2.0.0",
-  "description": "Repo for non-english manga sources. (0.8)",
+  "name": "IT-extension-foreign-0.8",
+  "repositoryName": "Baed on other Foreign Extensions (0.8)",
+  "version": "0.0.1",
+  "description": "Repo for italian manga sources. (0.8)",
   "main": "index.js",
   "scripts": {
     "bundle": "npx paperback bundle",
