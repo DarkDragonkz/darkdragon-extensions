@@ -23,11 +23,11 @@ import { URLBuilder } from '../helper'
 const DOMAIN = 'https://weebcentral.com'
 
 export const WeebCentralInfo: SourceInfo = {
-    version: '1.0.5',
+    version: '1.0.6',
     name: 'WeebCentral',
     icon: 'icon.png',
-    author: 'DarkDragonkz',
-    authorWebsite: 'https://github.com/DarkDragonkz',
+    author: 'GameFuzzy',
+    authorWebsite: 'https://github.com/gamefuzzy',
     description: `Extension that pulls manga from ${DOMAIN}`,
     contentRating: ContentRating.MATURE,
     websiteBaseURL: DOMAIN,
@@ -127,7 +127,6 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
         const page = metadata?.page ?? 1
         let url = ''
 
-        // Gestisce la paginazione per Latest Updates
         if (homepageSectionId === 'latest_updates') {
             url = `${this.baseUrl}/latest-updates/${page}`
         } else {
@@ -142,7 +141,6 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         
-        // Riutilizziamo parseSearchResults perché la struttura delle card è identica
         const manga = this.parser.parseSearchResults($)
         
         if (manga.length > 0) {
@@ -167,10 +165,15 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
     }
 
     constructSearchRequest(query: SearchRequest): any {
+        const queryText = query?.title ?? ''
+        
+        // Sostituisce gli spazi con i trattini prima di codificare, simulando un URL slug
+        // Questo è il modo in cui molti server di manga si aspettano i titoli composti.
+        const encodedText = queryText.replace(/ /g, '-').replace(/'/g, '').toLowerCase()
+        
         const url = new URLBuilder(this.baseUrl)
             .addPathComponent('search')
-            .addPathComponent('data')
-            .addQueryParameter('text', encodeURIComponent(query?.title ?? ''))
+            .addQueryParameter('text', encodedText)
             .addQueryParameter('display_mode', 'Full Display')
             .addQueryParameter('official', 'Any')
             
