@@ -1470,6 +1470,7 @@ const getExportVersion = (EXTENSION_VERSION) => {
 };
 exports.getExportVersion = getExportVersion;
 class NepNep {
+    // FIX: Sostituito CheerioAPI con any per compatibilità
     constructor(cheerio) {
         this.cheerio = cheerio;
         this.parser = new NepNepParser_1.NepNepParser();
