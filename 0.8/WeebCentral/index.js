@@ -466,7 +466,7 @@ const WeebCentralParser_1 = require("./WeebCentralParser");
 const helper_1 = require("../helper");
 const DOMAIN = 'https://weebcentral.com';
 exports.WeebCentralInfo = {
-    version: '1.0.3',
+    version: '1.0.2',
     name: 'WeebCentral',
     icon: 'icon.png',
     author: 'GameFuzzy',
@@ -518,7 +518,8 @@ class WeebCentral {
         return this.parser.parseMangaDetails($, mangaId);
     }
     async getChapters(mangaId) {
-        // Scarichiamo la lista completa dei capitoli direttamente
+        // We fetch the specific full-chapter-list endpoint as it contains all chapters
+        // The main page might truncate them
         const request = App.createRequest({
             url: `${this.baseUrl}/series/${mangaId}/full-chapter-list`,
             method: 'GET',
@@ -528,12 +529,15 @@ class WeebCentral {
         return this.parser.parseChapters($, mangaId);
     }
     async getChapterDetails(mangaId, chapterId) {
-        // WeebCentral carica le immagini nella pagina "images" con reading_style
         const request = App.createRequest({
             url: `${this.baseUrl}/chapters/${chapterId}/images?reading_style=long_strip`,
             method: 'GET',
         });
+        // WeebCentral loads images differently, likely via a specific endpoint or just in the HTML
+        // However, usually these sites have a standard image list in the HTML of the reading page.
+        // Let's try fetching the chapter page first.
         const response = await this.requestManager.schedule(request, 1);
+        // This endpoint returns an HTML fragment with <img> tags!
         const $ = this.cheerio.load(response.data);
         return this.parser.parseChapterDetails($, mangaId, chapterId);
     }
@@ -544,7 +548,7 @@ class WeebCentral {
         const manga = this.parser.parseSearchResults($);
         return App.createPagedResults({
             results: manga,
-            metadata: undefined
+            metadata: undefined // WeebCentral search seems to load all at once or handled differently
         });
     }
     async getHomePageSections(sectionCallback) {
@@ -592,16 +596,24 @@ const types_1 = require("@paperback/types");
 class WeebCentralParser {
     parseMangaDetails($, mangaId) {
         var _a;
+        // Title is in h1, usually hidden on desktop but present
+        // In provided HTML: <h1 class="md:hidden text-2xl font-bold text-center">Kingdom</h1>
+        // Also <h1 class="hidden md:block text-2xl font-bold">Kingdom</h1>
         const title = $('h1').first().text().trim();
+        // Image
         const image = (_a = $('img[alt$=" cover"]').attr('src')) !== null && _a !== void 0 ? _a : 'https://paperback.moe/icons/logo-alt.svg';
+        // Description
         const desc = $('strong:contains("Description")').next('p').text().trim();
+        // Author
         const author = $('strong:contains("Author(s)")').next().find('a').text().trim();
+        // Status
         const statusStr = $('strong:contains("Status")').next('a').text().trim();
         let status = 'Unknown';
         if (statusStr.toLowerCase().includes('ongoing'))
             status = 'Ongoing';
         else if (statusStr.toLowerCase().includes('complete'))
             status = 'Completed';
+        // Tags
         const arrayTags = [];
         $('strong:contains("Tags(s)")').nextAll('span').each((_, span) => {
             const a = $('a', span);
@@ -624,11 +636,16 @@ class WeebCentralParser {
     }
     parseChapters($, mangaId) {
         const chapters = [];
+        // The HTML contains a list of links to chapters
+        // <a href="https://weebcentral.com/chapters/01KAGRKGDS2NTSVE5FRKXJ7KTP" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        // <span class="grow flex items-center gap-2"><span class="">Chapter 857</span>...</span>
+        // <time ...>...</time>
         $('a[href*="/chapters/"]').each((_, element) => {
             const href = $(element).attr('href');
             const id = href === null || href === void 0 ? void 0 : href.split('/chapters/')[1];
             const chapterTextSpan = $(element).find('span.grow span').first();
-            const name = chapterTextSpan.text().trim();
+            const name = chapterTextSpan.text().trim(); // "Chapter 857"
+            // Extract number
             const numMatch = name.match(/(\d+(\.\d+)?)/);
             const chapNum = numMatch ? parseFloat(numMatch[0]) : 0;
             const timeStr = $(element).find('time').attr('datetime');
@@ -647,6 +664,7 @@ class WeebCentralParser {
     }
     parseChapterDetails($, mangaId, chapterId) {
         const pages = [];
+        // The response from /chapters/{id}/images?reading_style=long_strip is a fragment with images
         $('img').each((_, img) => {
             const src = $(img).attr('src');
             if (src)
@@ -660,10 +678,13 @@ class WeebCentralParser {
     }
     parseSearchResults($) {
         const results = [];
+        // Search results structure is similar to "Latest Updates"
+        // <article ...><a href="/series/ID/Slug">...<div ...>Title</div></a></article>
         $('article').each((_, article) => {
             var _a, _b, _c, _d;
             const link = $('a', article).attr('href');
             const id = (_c = (_b = (_a = link === null || link === void 0 ? void 0 : link.split('/series/')) === null || _a === void 0 ? void 0 : _a[1]) === null || _b === void 0 ? void 0 : _b.split('/')) === null || _c === void 0 ? void 0 : _c[0];
+            // Title can be in different places depending on view mode, but usually in a div with text
             let title = $('.font-semibold', article).text().trim();
             if (!title)
                 title = $('.text-white', article).text().trim();
@@ -692,11 +713,9 @@ class WeebCentralParser {
             containsMoreItems: true,
             type: types_1.HomeSectionType.singleRowNormal,
         });
-        // --- 1. Parsing HOT UPDATES ---
+        // Hot Updates
         const hotManga = [];
-        // Strategia più robusta: Trova l'H2 che contiene il testo, poi prendi la sezione successiva
-        const hotHeader = $('h2').filter((_, el) => $(el).text().includes('Hot Updates')).first();
-        const hotContainer = hotHeader.next('section');
+        const hotContainer = $('section:has(h2:contains("Hot Updates"))').first();
         $('article', hotContainer).each((_, manga) => {
             var _a, _b, _c;
             const link = $('a', manga).attr('href');
@@ -714,11 +733,9 @@ class WeebCentralParser {
         });
         hotSection.items = hotManga;
         sectionCallback(hotSection);
-        // --- 2. Parsing LATEST UPDATES ---
+        // Latest Updates
         const latestManga = [];
-        // Stessa strategia robusta
-        const latestHeader = $('h2').filter((_, el) => $(el).text().includes('Latest Updates')).first();
-        const latestContainer = latestHeader.next('section');
+        const latestContainer = $('section:has(h2:contains("Latest Updates"))').first();
         $('article', latestContainer).each((_, manga) => {
             var _a, _b, _c;
             const linkElement = $('a[href*="/series/"]', manga);
