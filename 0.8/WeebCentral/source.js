@@ -465,7 +465,7 @@ const types_1 = require("@paperback/types");
 const WeebCentralParser_1 = require("./WeebCentralParser");
 const DOMAIN = 'https://weebcentral.com';
 exports.WeebCentralInfo = {
-    version: '1.0.0',
+    version: '1.0.1',
     name: 'WeebCentral',
     icon: 'icon.png',
     author: 'GameFuzzy',
@@ -508,22 +508,21 @@ class WeebCentral {
         return `${this.baseUrl}/series/${mangaId}`;
     }
     async getMangaDetails(mangaId) {
-        // Placeholder: Richiede l'HTML della pagina dettaglio per essere implementato
+        // FIX: Aggiunta la proprietà 'desc' obbligatoria
         return App.createSourceManga({
             id: mangaId,
             mangaInfo: App.createMangaInfo({
                 titles: ['Title Placeholder'],
                 image: 'https://paperback.moe/icons/logo-alt.svg',
-                status: 'Unknown'
+                status: 'Unknown',
+                desc: 'Description not available yet'
             })
         });
     }
     async getChapters(mangaId) {
-        // Placeholder: Richiede l'HTML della pagina dettaglio per essere implementato
         return [];
     }
     async getChapterDetails(mangaId, chapterId) {
-        // Placeholder: Richiede l'HTML del lettore per essere implementato
         return App.createChapterDetails({
             id: chapterId,
             mangaId: mangaId,
@@ -531,7 +530,6 @@ class WeebCentral {
         });
     }
     async getSearchResults(query, metadata) {
-        // Placeholder: Richiede l'HTML della ricerca per essere implementato
         return App.createPagedResults({ results: [] });
     }
     async getHomePageSections(sectionCallback) {
