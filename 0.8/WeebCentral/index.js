@@ -466,7 +466,7 @@ const WeebCentralParser_1 = require("./WeebCentralParser");
 const helper_1 = require("../helper");
 const DOMAIN = 'https://weebcentral.com';
 exports.WeebCentralInfo = {
-    version: '1.0.4',
+    version: '1.0.5',
     name: 'WeebCentral',
     icon: 'icon.png',
     author: 'GameFuzzy',
@@ -554,7 +554,31 @@ class WeebCentral {
         const $ = this.cheerio.load(response.data);
         this.parser.parseHomeSections($, sectionCallback);
     }
-    async getViewMoreItems(_, metadata) {
+    async getViewMoreItems(homepageSectionId, metadata) {
+        var _a;
+        const page = (_a = metadata === null || metadata === void 0 ? void 0 : metadata.page) !== null && _a !== void 0 ? _a : 1;
+        let url = '';
+        // Gestisce la paginazione per Latest Updates
+        if (homepageSectionId === 'latest_updates') {
+            url = `${this.baseUrl}/latest-updates/${page}`;
+        }
+        else {
+            return App.createPagedResults({ results: [] });
+        }
+        const request = App.createRequest({
+            url: url,
+            method: 'GET',
+        });
+        const response = await this.requestManager.schedule(request, 1);
+        const $ = this.cheerio.load(response.data);
+        // Riutilizziamo parseSearchResults perché la struttura delle card è identica
+        const manga = this.parser.parseSearchResults($);
+        if (manga.length > 0) {
+            return App.createPagedResults({
+                results: manga,
+                metadata: { page: page + 1 }
+            });
+        }
         return App.createPagedResults({ results: [] });
     }
     async getCloudflareBypassRequestAsync() {
@@ -563,7 +587,7 @@ class WeebCentral {
             method: 'GET',
             headers: {
                 'referer': `${this.baseUrl}/`,
-                'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                'user-agent': await this.requestManager.getDefaultUserAgent()
             }
         });
     }
@@ -574,7 +598,7 @@ class WeebCentral {
             .addPathComponent('data')
             .addQueryParameter('text', encodeURIComponent((_a = query === null || query === void 0 ? void 0 : query.title) !== null && _a !== void 0 ? _a : ''))
             .addQueryParameter('display_mode', 'Full Display')
-            .addQueryParameter('official', 'Any'); // Importante per non filtrare troppo
+            .addQueryParameter('official', 'Any');
         return App.createRequest({
             url: url.buildUrl(),
             method: 'GET',
