@@ -12,7 +12,9 @@ import {
 export class WeebCentralParser {
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
+        // Titolo: Cerca l'h1 (visibile o nascosto)
         const title = $('h1').first().text().trim()
+        
         const image = $('img[alt$=" cover"]').attr('src') ?? 'https://paperback.moe/icons/logo-alt.svg'
         const desc = $('strong:contains("Description")').next('p').text().trim()
         const author = $('strong:contains("Author(s)")').next().find('a').text().trim()
@@ -96,9 +98,23 @@ export class WeebCentralParser {
             const link = $('a', article).attr('href')
             const id = link?.split('/series/')?.[1]?.split('/')?.[0]
             
-            let title = $('.font-semibold', article).text().trim()
-            if (!title) title = $('.text-white', article).text().trim()
+            // STRATEGIA MIGLIORATA PER IL TITOLO
+            // 1. Prova a prendere il titolo dall'attributo 'data-tip' (Metodo più sicuro su WeebCentral)
+            let title = $(article).attr('data-tip')?.trim()
+
+            // 2. Fallback: Se non c'è data-tip, cerca nel testo ma ignora "Official"
+            if (!title) {
+                 // Cerca l'elemento di testo principale
+                 const textElement = $('.font-semibold, .text-white', article).first()
+                 title = textElement.text().trim()
+            }
             
+            // 3. Controllo finale: Se il titolo è "Official", significa che abbiamo preso il badge sbagliato.
+            // Proviamo a prendere l'alt dell'immagine come ultima risorsa.
+            if (title === 'Official' || !title) {
+                title = $('img', article).attr('alt')?.replace(' cover', '') ?? ''
+            }
+
             const image = $('img', article).attr('src') ?? ''
 
             if (id && title) {
@@ -129,17 +145,19 @@ export class WeebCentralParser {
             type: HomeSectionType.singleRowNormal,
         })
 
-        // --- 1. Parsing HOT UPDATES ---
+        // Parsing Hot Updates
         const hotManga: PartialSourceManga[] = []
-        
-        // Strategia più robusta: Trova l'H2 che contiene il testo, poi prendi la sezione successiva
         const hotHeader = $('h2').filter((_: any, el: any) => $(el).text().includes('Hot Updates')).first()
         const hotContainer = hotHeader.next('section')
         
         $('article', hotContainer).each((_: any, manga: any) => {
             const link = $('a', manga).attr('href')
             const id = link?.split('/series/')?.[1]?.split('/')?.[0]
-            const title = $('.text-white.text-center.text-lg', manga).first().text().trim()
+            
+            // Usa data-tip anche qui per sicurezza
+            let title = $(manga).attr('data-tip')?.trim()
+            if (!title) title = $('.text-white.text-center.text-lg', manga).first().text().trim()
+            
             const image = $('img', manga).attr('src')
             
             if (id && title) {
@@ -154,11 +172,8 @@ export class WeebCentralParser {
         hotSection.items = hotManga
         sectionCallback(hotSection)
 
-
-        // --- 2. Parsing LATEST UPDATES ---
+        // Parsing Latest Updates
         const latestManga: PartialSourceManga[] = []
-        
-        // Stessa strategia robusta
         const latestHeader = $('h2').filter((_: any, el: any) => $(el).text().includes('Latest Updates')).first()
         const latestContainer = latestHeader.next('section')
 
@@ -166,7 +181,11 @@ export class WeebCentralParser {
             const linkElement = $('a[href*="/series/"]', manga)
             const link = linkElement.attr('href')
             const id = link?.split('/series/')?.[1]?.split('/')?.[0]
-            const title = $('.font-semibold.text-lg', manga).text().trim()
+            
+            // Usa data-tip anche qui per sicurezza
+            let title = $(manga).attr('data-tip')?.trim()
+            if (!title) title = $('.font-semibold.text-lg', manga).text().trim()
+
             const image = $('img', manga).attr('src')
             const chapter = $('span', manga).last().text().trim()
 
