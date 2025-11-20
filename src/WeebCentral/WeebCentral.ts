@@ -23,7 +23,7 @@ import { URLBuilder } from '../helper'
 const DOMAIN = 'https://weebcentral.com'
 
 export const WeebCentralInfo: SourceInfo = {
-    version: '1.0.2',
+    version: '1.0.3',
     name: 'WeebCentral',
     icon: 'icon.png',
     author: 'GameFuzzy',
@@ -81,8 +81,7 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        // We fetch the specific full-chapter-list endpoint as it contains all chapters
-        // The main page might truncate them
+        // Scarichiamo la lista completa dei capitoli direttamente
         const request = App.createRequest({
             url: `${this.baseUrl}/series/${mangaId}/full-chapter-list`,
             method: 'GET',
@@ -93,16 +92,13 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
+        // WeebCentral carica le immagini nella pagina "images" con reading_style
         const request = App.createRequest({
             url: `${this.baseUrl}/chapters/${chapterId}/images?reading_style=long_strip`,
             method: 'GET',
         })
         
-        // WeebCentral loads images differently, likely via a specific endpoint or just in the HTML
-        // However, usually these sites have a standard image list in the HTML of the reading page.
-        // Let's try fetching the chapter page first.
         const response = await this.requestManager.schedule(request, 1)
-        // This endpoint returns an HTML fragment with <img> tags!
         const $ = this.cheerio.load(response.data)
         return this.parser.parseChapterDetails($, mangaId, chapterId)
     }
@@ -115,7 +111,7 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
          
          return App.createPagedResults({
              results: manga,
-             metadata: undefined // WeebCentral search seems to load all at once or handled differently
+             metadata: undefined
          })
     }
 
