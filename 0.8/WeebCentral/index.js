@@ -466,7 +466,7 @@ const WeebCentralParser_1 = require("./WeebCentralParser");
 const helper_1 = require("../helper");
 const DOMAIN = 'https://weebcentral.com';
 exports.WeebCentralInfo = {
-    version: '1.0.8',
+    version: '1.0.9',
     name: 'WeebCentral',
     icon: 'icon.png',
     // --- AUTORE AGGIORNATO ---
@@ -594,15 +594,21 @@ class WeebCentral {
     constructSearchRequest(query) {
         var _a;
         const queryText = (_a = query === null || query === void 0 ? void 0 : query.title) !== null && _a !== void 0 ? _a : '';
-        // FIX: Correzione dello slug per titoli multipli (es. One-Piece)
+        // CORREZIONE DELLO SLUG (TRATTINI): Il server non accetta URL-encoding per gli spazi.
+        // Convertiamo il testo in un URL-slug (es. "One Piece" -> "one-piece").
+        // Rimuoviamo anche gli apostrofi (es. "L'app" -> "lapp").
         const encodedText = queryText.replace(/'/g, '').trim().toLowerCase().replace(/ /g, '-');
         const url = new helper_1.URLBuilder(this.baseUrl)
             .addPathComponent('search')
             .addQueryParameter('text', encodedText) // Passiamo lo slug
             .addQueryParameter('display_mode', 'Full Display')
             .addQueryParameter('official', 'Any');
+        // NOTA: Aggiungiamo 'data' al percorso manualmente se necessario.
+        // Dal codice HTML, sembra che il sito usi AJAX per caricare i risultati in un secondo momento,
+        // ma per Paperback, proviamo a chiamare direttamente il percorso dei dati.
+        const finalUrl = url.buildUrl().replace('/search?', '/search/data?');
         return App.createRequest({
-            url: url.buildUrl(),
+            url: finalUrl,
             method: 'GET',
         });
     }
