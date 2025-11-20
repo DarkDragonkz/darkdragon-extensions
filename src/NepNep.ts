@@ -26,7 +26,8 @@ export abstract class NepNep implements SearchResultsProviding, MangaProviding, 
     abstract baseUrl: string;
     parser = new NepNepParser()
 
-    constructor(private cheerio: CheerioAPI) { }
+    // FIX: Sostituito CheerioAPI con any per compatibilità
+    constructor(private cheerio: any) { }
 
     requestManager = App.createRequestManager({
         requestsPerSecond: 0.5,
