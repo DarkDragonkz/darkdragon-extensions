@@ -18,11 +18,12 @@ import {
 } from '@paperback/types'
 
 import { WeebCentralParser } from './WeebCentralParser'
+import { URLBuilder } from '../helper'
 
 const DOMAIN = 'https://weebcentral.com'
 
 export const WeebCentralInfo: SourceInfo = {
-    version: '1.0.1',
+    version: '1.0.2',
     name: 'WeebCentral',
     icon: 'icon.png',
     author: 'GameFuzzy',
@@ -70,32 +71,52 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
-        // FIX: Aggiunta la proprietà 'desc' obbligatoria
-        return App.createSourceManga({
-            id: mangaId,
-            mangaInfo: App.createMangaInfo({
-                titles: ['Title Placeholder'],
-                image: 'https://paperback.moe/icons/logo-alt.svg',
-                status: 'Unknown',
-                desc: 'Description not available yet' 
-            })
+        const request = App.createRequest({
+            url: `${this.baseUrl}/series/${mangaId}`,
+            method: 'GET',
         })
+        const response = await this.requestManager.schedule(request, 1)
+        const $ = this.cheerio.load(response.data)
+        return this.parser.parseMangaDetails($, mangaId)
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        return []
+        // We fetch the specific full-chapter-list endpoint as it contains all chapters
+        // The main page might truncate them
+        const request = App.createRequest({
+            url: `${this.baseUrl}/series/${mangaId}/full-chapter-list`,
+            method: 'GET',
+        })
+        const response = await this.requestManager.schedule(request, 1)
+        const $ = this.cheerio.load(response.data)
+        return this.parser.parseChapters($, mangaId)
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        return App.createChapterDetails({
-            id: chapterId,
-            mangaId: mangaId,
-            pages: []
+        const request = App.createRequest({
+            url: `${this.baseUrl}/chapters/${chapterId}/images?reading_style=long_strip`,
+            method: 'GET',
         })
+        
+        // WeebCentral loads images differently, likely via a specific endpoint or just in the HTML
+        // However, usually these sites have a standard image list in the HTML of the reading page.
+        // Let's try fetching the chapter page first.
+        const response = await this.requestManager.schedule(request, 1)
+        // This endpoint returns an HTML fragment with <img> tags!
+        const $ = this.cheerio.load(response.data)
+        return this.parser.parseChapterDetails($, mangaId, chapterId)
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-         return App.createPagedResults({ results: [] })
+         const request = this.constructSearchRequest(query)
+         const response = await this.requestManager.schedule(request, 1)
+         const $ = this.cheerio.load(response.data)
+         const manga = this.parser.parseSearchResults($)
+         
+         return App.createPagedResults({
+             results: manga,
+             metadata: undefined // WeebCentral search seems to load all at once or handled differently
+         })
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
@@ -120,6 +141,19 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
                 'referer': `${this.baseUrl}/`,
                 'user-agent': await this.requestManager.getDefaultUserAgent()
             }
+        })
+    }
+
+    constructSearchRequest(query: SearchRequest): any {
+        const url = new URLBuilder(this.baseUrl)
+            .addPathComponent('search')
+            .addPathComponent('data')
+            .addQueryParameter('text', encodeURIComponent(query?.title ?? ''))
+            .addQueryParameter('display_mode', 'Full Display')
+            
+        return App.createRequest({
+            url: url.buildUrl(),
+            method: 'GET',
         })
     }
 }
