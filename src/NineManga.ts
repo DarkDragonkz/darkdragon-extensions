@@ -25,7 +25,8 @@ export const getExportVersion = (EXTENSION_VERSION: string): string => {
 }
 
 export abstract class NineManga implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding {
-    constructor(private cheerio: CheerioAPI) {}
+    // FIX: Sostituito CheerioAPI con any per evitare conflitti di tipo
+    constructor(private cheerio: any) {}
     
     userAgentRandomizer = `Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:77.0) Gecko/20100101 Firefox/78.0${Math.floor(Math.random() * 100000)}`
     requestManager = App.createRequestManager({

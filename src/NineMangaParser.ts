@@ -10,7 +10,8 @@ import {
 } from '@paperback/types'
 
 export class Parser {
-    parseMangaDetails($: CheerioStatic, mangaId: string, source: any): SourceManga {
+    // FIX: Tipi di Cheerio sostituiti con any
+    parseMangaDetails($: any, mangaId: string, source: any): SourceManga {
         const title = $('.bookface img').attr('alt') ?? ''
         const image = $('.bookface img').attr('src') ?? 'https://paperback.moe/icons/logo-alt.svg'
         let desc = $('.bookintro p').text().trim().replace('Summary:', '') ?? ''
@@ -57,7 +58,7 @@ export class Parser {
         })
     }
 
-    parseChapters($: CheerioStatic, mangaId: string, source: any): Chapter[] {
+    parseChapters($: any, mangaId: string, source: any): Chapter[] {
         const chapters: Chapter[] = []
         let prevChapNum = 1
         const arrChapters = $('.sub_vol_ul li').toArray().reverse()
@@ -79,7 +80,7 @@ export class Parser {
         return chapters
     }
 
-    async parseChapterDetails($: CheerioStatic, mangaId: string, id: string, source: any): Promise<ChapterDetails> {
+    async parseChapterDetails($: any, mangaId: string, id: string, source: any): Promise<ChapterDetails> {
         const pages: string[] = []
         const pageArr = $('select#page option').toArray()
         let end = ''
@@ -99,7 +100,7 @@ export class Parser {
         })
     }
 
-    parseSearchResults($: CheerioSelector, source: any): PartialSourceManga[] {
+    parseSearchResults($: any, source: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         for (const obj of $('.direlist .bookinfo').toArray()) {
             const id = $('.bookname', obj).attr('href')?.replace(`${source.baseUrl}/manga/`, '').replace('.html', '') ?? ''
@@ -118,7 +119,7 @@ export class Parser {
         return results
     }
 
-    parseTags($: CheerioSelector): TagSection[] {
+    parseTags($: any): TagSection[] {
         const genres: Tag[] = []
         for (const obj of $('div.typelist li.cate_list').toArray()) {
             const id = $(obj).attr('cate_id')
@@ -129,7 +130,7 @@ export class Parser {
         return [App.createTagSection({ id: '0', label: 'genres', tags: genres })]
     }
 
-    async parseHomeSections($: CheerioStatic, $$: CheerioStatic, sectionCallback: (section: HomeSection) => void, source: any): Promise<void> {
+    async parseHomeSections($: any, $$: any, sectionCallback: (section: HomeSection) => void, source: any): Promise<void> {
         const section1 = App.createHomeSection({
             id: '1',
             title: 'Latest Manga',
@@ -231,7 +232,7 @@ export class Parser {
         sectionCallback(section4)
     }
 
-    filterUpdatedManga($: CheerioSelector, time: Date, ids: string[], source: any): string[] {
+    filterUpdatedManga($: any, time: Date, ids: string[], source: any): string[] {
         let passedReferenceTimePrior = false
         let passedReferenceTimeCurrent = false
         const updatedManga: string[] = []
