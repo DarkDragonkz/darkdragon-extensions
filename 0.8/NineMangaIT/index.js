@@ -471,6 +471,7 @@ const getExportVersion = (EXTENSION_VERSION) => {
 };
 exports.getExportVersion = getExportVersion;
 class NineManga {
+    // FIX: Sostituito CheerioAPI con any per evitare conflitti di tipo
     constructor(cheerio) {
         this.cheerio = cheerio;
         this.userAgentRandomizer = `Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:77.0) Gecko/20100101 Firefox/78.0${Math.floor(Math.random() * 100000)}`;
@@ -716,6 +717,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Parser = void 0;
 const types_1 = require("@paperback/types");
 class Parser {
+    // FIX: Tipi di Cheerio sostituiti con any
     parseMangaDetails($, mangaId, source) {
         var _a, _b, _c, _d, _e, _f;
         const title = (_a = $('.bookface img').attr('alt')) !== null && _a !== void 0 ? _a : '';
