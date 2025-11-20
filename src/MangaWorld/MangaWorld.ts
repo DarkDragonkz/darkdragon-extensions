@@ -16,14 +16,14 @@ import {
     TagSection,
     PartialSourceManga,
 } from '@paperback/types'
-import { CheerioAPI } from 'cheerio'
+
 import { Parser } from './parser'
 import { URLBuilder } from './helper'
 
 const MW_DOMAIN = 'https://www.mangaworld.mx'
 
 export const MangaWorldInfo: SourceInfo = {
-    version: '3.0.2',
+    version: '3.0.3',
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld (0.8).',
     author: 'NmN',
@@ -43,7 +43,10 @@ export const MangaWorldInfo: SourceInfo = {
 
 export class MangaWorld implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding { 
     baseUrl = MW_DOMAIN
-    constructor(private cheerio: CheerioAPI) {}
+    
+    // MODIFICA: Usiamo 'any' per evitare errori di importazione di CheerioAPI
+    constructor(private cheerio: any) {}
+    
     RETRIES = 10
     parser = new Parser()
 
