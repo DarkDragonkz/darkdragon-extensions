@@ -16,14 +16,14 @@ import {
     TagSection,
     PartialSourceManga,
 } from '@paperback/types'
-
+import { CheerioAPI } from 'cheerio'
 import { Parser } from './parser'
 import { URLBuilder } from './helper'
 
-const MW_DOMAIN = 'https://www.mangaworld.ac'
+const MW_DOMAIN = 'https://www.mangaworld.mx'
 
 export const MangaWorldInfo: SourceInfo = {
-    version: '3.0.1',
+    version: '3.0.2',
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld (0.8).',
     author: 'NmN',
