@@ -466,11 +466,11 @@ const WeebCentralParser_1 = require("./WeebCentralParser");
 const helper_1 = require("../helper");
 const DOMAIN = 'https://weebcentral.com';
 exports.WeebCentralInfo = {
-    version: '1.0.5',
+    version: '1.0.6',
     name: 'WeebCentral',
     icon: 'icon.png',
-    author: 'DarkDragonkz',
-    authorWebsite: 'https://github.com/DarkDragonkz',
+    author: 'GameFuzzy',
+    authorWebsite: 'https://github.com/gamefuzzy',
     description: `Extension that pulls manga from ${DOMAIN}`,
     contentRating: types_1.ContentRating.MATURE,
     websiteBaseURL: DOMAIN,
@@ -558,7 +558,6 @@ class WeebCentral {
         var _a;
         const page = (_a = metadata === null || metadata === void 0 ? void 0 : metadata.page) !== null && _a !== void 0 ? _a : 1;
         let url = '';
-        // Gestisce la paginazione per Latest Updates
         if (homepageSectionId === 'latest_updates') {
             url = `${this.baseUrl}/latest-updates/${page}`;
         }
@@ -571,7 +570,6 @@ class WeebCentral {
         });
         const response = await this.requestManager.schedule(request, 1);
         const $ = this.cheerio.load(response.data);
-        // Riutilizziamo parseSearchResults perché la struttura delle card è identica
         const manga = this.parser.parseSearchResults($);
         if (manga.length > 0) {
             return App.createPagedResults({
@@ -593,10 +591,13 @@ class WeebCentral {
     }
     constructSearchRequest(query) {
         var _a;
+        const queryText = (_a = query === null || query === void 0 ? void 0 : query.title) !== null && _a !== void 0 ? _a : '';
+        // Sostituisce gli spazi con i trattini prima di codificare, simulando un URL slug
+        // Questo è il modo in cui molti server di manga si aspettano i titoli composti.
+        const encodedText = queryText.replace(/ /g, '-').replace(/'/g, '').toLowerCase();
         const url = new helper_1.URLBuilder(this.baseUrl)
             .addPathComponent('search')
-            .addPathComponent('data')
-            .addQueryParameter('text', encodeURIComponent((_a = query === null || query === void 0 ? void 0 : query.title) !== null && _a !== void 0 ? _a : ''))
+            .addQueryParameter('text', encodedText)
             .addQueryParameter('display_mode', 'Full Display')
             .addQueryParameter('official', 'Any');
         return App.createRequest({
