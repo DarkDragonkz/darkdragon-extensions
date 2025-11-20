@@ -34,7 +34,7 @@ export const MangaWorldInfo: SourceInfo = {
     websiteBaseURL: MW_DOMAIN,
     sourceTags: [
         {
-            text: 'ITALIAN',
+            text: 'Italian',
             type: BadgeColor.GREY,
         },
     ],
