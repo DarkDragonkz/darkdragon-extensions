@@ -466,7 +466,7 @@ const WeebCentralParser_1 = require("./WeebCentralParser");
 const helper_1 = require("../helper");
 const DOMAIN = 'https://weebcentral.com';
 exports.WeebCentralInfo = {
-    version: '1.0.2',
+    version: '1.0.3',
     name: 'WeebCentral',
     icon: 'icon.png',
     author: 'GameFuzzy',
@@ -518,8 +518,7 @@ class WeebCentral {
         return this.parser.parseMangaDetails($, mangaId);
     }
     async getChapters(mangaId) {
-        // We fetch the specific full-chapter-list endpoint as it contains all chapters
-        // The main page might truncate them
+        // Scarichiamo la lista completa dei capitoli direttamente
         const request = App.createRequest({
             url: `${this.baseUrl}/series/${mangaId}/full-chapter-list`,
             method: 'GET',
@@ -529,15 +528,12 @@ class WeebCentral {
         return this.parser.parseChapters($, mangaId);
     }
     async getChapterDetails(mangaId, chapterId) {
+        // WeebCentral carica le immagini nella pagina "images" con reading_style
         const request = App.createRequest({
             url: `${this.baseUrl}/chapters/${chapterId}/images?reading_style=long_strip`,
             method: 'GET',
         });
-        // WeebCentral loads images differently, likely via a specific endpoint or just in the HTML
-        // However, usually these sites have a standard image list in the HTML of the reading page.
-        // Let's try fetching the chapter page first.
         const response = await this.requestManager.schedule(request, 1);
-        // This endpoint returns an HTML fragment with <img> tags!
         const $ = this.cheerio.load(response.data);
         return this.parser.parseChapterDetails($, mangaId, chapterId);
     }
@@ -548,7 +544,7 @@ class WeebCentral {
         const manga = this.parser.parseSearchResults($);
         return App.createPagedResults({
             results: manga,
-            metadata: undefined // WeebCentral search seems to load all at once or handled differently
+            metadata: undefined
         });
     }
     async getHomePageSections(sectionCallback) {
