@@ -23,9 +23,10 @@ import { URLBuilder } from '../helper'
 const DOMAIN = 'https://weebcentral.com'
 
 export const WeebCentralInfo: SourceInfo = {
-    version: '1.0.7',
+    version: '1.0.8',
     name: 'WeebCentral',
     icon: 'icon.png',
+    // --- AUTORE AGGIORNATO ---
     author: 'DarkDragonkzz',
     authorWebsite: 'https://github.com/DarkDragonkz',
     description: `Extension that pulls manga from ${DOMAIN}`,
@@ -101,16 +102,17 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
         return this.parser.parseChapterDetails($, mangaId, chapterId)
     }
 
+    // --- LOGICA DI RICERCA CORRETTA ---
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-         const request = this.constructSearchRequest(query)
-         const response = await this.requestManager.schedule(request, 1)
-         const $ = this.cheerio.load(response.data)
-         const manga = this.parser.parseSearchResults($)
-         
-         return App.createPagedResults({
-             results: manga,
-             metadata: undefined
-         })
+        const request = this.constructSearchRequest(query)
+        const response = await this.requestManager.schedule(request, 1)
+        const $ = this.cheerio.load(response.data)
+        const manga = this.parser.parseSearchResults($)
+        
+        return App.createPagedResults({
+            results: manga,
+            metadata: undefined
+        })
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
@@ -167,9 +169,7 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
     constructSearchRequest(query: SearchRequest): any {
         const queryText = query?.title ?? ''
         
-        // CORREZIONE DEFINITIVA PER LA RICERCA CON PIÙ PAROLE:
-        // Convertiamo la query in slug (trattini) per emulare il formato URL atteso dal server.
-        // Questo risolve i problemi di ricerca con spazi.
+        // FIX: Correzione dello slug per titoli multipli (es. One-Piece)
         const encodedText = queryText.replace(/'/g, '').trim().toLowerCase().replace(/ /g, '-');
         
         const url = new URLBuilder(this.baseUrl)
