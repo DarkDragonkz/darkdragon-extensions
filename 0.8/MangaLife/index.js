@@ -1435,6 +1435,33 @@ Object.defineProperty(exports, "decodeXMLStrict", { enumerable: true, get: funct
 },{"./decode.js":62,"./encode.js":64,"./escape.js":65}],70:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.MangaLife = exports.MangaLifeInfo = void 0;
+const types_1 = require("@paperback/types");
+const NepNep_1 = require("../NepNep");
+const DOMAIN = 'https://weebcentral.com';
+exports.MangaLifeInfo = {
+    version: (0, NepNep_1.getExportVersion)('0.0.0'),
+    name: 'Manga4Life',
+    icon: 'icon.png',
+    author: 'GameFuzzy',
+    authorWebsite: 'https://github.com/gamefuzzy',
+    description: `Extension that pulls manga from ${DOMAIN}`,
+    contentRating: types_1.ContentRating.MATURE,
+    websiteBaseURL: DOMAIN,
+    sourceTags: [],
+    intents: types_1.SourceIntents.MANGA_CHAPTERS | types_1.SourceIntents.HOMEPAGE_SECTIONS | types_1.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
+};
+class MangaLife extends NepNep_1.NepNep {
+    constructor() {
+        super(...arguments);
+        this.baseUrl = DOMAIN;
+    }
+}
+exports.MangaLife = MangaLife;
+
+},{"../NepNep":71,"@paperback/types":61}],71:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 exports.NepNep = exports.getExportVersion = void 0;
 const NepNepParser_1 = require("./NepNepParser");
 const BASE_VERSION = '3.0.0';
@@ -1574,7 +1601,7 @@ class NepNep {
 }
 exports.NepNep = NepNep;
 
-},{"./NepNepParser":71}],71:[function(require,module,exports){
+},{"./NepNepParser":72}],72:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.NepNepParser = exports.regex = void 0;
@@ -1951,32 +1978,5 @@ class NepNepParser {
 }
 exports.NepNepParser = NepNepParser;
 
-},{"@paperback/types":61,"entities":69}],72:[function(require,module,exports){
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.MangaLife = exports.MangaLifeInfo = void 0;
-const types_1 = require("@paperback/types");
-const NepNep_1 = require("../NepNep");
-const DOMAIN = 'https://weebcentral.com/';
-exports.MangaLifeInfo = {
-    version: (0, NepNep_1.getExportVersion)('0.0.0'),
-    name: 'WeebCentral',
-    icon: 'icon.png',
-    author: 'GameFuzzy',
-    authorWebsite: 'https://github.com/gamefuzzy',
-    description: `Extension that pulls manga from ${DOMAIN}`,
-    contentRating: types_1.ContentRating.MATURE,
-    websiteBaseURL: DOMAIN,
-    sourceTags: [],
-    intents: types_1.SourceIntents.MANGA_CHAPTERS | types_1.SourceIntents.HOMEPAGE_SECTIONS | types_1.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
-};
-class MangaLife extends NepNep_1.NepNep {
-    constructor() {
-        super(...arguments);
-        this.baseUrl = DOMAIN;
-    }
-}
-exports.MangaLife = MangaLife;
-
-},{"../NepNep":70,"@paperback/types":61}]},{},[72])(72)
+},{"@paperback/types":61,"entities":69}]},{},[70])(70)
 });
