@@ -1,7 +1,7 @@
 {
   "name": "IT-extension-foreign-0.8",
   "repositoryName": "DarkDragonkz Extensions",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Repo for manga sources (MangaDex, MangaWorld, WeebCentral, NineManga). Optimized for Paperback 0.8",
   "main": "index.js",
   "scripts": {
@@ -16,18 +16,18 @@
     "@tsconfig/recommended": "^1.0.1",
     "@typescript-eslint/eslint-plugin": "^5.1.0",
     "@typescript-eslint/parser": "^5.57.1",
-    "eslint": "^7.27.0",
+    "eslint": "^7.32.0",
     "eslint-plugin-modules-newline": "^0.0.6",
     "typescript": "^4.9.5"
   },
   "dependencies": {
-    "@paperback/toolchain": "0.8.0-alpha.47",
-    "@paperback/types": "0.8.0-alpha.47",
+    "@paperback/toolchain": "^0.8.4",
+    "@paperback/types": "^0.8.4",
     "@types/crypto-js": "^4.1.1",
     "cheerio": "1.0.0-rc.12",
     "crypto-js": "^4.1.1",
     "entities": "^4.4.0",
     "nodemon": "^2.0.22",
-    "ts-node": "^10.2.1"
+    "ts-node": "^10.9.1"
   }
 }

@@ -138,7 +138,7 @@ export class Parser {
     }
 
     async parseHomeSections($: any, $$: any, sectionCallback: (section: HomeSection) => void, source: any): Promise<void> {
-        // Definiamo le sezioni come richieste dall'utente
+        // Definizione Sezioni
         const sectionAggiornamenti = App.createHomeSection({ id: 'top_update', title: 'In Evidenza', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
         const sectionPopolari = App.createHomeSection({ id: 'popular', title: 'Popolari', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
         const sectionNuovi = App.createHomeSection({ id: 'new', title: 'Nuove Aggiunte', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
@@ -155,7 +155,6 @@ export class Parser {
             const href = $('.bookname', obj).attr('href')
             const id = href?.replace(`${source.baseUrl}/manga/`, '').replace('.html', '') ?? ''
             
-            // Pulizia del titolo (rimuove la data in rosso se presente)
             let title = $('.bookface', obj).attr('title') ?? ''
             if(!title) title = $('.bookname', obj).text().trim()
 
@@ -173,58 +172,59 @@ export class Parser {
         sectionAggiornamenti.items = aggiornamenti
         sectionCallback(sectionAggiornamenti)
 
-        // 2. PARSING "POPOLARE" (Rightbox)
-        // Cerchiamo l'header che contiene "Popolare" e prendiamo la UL successiva
-        const popularHeader = $('.rightbox .ttline').filter((_: any, e: any) => $(e).text().includes('Popolare'))
-        const popularList = popularHeader.next('ul').find('li').toArray()
+        // FIX CRITICO: Selettori per Popolari e Nuovi basati sulla struttura fissa .rightbox
+        // La struttura è: .rightbox -> ul (Popolari) -> ul (Nuovi)
+        const rightBoxLists = $('.rightbox ul')
+        
+        // 2. PARSING "POPOLARE" (Prima lista UL nella rightbox)
+        if (rightBoxLists.length > 0) {
+            const popularList = rightBoxLists.eq(0).find('li').toArray()
+            for (const obj of popularList) {
+                const link = $('dt a', obj)
+                const id = link.attr('href')?.replace(`${source.baseUrl}/manga/`, '').replace('.html', '') ?? ''
+                
+                let image = $('img', link).attr('src') ?? ''
+                let title = $('img', link).attr('alt') ?? ''
+                if (!title) title = $('dd a.show_book_desc b', obj).text().trim()
 
-        for (const obj of popularList) {
-            const link = $('dt a', obj)
-            const id = link.attr('href')?.replace(`${source.baseUrl}/manga/`, '').replace('.html', '') ?? ''
-            let image = $('img', link).attr('src') ?? ''
-            let title = $('img', link).attr('alt') ?? ''
-            
-            if (!title) title = $('dd a.show_book_desc b', obj).text().trim()
-
-            if (id) {
-                popolari.push(App.createPartialSourceManga({
-                    image,
-                    title: title,
-                    mangaId: id,
-                    subtitle: undefined
-                }))
+                if (id) {
+                    popolari.push(App.createPartialSourceManga({
+                        image,
+                        title: title,
+                        mangaId: id,
+                        subtitle: 'Hot'
+                    }))
+                }
             }
         }
         sectionPopolari.items = popolari
         sectionCallback(sectionPopolari)
 
-        // 3. PARSING "NUOVO" (Rightbox)
-        // Stessa logica: cerchiamo header "Nuovo"
-        const newHeader = $('.rightbox .ttline').filter((_: any, e: any) => $(e).text().includes('Nuovo'))
-        const newList = newHeader.next('ul').find('li').toArray()
+        // 3. PARSING "NUOVO" (Seconda lista UL nella rightbox)
+        if (rightBoxLists.length > 1) {
+            const newList = rightBoxLists.eq(1).find('li').toArray()
+            for (const obj of newList) {
+                const link = $('dt a', obj)
+                const id = link.attr('href')?.replace(`${source.baseUrl}/manga/`, '').replace('.html', '') ?? ''
+                
+                let image = $('img', link).attr('src') ?? ''
+                let title = $('img', link).attr('alt') ?? ''
+                if (!title) title = $('dd a.show_book_desc b', obj).text().trim()
 
-        for (const obj of newList) {
-            const link = $('dt a', obj)
-            const id = link.attr('href')?.replace(`${source.baseUrl}/manga/`, '').replace('.html', '') ?? ''
-            let image = $('img', link).attr('src') ?? ''
-            let title = $('img', link).attr('alt') ?? ''
-            
-            if (!title) title = $('dd a.show_book_desc b', obj).text().trim()
-
-            if (id) {
-                nuovi.push(App.createPartialSourceManga({
-                    image,
-                    title: title,
-                    mangaId: id,
-                    subtitle: 'Novità'
-                }))
+                if (id) {
+                    nuovi.push(App.createPartialSourceManga({
+                        image,
+                        title: title,
+                        mangaId: id,
+                        subtitle: 'New'
+                    }))
+                }
             }
         }
         sectionNuovi.items = nuovi
         sectionCallback(sectionNuovi)
 
-        // 4. PARSING "ULTIMI AGGIORNAMENTI MANGA" (Lista Centrale - .homeupdate)
-        // Nota: Questa sezione nell'HTML non ha immagini (solo testo). Useremo un fallback.
+        // 4. PARSING "ULTIMI AGGIORNAMENTI" (Lista Centrale - .homeupdate)
         const arrRecenti = $('.homeupdate li').toArray()
         for (const obj of arrRecenti) {
             const link = $('h1.bookopen a', obj)
@@ -233,7 +233,7 @@ export class Parser {
             const title = link.text().trim()
             const latestChap = $('dl dt a', obj).text().trim()
 
-            // Fallback icona obbligatorio perché l'HTML non ha img qui
+            // Fallback icona
             const image = 'https://paperback.moe/icons/logo-alt.svg' 
 
             if (id && title) {
@@ -257,9 +257,7 @@ export class Parser {
             const id = $('a', obj).attr('href')?.replace(`${source.baseUrl}/manga/`, '').replace('.html', '') ?? ''
             let mangaTime: Date
             const timeSelector = $('dd', obj).text().trim() ?? ''
-            // eslint-disable-next-line prefer-const
             mangaTime = source.convertTime(timeSelector ?? '')
-            // Check if the date is valid, if it isn't we should skip it
             if (!mangaTime.getTime()) continue
             passedReferenceTimeCurrent = mangaTime <= time
             if (!passedReferenceTimeCurrent || !passedReferenceTimePrior) {
