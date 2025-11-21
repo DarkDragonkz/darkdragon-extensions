@@ -733,55 +733,51 @@ var _Sources = (() => {
   var import_types = __toESM(require_lib());
   var MP_DOMAIN = "https://mangapark.net";
   var MangaParkParser = class {
-    // Helper per correggere gli URL delle immagini (da relativi ad assoluti)
-    fixImageUrl(url) {
-      if (!url) return "https://paperback.moe/icons/logo-alt.svg";
-      if (url.startsWith("//")) return `https:${url}`;
-      if (url.startsWith("/")) return `${MP_DOMAIN}${url}`;
-      return url;
+    // Helper robusto per le immagini
+    getImageSrc(element, selector = "img") {
+      let img = element.find(selector).first();
+      let src = img.attr("src") || img.attr("data-src") || img.attr("srcset");
+      if (!src || src.includes("data:image")) {
+        return "https://paperback.moe/icons/logo-alt.svg";
+      }
+      if (src.startsWith("//")) src = `https:${src}`;
+      else if (src.startsWith("/")) src = `${MP_DOMAIN}${src}`;
+      return src;
     }
     parseMangaDetails($, mangaId) {
       let title = $("h3 a.link-hover").first().text().trim();
+      if (!title) title = $(".comic-detail h3").first().text().trim();
       if (!title) title = $("title").text().split("-")[0]?.trim() ?? "Unknown Title";
-      let image = $(".w-24.md\\:w-52 img").attr("src");
-      if (!image) image = $(".w-24 img").attr("src");
-      const finalImage = this.fixImageUrl(image);
+      let image = this.getImageSrc($, ".w-24 img, .w-32 img, .w-52 img, div.relative img");
       let desc = $(".limit-html-p").text().trim();
       if (!desc) desc = $(".limit-html").text().trim();
-      if (!desc) desc = "No description available";
+      if (!desc) desc = $('meta[name="description"]').attr("content") ?? "No description available";
       const authors = [];
       $('a[href*="/search?word="]').each((_, el) => {
-        if ($(el).parent().text().includes("Story") || $(el).parent().text().includes("Art")) {
-          authors.push($(el).text().trim());
+        const text = $(el).text().trim();
+        if (text && !text.includes("All") && $(el).parent().text().includes("Story")) {
+          authors.push(text);
         }
       });
       let author = authors.length > 0 ? authors.join(", ") : "Unknown";
-      if (author === "Unknown") {
-        const fallbackAuth = $("div.mt-2.text-sm.opacity-80 a").first().text().trim();
-        if (fallbackAuth) author = fallbackAuth;
-      }
       let status = "Ongoing";
-      const statusText = $("span.font-bold.uppercase").text().trim().toLowerCase();
+      const statusText = $("span.font-bold.uppercase.text-success, span.font-bold.uppercase.text-info").text().trim().toLowerCase();
       if (statusText.includes("completed")) status = "Completed";
       if (statusText.includes("hiatus")) status = "Hiatus";
       const arrayTags = [];
-      $('div:contains("Genres:")').find("span.whitespace-nowrap").each((_, el) => {
-        const tagText = $(el).text().trim();
-        if (tagText && tagText !== "Genres:" && tagText !== ",") {
-          const cleanTag = tagText.replace(/,/g, "").trim();
-          if (cleanTag) arrayTags.push({ id: cleanTag.toLowerCase(), label: cleanTag });
-        }
+      $('a[href^="/search?genres="]').each((_, el) => {
+        const id = $(el).text().trim();
+        if (id) arrayTags.push({ id: id.toLowerCase(), label: id });
       });
       const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })];
       return App.createSourceManga({
         id: mangaId,
         mangaInfo: App.createMangaInfo({
           titles: [title],
-          image: finalImage,
+          image,
           status,
           author,
           artist: "",
-          // Mettiamo vuoto per evitare errori di tipo
           tags: tagSections,
           desc
         })
@@ -789,7 +785,7 @@ var _Sources = (() => {
     }
     parseChapters($, mangaId) {
       const chapters = [];
-      const chapterNodes = $('div[data-name="chapter-list"] .group.flex.flex-col > div').toArray();
+      const chapterNodes = $("div.group.flex.flex-col > div.border-b").toArray();
       for (const node of chapterNodes) {
         const linkElement = $("a.link-hover.link-primary", node).first();
         const href = linkElement.attr("href");
@@ -803,9 +799,10 @@ var _Sources = (() => {
         const volMatch = titleRaw.match(/Vol\.(\d+)/i);
         const volNum = volMatch ? parseFloat(volMatch[1]) : void 0;
         let name = titleRaw;
-        const extraInfo = $(node).find("span.opacity-80").text().trim();
-        if (extraInfo && extraInfo !== ":" && extraInfo.length > 1) {
-          name += ` ${extraInfo}`;
+        const extraSpan = linkElement.next("span");
+        if (extraSpan.length > 0) {
+          const extraText = extraSpan.text().trim().replace(/^:\s*/, "");
+          if (extraText) name += ` - ${extraText}`;
         }
         chapters.push(App.createChapter({
           id: chapterId,
@@ -821,7 +818,7 @@ var _Sources = (() => {
     parseSearchResults($, baseUrl) {
       const results = [];
       const seenIds = /* @__PURE__ */ new Set();
-      const items = $("div.grid div.group.relative").toArray();
+      const items = $("div.group.relative").toArray();
       for (const item of items) {
         const link = $("a", item).first();
         const href = link.attr("href");
@@ -829,11 +826,11 @@ var _Sources = (() => {
         const id = idMatch ? idMatch[1] : null;
         if (!id || seenIds.has(id)) continue;
         seenIds.add(id);
-        const relativeImg = $("img", item).attr("src");
-        const image = this.fixImageUrl(relativeImg);
-        let title = $("h3 a", $(item).parent()).text().trim();
-        if (!title) title = $("a.font-bold", $(item).next()).text().trim();
-        if (!title) title = $("img", item).attr("alt") ?? "Unknown Title";
+        const image = this.getImageSrc($(item));
+        let title = $("img", item).attr("title");
+        if (!title) title = $("img", item).attr("alt");
+        if (!title) title = $(item).find(".bg-black\\/60 a").first().text().trim();
+        if (!title) title = "Unknown Title";
         results.push(App.createPartialSourceManga({
           mangaId: id,
           image,
@@ -849,33 +846,29 @@ var _Sources = (() => {
       const popularItems = [];
       const latestItems = [];
       const seenIds = /* @__PURE__ */ new Set();
-      const mangaCards = $("div.group.relative").toArray();
-      for (let i = 0; i < mangaCards.length; i++) {
-        const card = mangaCards[i];
-        const link = $("a", card).first();
+      const gridItems = $("div.grid > div.relative.w-full.group").toArray();
+      for (let i = 0; i < gridItems.length; i++) {
+        const item = gridItems[i];
+        const link = $("a", item).first();
         const href = link.attr("href");
         const idMatch = href?.match(/\/title\/(\d+)-/);
         const id = idMatch ? idMatch[1] : null;
         if (!id || seenIds.has(id)) continue;
         seenIds.add(id);
-        const relativeImg = $("img", card).attr("src");
-        const image = this.fixImageUrl(relativeImg);
-        let title = $("img", card).attr("title") || $("img", card).attr("alt");
-        if (!title) {
-          const parent = $(card).closest("div.flex");
-          title = parent.find("h3 a").text().trim();
-        }
+        const image = this.getImageSrc($(item));
+        let title = $("img", item).attr("title") || $("img", item).attr("alt");
+        if (!title) title = $(item).find(".bg-black\\/60 a").first().text().trim();
         if (!title) title = "Unknown";
-        const item = App.createPartialSourceManga({
+        const manga = App.createPartialSourceManga({
           mangaId: id,
           image,
           title,
           subtitle: void 0
         });
-        if (popularItems.length < 10) {
-          popularItems.push(item);
+        if (popularItems.length < 12) {
+          popularItems.push(manga);
         } else {
-          latestItems.push(item);
+          latestItems.push(manga);
         }
       }
       popularSection.items = popularItems;
@@ -906,7 +899,8 @@ var _Sources = (() => {
   // src/MangaPark/MangaPark.ts
   var MP_DOMAIN2 = "https://mangapark.net";
   var MangaParkInfo = {
-    version: "1.0.2",
+    version: "1.0.4",
+    // Bump version per forzare aggiornamento
     name: "MangaPark",
     icon: "icon.png",
     author: "DarkDragonkzz",
@@ -972,24 +966,22 @@ var _Sources = (() => {
       const response = await this.requestManager.schedule(request, 1);
       const $ = this.cheerio.load(response.data);
       const jsonScript = $('script[type="qwik/json"]').html();
-      if (!jsonScript) throw new Error("Failed to extract Qwik JSON data");
-      let jsonData;
-      try {
-        jsonData = JSON.parse(jsonScript);
-      } catch (e) {
-        throw new Error("Failed to parse Qwik JSON");
-      }
-      const objs = jsonData.objs || [];
       let pages = [];
-      for (const item of objs) {
-        if (Array.isArray(item) && item.length > 0) {
-          const firstItem = item[0];
-          if (typeof firstItem === "string" && firstItem.startsWith("http")) {
-            const isImageArray = item.every((x) => typeof x === "string" && x.startsWith("http"));
-            if (isImageArray && item.length > pages.length) {
-              pages = item;
+      if (jsonScript) {
+        try {
+          const jsonData = JSON.parse(jsonScript);
+          const objs = jsonData.objs || [];
+          for (const item of objs) {
+            if (Array.isArray(item) && item.length > 0) {
+              if (typeof item[0] === "string" && item[0].startsWith("http")) {
+                if (item.every((x) => typeof x === "string" && x.startsWith("http"))) {
+                  if (item.length > pages.length) pages = item;
+                }
+              }
             }
           }
+        } catch (e) {
+          console.log("JSON parse failed, trying fallback");
         }
       }
       if (pages.length === 0) throw new Error("No pages found");
@@ -1022,7 +1014,6 @@ var _Sources = (() => {
       const $ = this.cheerio.load(response.data);
       this.parser.parseHomeSections($, sectionCallback, MP_DOMAIN2);
     }
-    // FIX: Metodo obbligatorio per Cloudflare Bypass
     async getCloudflareBypassRequest() {
       return App.createRequest({
         url: MP_DOMAIN2,
