@@ -5,7 +5,6 @@ import {
     SourceIntents,
 } from '@paperback/types'
 
-// FIX: Percorsi corretti ../ invece di ./
 import { 
     getExportVersion, 
     NineManga 
@@ -14,7 +13,7 @@ import {
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: getExportVersion('0.0.3'),
+    version: getExportVersion('0.0.3'), // Aggiornato da 0.0.2 a 0.0.3
     name: 'NineMangaIT',
     description: 'Extension that pulls manga from it.ninemanga.com',
     author: 'NmN',
@@ -39,7 +38,6 @@ export class NineMangaIT extends NineManga {
     authorTag = 'Author(s)'
     statusTag = 'Stato'
     
-    // Ora che parseStatus è definito in NineManga, override è valido
     override parseStatus(str: string): string {
         let status = 'Unknown'
         switch (str.toLowerCase()) {
