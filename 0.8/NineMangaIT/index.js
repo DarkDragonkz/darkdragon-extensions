@@ -471,12 +471,25 @@ const getExportVersion = (EXTENSION_VERSION) => {
 };
 exports.getExportVersion = getExportVersion;
 class NineManga {
-    // FIX: Sostituito CheerioAPI con any per evitare conflitti di tipo
     constructor(cheerio) {
         this.cheerio = cheerio;
         this.userAgentRandomizer = `Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:77.0) Gecko/20100101 Firefox/78.0${Math.floor(Math.random() * 100000)}`;
+        // FIX: Aggiunto Interceptor per NineManga
         this.requestManager = App.createRequestManager({
             requestsPerSecond: 3,
+            interceptor: {
+                interceptRequest: async (request) => {
+                    var _a;
+                    request.headers = Object.assign(Object.assign({}, ((_a = request.headers) !== null && _a !== void 0 ? _a : {})), {
+                        'referer': `${this.baseUrl}/`,
+                        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    });
+                    return request;
+                },
+                interceptResponse: async (response) => {
+                    return response;
+                }
+            }
         });
         this.alternativeChapterUrl = false;
         this.parser = new NineMangaParser_1.Parser();
@@ -489,6 +502,7 @@ class NineManga {
         return true;
     }
     async getMangaDetails(mangaId) {
+        // Nota: L'interceptor ora gestisce gli header, non serve passarli manualmente se si usa requestManager
         const request = this.createRequest(`${this.baseUrl}/manga/${mangaId}?waring=1`);
         const response = await this.requestManager.schedule(request, this.RETRIES);
         this.checkResponseError(response);
@@ -511,7 +525,6 @@ class NineManga {
         const response = await this.requestManager.schedule(request, this.RETRIES);
         this.checkResponseError(response);
         const $ = this.cheerio.load(response.data);
-        // throw new Error(`${chapterId}-10-1 ${$.html().toString().substring(0, 500)}`)
         return this.parser.parseChapterDetails($, mangaId, chapterId, this);
     }
     async getSearchResults(query, metadata) {
@@ -550,14 +563,9 @@ class NineManga {
         const $$ = this.cheerio.load(response.data);
         await this.parser.parseHomeSections($, $$, sectionCallback, this);
     }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     async getViewMoreItems(_, __) {
         return App.createPagedResults({ results: [], metadata: { page: -1 } });
     }
-    /**
-     * Parses a time string from a Madara source into a Date object.
-     * Copied from Madara.ts made by gamefuzzy
-     */
     convertTime(timeAgo) {
         var _a;
         let time;
@@ -605,6 +613,7 @@ class NineManga {
     }
     constructHeaders(headers, refererPath) {
         headers = headers !== null && headers !== void 0 ? headers : {};
+        // L'interceptor sovrascriverà questi se necessario, ma li manteniamo per compatibilità
         if (this.userAgentRandomizer !== '') {
             headers['user-agent'] = this.userAgentRandomizer;
         }
@@ -646,72 +655,7 @@ class NineManga {
 }
 exports.NineManga = NineManga;
 
-},{"./NineMangaParser":64,"./helper":65}],63:[function(require,module,exports){
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.NineMangaIT = exports.NineMangaITInfo = void 0;
-const types_1 = require("@paperback/types");
-const NineManga_1 = require("../NineManga");
-const IT_DOMAIN = 'https://it.ninemanga.com';
-exports.NineMangaITInfo = {
-    version: (0, NineManga_1.getExportVersion)('0.0.0'),
-    name: 'NineMangaIT',
-    description: 'Extension that pulls manga from it.ninemanga.com',
-    author: 'NmN',
-    authorWebsite: 'http://github.com/pandyenmn',
-    icon: 'icon.png',
-    contentRating: types_1.ContentRating.EVERYONE,
-    language: 'it',
-    websiteBaseURL: IT_DOMAIN,
-    sourceTags: [
-        {
-            text: 'ITALIAN',
-            type: types_1.BadgeColor.GREEN
-        },
-    ],
-    intents: types_1.SourceIntents.MANGA_CHAPTERS | types_1.SourceIntents.HOMEPAGE_SECTIONS | types_1.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,
-};
-class NineMangaIT extends NineManga_1.NineManga {
-    constructor() {
-        super(...arguments);
-        this.baseUrl = IT_DOMAIN;
-        this.languageCode = 'it';
-        this.genreTag = 'Genere(s)';
-        this.authorTag = 'Author(s)';
-        this.statusTag = 'Stato';
-    }
-    parseStatus(str) {
-        let status = 'Unknown';
-        switch (str.toLowerCase()) {
-            case 'in corso':
-                status = 'Ongoing';
-                break;
-            case 'completato':
-                status = 'Completed';
-                break;
-        }
-        return status;
-    }
-    convertTime(timeAgo) {
-        var _a;
-        let time;
-        let trimmed = Number(((_a = /\d*/.exec(timeAgo)) !== null && _a !== void 0 ? _a : [])[0]);
-        trimmed = trimmed == 0 && timeAgo.includes('a') ? 1 : trimmed;
-        if (timeAgo.includes('mins') || timeAgo.includes('minutes') || timeAgo.includes('minute')) {
-            time = new Date(Date.now() - trimmed * 60000);
-        }
-        else if (timeAgo.includes('ore') || timeAgo.includes('hour')) {
-            time = new Date(Date.now() - trimmed * 3600000);
-        }
-        else {
-            time = new Date(timeAgo);
-        }
-        return time;
-    }
-}
-exports.NineMangaIT = NineMangaIT;
-
-},{"../NineManga":62,"@paperback/types":61}],64:[function(require,module,exports){
+},{"./NineMangaParser":63,"./helper":64}],63:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Parser = void 0;
@@ -973,7 +917,7 @@ class Parser {
 }
 exports.Parser = Parser;
 
-},{"@paperback/types":61}],65:[function(require,module,exports){
+},{"@paperback/types":61}],64:[function(require,module,exports){
 "use strict";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 Object.defineProperty(exports, "__esModule", { value: true });
@@ -1017,5 +961,5 @@ class URLBuilder {
 }
 exports.URLBuilder = URLBuilder;
 
-},{}]},{},[63])(63)
+},{}]},{},[62])(62)
 });

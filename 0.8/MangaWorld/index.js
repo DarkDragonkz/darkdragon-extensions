@@ -463,10 +463,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MangaWorld = exports.MangaWorldInfo = void 0;
 const types_1 = require("@paperback/types");
 const parser_1 = require("./parser");
-const helper_1 = require("./helper");
+const helper_1 = require("../helper");
 const MW_DOMAIN = 'https://www.mangaworld.mx';
 exports.MangaWorldInfo = {
-    version: '3.0.4',
+    version: '3.0.6',
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld (0.8).',
     author: 'NmN',
@@ -478,21 +478,34 @@ exports.MangaWorldInfo = {
     sourceTags: [
         {
             text: 'ITALIAN',
-            type: types_1.BadgeColor.GREEN,
+            type: types_1.BadgeColor.GREY,
         },
     ],
     intents: types_1.SourceIntents.MANGA_CHAPTERS | types_1.SourceIntents.HOMEPAGE_SECTIONS | types_1.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,
 };
 class MangaWorld {
-    // NOTA: Abbiamo rimosso l'import di CheerioAPI e usiamo 'any' qui.
-    // Questo risolve definitivamente l'errore TS2305.
     constructor(cheerio) {
         this.cheerio = cheerio;
         this.baseUrl = MW_DOMAIN;
         this.RETRIES = 10;
         this.parser = new parser_1.Parser();
+        // FIX: Aggiunto Interceptor per gestire Referer e User-Agent automaticamente
         this.requestManager = App.createRequestManager({
             requestsPerSecond: 8,
+            requestTimeout: 20000,
+            interceptor: {
+                interceptRequest: async (request) => {
+                    var _a;
+                    request.headers = Object.assign(Object.assign({}, ((_a = request.headers) !== null && _a !== void 0 ? _a : {})), {
+                        'referer': `${this.baseUrl}/`,
+                        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    });
+                    return request;
+                },
+                interceptResponse: async (response) => {
+                    return response;
+                }
+            }
         });
     }
     getMangaShareUrl(mangaId) {
@@ -575,10 +588,6 @@ class MangaWorld {
             metadata: { page: page + 1 },
         });
     }
-    /**
-     * Parses a time string from a Madara source into a Date object.
-     * Copied from Madara.ts made by gamefuzzy
-     */
     convertTime(timeAgo) {
         var _a;
         let time;
@@ -629,51 +638,7 @@ class MangaWorld {
 }
 exports.MangaWorld = MangaWorld;
 
-},{"./helper":63,"./parser":64,"@paperback/types":61}],63:[function(require,module,exports){
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.URLBuilder = void 0;
-/* eslint-disable @typescript-eslint/no-explicit-any */
-class URLBuilder {
-    constructor(baseUrl) {
-        this.parameters = {};
-        this.pathComponents = [];
-        this.baseUrl = baseUrl.replace(/(^\/)?(?=.*)(\/$)?/gim, '');
-    }
-    addPathComponent(component) {
-        this.pathComponents.push(component.replace(/(^\/)?(?=.*)(\/$)?/gim, ''));
-        return this;
-    }
-    addQueryParameter(key, value) {
-        this.parameters[key] = value;
-        return this;
-    }
-    buildUrl({ addTrailingSlash, includeUndefinedParameters } = { addTrailingSlash: false, includeUndefinedParameters: false }) {
-        let finalUrl = this.baseUrl + '/';
-        finalUrl += this.pathComponents.join('/');
-        finalUrl += addTrailingSlash ? '/' : '';
-        finalUrl += Object.values(this.parameters).length > 0 ? '?' : '';
-        finalUrl += Object.entries(this.parameters).map(entry => {
-            if (entry[1] == null && !includeUndefinedParameters) {
-                return undefined;
-            }
-            if (Array.isArray(entry[1])) {
-                return entry[1].map(value => value || includeUndefinedParameters ? `${entry[0]}=${value}` : undefined)
-                    .filter(x => x !== undefined)
-                    .join('&');
-            }
-            if (typeof entry[1] === 'object') {
-                return Object.keys(entry[1]).map(key => `${entry[0]}[${key}]=${entry[1][key]}`)
-                    .join('&');
-            }
-            return `${entry[0]}=${entry[1]}`;
-        }).filter(x => x !== undefined).join('&');
-        return finalUrl;
-    }
-}
-exports.URLBuilder = URLBuilder;
-
-},{}],64:[function(require,module,exports){
+},{"../helper":64,"./parser":63,"@paperback/types":61}],63:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Parser = void 0;
@@ -894,5 +859,49 @@ class Parser {
 }
 exports.Parser = Parser;
 
-},{"@paperback/types":61}]},{},[62])(62)
+},{"@paperback/types":61}],64:[function(require,module,exports){
+"use strict";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.URLBuilder = void 0;
+class URLBuilder {
+    constructor(baseUrl) {
+        this.parameters = {};
+        this.pathComponents = [];
+        this.baseUrl = baseUrl.replace(/(^\/)?(?=.*)(\/$)?/gim, '');
+    }
+    addPathComponent(component) {
+        this.pathComponents.push(component.replace(/(^\/)?(?=.*)(\/$)?/gim, ''));
+        return this;
+    }
+    addQueryParameter(key, value) {
+        this.parameters[key] = value;
+        return this;
+    }
+    buildUrl({ addTrailingSlash, includeUndefinedParameters } = { addTrailingSlash: false, includeUndefinedParameters: false }) {
+        let finalUrl = this.baseUrl + '/';
+        finalUrl += this.pathComponents.join('/');
+        finalUrl += addTrailingSlash ? '/' : '';
+        finalUrl += Object.values(this.parameters).length > 0 ? '?' : '';
+        finalUrl += Object.entries(this.parameters).map(entry => {
+            if (entry[1] == null && !includeUndefinedParameters) {
+                return undefined;
+            }
+            if (Array.isArray(entry[1])) {
+                return `${entry[0]}=` + entry[1].map(value => value || includeUndefinedParameters ? `${value},` : undefined)
+                    .filter(x => x !== undefined)
+                    .join('');
+            }
+            if (typeof entry[1] === 'object') {
+                return Object.keys(entry[1]).map(key => `${entry[0]}[${key}]=${entry[1][key]}`)
+                    .join('&');
+            }
+            return `${entry[0]}=${entry[1]}`;
+        }).filter(x => x !== undefined).join('&');
+        return finalUrl;
+    }
+}
+exports.URLBuilder = URLBuilder;
+
+},{}]},{},[62])(62)
 });
