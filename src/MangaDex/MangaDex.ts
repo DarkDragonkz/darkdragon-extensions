@@ -24,13 +24,13 @@ const MD_API = 'https://api.mangadex.org'
 const MD_UPLOADS = 'https://uploads.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '1.0.6',
-    name: 'MangaDex',
+    version: '2.0.0',
+    name: 'MangaDex (EN)',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
     authorWebsite: 'https://github.com/DarkDragonkz',
-    description: 'Extension for MangaDex (API v5)',
-    contentRating: ContentRating.EVERYONE,
+    description: 'MangaDex source (English Only)',
+    contentRating: ContentRating.MATURE,
     websiteBaseURL: 'https://mangadex.org',
     sourceTags: [
         {
@@ -98,21 +98,8 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        // Solo Inglese
-        const languages = ['en'] 
-        
-        const ratings = ['safe', 'suggestive', 'erotica', 'pornographic'] 
-
-        let url = `${MD_API}/manga/${mangaId}/feed?limit=500&order[chapter]=desc`
-        
-        for (const lang of languages) {
-            url += `&translatedLanguage[]=${lang}`
-        }
-        for (const rating of ratings) {
-            url += `&contentRating[]=${rating}`
-        }
-        
-        url += '&includeFutureUpdates=0'
+        // URL pulito: Solo inglese, ordinato per capitolo decrescente, limite 500
+        const url = `${MD_API}/manga/${mangaId}/feed?limit=500&translatedLanguage[]=en&order[chapter]=desc&includeFutureUpdates=0`
 
         const request = App.createRequest({
             url: url,
@@ -128,13 +115,21 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
 
         for (const chapter of data.data) {
             const attr = chapter.attributes
+            
+            // Saltiamo i capitoli che sono solo link esterni (es. MangaPlus)
             if (attr.externalUrl) continue
 
-            const lang = attr.translatedLanguage
             const chapNum = parseFloat(attr.chapter) || 0
-            const title = attr.title ? `${attr.title}` : (attr.chapter ? `Chapter ${attr.chapter}` : 'Oneshot')
             
-            // Nessuna bandierina necessaria dato che è solo inglese
+            // Titolo pulito: Se c'è un titolo specifico lo usa, altrimenti "Chapter X"
+            let title = ''
+            if (attr.title) {
+                title = attr.title
+            } else if (attr.chapter) {
+                title = `Chapter ${attr.chapter}`
+            } else {
+                title = 'Oneshot'
+            }
 
             chapters.push(App.createChapter({
                 id: chapter.id,
@@ -142,7 +137,7 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
                 chapNum: chapNum,
                 volume: parseFloat(attr.volume) || 0,
                 time: new Date(attr.publishAt),
-                langCode: lang
+                langCode: 'en'
             }))
         }
 
@@ -177,17 +172,11 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         const limit = 20
         const offset = metadata?.offset ?? 0
-        const ratings = ['safe', 'suggestive', 'erotica', 'pornographic']
-
-        let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&title=${encodeURIComponent(query.title ?? '')}&includes[]=cover_art&order[relevance]=desc`
         
-        for (const rating of ratings) {
-            url += `&contentRating[]=${rating}`
-        }
+        // Cerca titoli che contengono il testo, includendo copertine, ordinati per rilevanza.
+        // Includiamo TUTTI i content rating per essere sicuri di trovare il manga.
+        const url = `${MD_API}/manga?limit=${limit}&offset=${offset}&title=${encodeURIComponent(query.title ?? '')}&includes[]=cover_art&order[relevance]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`
         
-        // Nella ricerca generale non filtriamo per lingua perché MangaDex restituisce i manga, 
-        // che contengono capitoli in varie lingue. Il filtro si applica quando si aprono i capitoli.
-
         const request = App.createRequest({
             url: url,
             method: 'GET',
@@ -201,6 +190,7 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         if (data.data) {
             for (const manga of data.data) {
                 const attr = manga.attributes
+                // Fallback titolo intelligente
                 const title = attr.title.en ?? Object.values(attr.title)[0] ?? 'Unknown'
                 
                 const coverRel = manga.relationships.find((r: any) => r.type === 'cover_art')
@@ -223,17 +213,19 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
+        // Sezione Popolari
         const section1 = App.createHomeSection({
             id: 'popular',
-            title: 'Popular on MangaDex',
+            title: 'Popular (English Available)',
             containsMoreItems: false,
             type: HomeSectionType.singleRowNormal
         })
         sectionCallback(section1)
 
+        // Sezione Ultime Aggiunte
         const section2 = App.createHomeSection({
             id: 'latest',
-            title: 'Latest Updates',
+            title: 'Latest English Updates',
             containsMoreItems: false,
             type: HomeSectionType.singleRowNormal
         })
@@ -241,8 +233,8 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         
         const ratings = '&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica'
 
-        // Popolari
-        const popularUrl = `${MD_API}/manga?limit=10&order[followedCount]=desc&includes[]=cover_art${ratings}`
+        // Richiesta Popolari (Include lingua inglese disponibile)
+        const popularUrl = `${MD_API}/manga?limit=10&order[followedCount]=desc&includes[]=cover_art&availableTranslatedLanguage[]=en${ratings}`
         const popularRequest = App.createRequest({ url: popularUrl, method: 'GET' })
         const popularResponse = await this.requestManager.schedule(popularRequest, 1)
         const popularData = JSON.parse(popularResponse.data ?? '{}')
@@ -263,8 +255,8 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         section1.items = popularItems
         sectionCallback(section1)
 
-        // Ultime Aggiunte
-        const latestUrl = `${MD_API}/manga?limit=10&order[createdAt]=desc&includes[]=cover_art${ratings}`
+        // Richiesta Recenti (Filtra per lingua inglese)
+        const latestUrl = `${MD_API}/manga?limit=10&order[createdAt]=desc&includes[]=cover_art&availableTranslatedLanguage[]=en${ratings}`
         const latestRequest = App.createRequest({ url: latestUrl, method: 'GET' })
         const latestResponse = await this.requestManager.schedule(latestRequest, 1)
         const latestData = JSON.parse(latestResponse.data ?? '{}')
