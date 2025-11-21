@@ -782,17 +782,19 @@ var _Sources = (() => {
     parseChapters($, mangaId) {
       const chapters = [];
       const container = $('div[data-name="chapter-list"]');
-      const links = container.find("a.link-hover").toArray();
+      const links = container.find("a").toArray();
       for (const el of links) {
         const link = $(el);
         const href = link.attr("href");
         if (!href || !href.includes("/title/")) continue;
-        const chapterId = href.split("/").pop();
-        if (!chapterId || chapterId.length < 3) continue;
+        const parts = href.split("/");
+        const chapterId = parts.pop();
+        if (!chapterId || chapterId.length < 3 || !chapterId.match(/^\d+/)) continue;
         const titleRaw = link.text().trim();
+        if (!titleRaw) continue;
         let timeStr = "";
         let parent = link.parent();
-        for (let i = 0; i < 4; i++) {
+        for (let i = 0; i < 5; i++) {
           const timeTag = parent.find("time");
           if (timeTag.length > 0) {
             timeStr = timeTag.text().trim();
@@ -800,16 +802,18 @@ var _Sources = (() => {
           }
           parent = parent.parent();
         }
-        const chapNumMatch = titleRaw.match(/(?:ch|chapter|episode|vol)\.?\s*(\d+(\.\d+)?)/i);
-        let chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0;
-        if (chapNum === 0) {
-          const simpleNum = titleRaw.match(/(\d+(\.\d+)?)/g);
-          if (simpleNum && simpleNum.length > 0) {
-            chapNum = parseFloat(simpleNum[simpleNum.length - 1]);
+        const chapNumMatch = titleRaw.match(/(?:ch|chapter|episode|c)(?:\.|apters?|\s)*\s*(\d+(\.\d+)?)/i);
+        let chapNum = 0;
+        if (chapNumMatch) {
+          chapNum = parseFloat(chapNumMatch[1] ?? "0");
+        } else {
+          const simpleNums = titleRaw.match(/(\d+(\.\d+)?)/g);
+          if (simpleNums && simpleNums.length > 0) {
+            chapNum = parseFloat(simpleNums[simpleNums.length - 1] ?? "0");
           }
         }
         const volMatch = titleRaw.match(/Vol\.(\d+)/i);
-        const volNum = volMatch ? parseFloat(volMatch[1]) : void 0;
+        const volNum = volMatch ? parseFloat(volMatch[1] ?? "0") : void 0;
         let name = titleRaw;
         const extraInfo = link.next("span").text().trim().replace(/^:\s*/, "");
         if (extraInfo) name += ` - ${extraInfo}`;
@@ -838,7 +842,9 @@ var _Sources = (() => {
         let image = $("img", item).attr("src");
         image = this.fixImageUrl(image);
         let title = $("img", item).attr("title") || $("img", item).attr("alt");
-        if (!title) title = $(item).closest("div.flex").find("h3 a").text().trim();
+        if (!title) {
+          title = $(item).closest("div.flex").find("h3 a").text().trim();
+        }
         if (!title) title = "Unknown";
         results.push(App.createPartialSourceManga({
           mangaId: id,
