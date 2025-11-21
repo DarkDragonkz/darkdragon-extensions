@@ -53,12 +53,34 @@ export class WeebCentralParser {
             const href = $(element).attr('href')
             const id = href?.split('/chapters/')[1]
             
-            let name = $(element).find('span:contains("Chapter"), span:contains("Episode")').first().text().trim()
-            if (!name) name = $(element).find('.grow span').first().text().trim()
-            if (!name) name = $(element).text().trim()
+            // FIX SPAZIATURA: Cerchiamo il titolo in modo più specifico
+            // WeebCentral di solito mette il titolo in uno span con classe .grow o .font-bold
+            let name = $(element).find('.grow span, span.font-bold').first().text().trim()
+            
+            // Se non lo troviamo, prendiamo tutto il testo ma rimuoviamo la data (spesso in <time>)
+            if (!name) {
+                const clone = $(element).clone()
+                clone.find('time').remove() // Rimuoviamo la data
+                name = clone.text().trim()
+            }
 
+            // PULIZIA AGGRESSIVA:
+            // 1. Rimuove i ritorni a capo (\n) che creano lo spazio vuoto enorme
+            // 2. Riduce spazi multipli in uno solo
+            name = name.replace(/(\r\n|\n|\r)/gm, " ").replace(/\s+/g, " ").trim()
+
+            // Parsing del numero
             const numMatch = name.match(/(\d+(\.\d+)?)/g)
             const chapNum = numMatch ? parseFloat(numMatch[numMatch.length - 1] ?? '0') : 0
+
+            // FIX RIDONDANZA:
+            // Se il nome è solo "Chapter 51" o "Episode 51", lo svuotiamo.
+            // Paperback visualizzerà automaticamente "Ch. 51", quindi evitamiamo "Ch. 51 - Chapter 51".
+            // Se invece è "Chapter 51 - The Battle", manteniamo "The Battle".
+            const lowerName = name.toLowerCase()
+            if (lowerName === `chapter ${chapNum}` || lowerName === `episode ${chapNum}` || lowerName === `ch. ${chapNum}`) {
+                name = '' // Lasciamo che Paperback gestisca la visualizzazione standard
+            }
 
             const timeStr = $(element).find('time').attr('datetime')
             const time = timeStr ? new Date(timeStr) : new Date()
@@ -66,7 +88,7 @@ export class WeebCentralParser {
             if (id) {
                 chapters.push(App.createChapter({
                     id: id,
-                    name: name,
+                    name: name, // Ora è pulito e senza spazi
                     chapNum: chapNum,
                     langCode: 'en',
                     time: time
