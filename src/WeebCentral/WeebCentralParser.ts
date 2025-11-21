@@ -16,7 +16,7 @@ export class WeebCentralParser {
         if (!title) title = $('section:has(picture)').first().attr('data-tip') ?? ''
         
         const image = $('img[alt$=" cover"]').attr('src') ?? 'https://paperback.moe/icons/logo-alt.svg'
-        const desc = $('strong:contains("Description")').next('p').text().trim()
+        const desc = $('.whitespace-pre-wrap').text().trim()
         const author = $('strong:contains("Author(s)")').next().find('a').text().trim()
 
         const statusStr = $('strong:contains("Status")').next('a').text().trim()
@@ -57,8 +57,9 @@ export class WeebCentralParser {
             if (!name) name = $(element).find('.grow span').first().text().trim()
             if (!name) name = $(element).text().trim()
 
-            const numMatch = name.match(/(\d+(\.\d+)?)/)
-            const chapNum = numMatch ? parseFloat(numMatch[0]) : 0
+            const numMatch = name.match(/(\d+(\.\d+)?)/g)
+            const chapNum = numMatch ? parseFloat(numMatch[numMatch.length - 1] ?? '0') : 0
+
             const timeStr = $(element).find('time').attr('datetime')
             const time = timeStr ? new Date(timeStr) : new Date()
 
@@ -79,7 +80,9 @@ export class WeebCentralParser {
     parseChapterDetails($: any, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
         $('img').each((_: any, img: any) => {
-            const src = $(img).attr('src')
+            let src = $(img).attr('src')
+            if (!src) src = $(img).attr('data-src')
+            
             if (src && !src.includes('logo') && !src.includes('icon')) {
                 pages.push(src)
             }
@@ -94,53 +97,35 @@ export class WeebCentralParser {
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         
-        // Cerca tutti gli articoli e i div che contengono link alle serie
         $('article, div.bg-base-100, a[href*="/series/"]').each((_: any, item: any) => {
-            // Trova il link della serie
             let linkElement = $(item)
             if (!linkElement.is('a')) {
                 linkElement = $('a[href*="/series/"]', item).first()
             }
             
             const href = linkElement.attr('href')
-            if (!href) return // Salta se non c'è link
+            if (!href) return 
             
-            // --- FIX TITOLO INFALLIBILE ---
-            // Estrae ID e Slug (Titolo) direttamente dall'URL
-            // URL tipico: https://weebcentral.com/series/01J76XY7VSG3R5ANYPDWTXDVP6/One-Piece
             const parts = href.split('/series/')[1]?.split('/')
             const id = parts?.[0]
-            const slug = parts?.[1] 
 
-            // Prova a cercare l'immagine
             let image = $('img', item).attr('src') 
-            // Se l'elemento corrente è un link nudo (senza immagine dentro), cerca nel genitore
+            if (!image) image = $('img', item).attr('data-src')
             if (!image) image = linkElement.find('img').attr('src')
 
-            // Logica di recupero titolo
-            let title = ''
-
-            // 1. Priorità assoluta: Attributo data-tip (usato nei tooltip del sito)
-            title = $(item).attr('data-tip')?.trim() ?? ''
-
-            // 2. Seconda scelta: Slug dall'URL (pulito dai trattini)
-            // Trasforma "One-Piece" in "One Piece"
-            if ((!title || title === 'Official') && slug) {
-                title = slug.replace(/-/g, ' ')
-            }
-            
-            // 3. Terza scelta: Testo dentro il link (ma ignoriamo "Official")
-            if (!title || title === 'Official') {
-                 // Prendi il testo più grande o in grassetto
-                 const text = linkElement.find('.font-semibold, .text-lg').first().text().trim()
-                 if (text && text !== 'Official' && !text.includes('Chapter')) {
-                     title = text
-                 }
+            let title = $(item).attr('data-tip')?.trim()
+            if (!title) {
+                const potentialTitles: string[] = []
+                $(item).find('.text-lg, .font-semibold, .font-bold, .text-white').each((_: any, el: any) => {
+                    const t = $(el).text().trim()
+                    if (t && t !== 'Official' && t !== 'Manga' && !t.includes('Chapter')) {
+                        potentialTitles.push(t)
+                    }
+                })
+                if (potentialTitles.length > 0) title = potentialTitles[0]
             }
 
-            // Filtro finale per evitare risultati spazzatura
-            if (id && title && title !== 'Official' && !title.includes('Chapter')) {
-                // Evita duplicati controllando se l'ID è già stato aggiunto
+            if (id && title && title !== 'Official') {
                 const exists = results.some(m => m.mangaId === id)
                 if (!exists) {
                     results.push(App.createPartialSourceManga({
@@ -171,20 +156,14 @@ export class WeebCentralParser {
             type: HomeSectionType.singleRowNormal,
         })
 
-        // Parsing Hot Updates
         const hotManga: PartialSourceManga[] = []
-        const hotHeader = $('h2').filter((_: any, el: any) => $(el).text().includes('Hot Updates')).first()
-        const hotContainer = hotHeader.next('section')
+        const hotContainer = $('section:has(h2:contains("Hot Updates"))').first()
         
         $('article', hotContainer).each((_: any, manga: any) => {
             const link = $('a', manga).attr('href')
-            const parts = link?.split('/series/')[1]?.split('/')
-            const id = parts?.[0]
-            const slug = parts?.[1]
+            const id = link?.split('/series/')?.[1]?.split('/')?.[0]
             
             let title = $(manga).attr('data-tip')?.trim()
-            // Fallback titolo dallo slug se manca data-tip
-            if (!title && slug) title = slug.replace(/-/g, ' ')
             if (!title) title = $('.text-white', manga).first().text().trim()
             
             const image = $('img', manga).attr('src') ?? ''
@@ -201,22 +180,17 @@ export class WeebCentralParser {
         hotSection.items = hotManga
         sectionCallback(hotSection)
 
-        // Parsing Latest Updates
         const latestManga: PartialSourceManga[] = []
-        const latestHeader = $('h2').filter((_: any, el: any) => $(el).text().includes('Latest Updates')).first()
-        const latestContainer = latestHeader.next('section')
+        const latestContainer = $('section:has(h2:contains("Latest Updates"))').first()
 
         $('article', latestContainer).each((_: any, manga: any) => {
             const linkElement = $('a[href*="/series/"]', manga)
             const link = linkElement.attr('href')
-            const parts = link?.split('/series/')[1]?.split('/')
-            const id = parts?.[0]
-            const slug = parts?.[1]
+            const id = link?.split('/series/')?.[1]?.split('/')?.[0]
             
             let title = $(manga).attr('data-tip')?.trim()
-            if ((!title || title === 'Official') && slug) title = slug.replace(/-/g, ' ')
             if (!title) title = $('.font-semibold.text-lg', manga).text().trim()
-
+            
             const image = $('img', manga).attr('src') ?? ''
             const chapter = $('span', manga).last().text().trim()
 
@@ -231,5 +205,9 @@ export class WeebCentralParser {
         })
         latestSection.items = latestManga
         sectionCallback(latestSection)
+    }
+
+    isLastPage($: any): boolean {
+        return $(`span:contains("View More Results...")`).length === 0
     }
 }

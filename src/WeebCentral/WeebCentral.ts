@@ -23,10 +23,10 @@ import { URLBuilder } from '../helper'
 const DOMAIN = 'https://weebcentral.com'
 
 export const WeebCentralInfo: SourceInfo = {
-    version: '1.0.10', // Versione aggiornata
+    version: '1.0.14',
     name: 'WeebCentral',
     icon: 'icon.png',
-    author: 'DarkDragonkz',
+    author: 'DarkDragonkzz',
     authorWebsite: 'https://github.com/DarkDragonkz',
     description: `Extension that pulls manga from ${DOMAIN}`,
     contentRating: ContentRating.MATURE,
@@ -101,16 +101,43 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
         return this.parser.parseChapterDetails($, mangaId, chapterId)
     }
 
-    // --- LOGICA DI RICERCA CORRETTA ---
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        const request = this.constructSearchRequest(query)
+        const limit = 32
+        const offset = metadata?.offset ?? 0
+        
+        const url = new URLBuilder(this.baseUrl)
+            .addPathComponent('search')
+            .addPathComponent('data')
+            .addQueryParameter('limit', limit.toString())
+            .addQueryParameter('offset', offset.toString())
+            .addQueryParameter('sort', 'Best Match')
+            .addQueryParameter('display_mode', 'Full Display')
+            .addQueryParameter('official', 'Any')
+        
+        if (query.title) {
+            url.addQueryParameter('text', query.title)
+        }
+
+        const request = App.createRequest({
+            url: url.buildUrl(),
+            method: 'GET',
+        })
+
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($)
         
+        // FIX: Definiamo esplicitamente il tipo 'any' per evitare errori TypeScript
+        let nextMetadata: any = undefined
+        if (this.parser.isLastPage($)) {
+             nextMetadata = undefined
+        } else {
+             nextMetadata = { offset: offset + limit }
+        }
+
         return App.createPagedResults({
             results: manga,
-            metadata: undefined
+            metadata: nextMetadata
         })
     }
 
@@ -167,23 +194,15 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
 
     constructSearchRequest(query: SearchRequest): any {
         const queryText = query?.title ?? ''
-        
-        // CORREZIONE FINALE:
-        // 1. Convertiamo gli spazi in trattini (slug) per la ricerca di titoli composti.
-        const encodedText = queryText.replace(/'/g, '').trim().toLowerCase().replace(/ /g, '-');
-        
         const url = new URLBuilder(this.baseUrl)
             .addPathComponent('search')
-            .addPathComponent('data') // Rimuovi questo se la Soluzione 1 fallisce. Per ora, lo conserviamo come dato dall'HTML
-            .addQueryParameter('text', encodedText) // Passiamo lo slug
+            .addPathComponent('data')
+            .addQueryParameter('text', queryText)
             .addQueryParameter('display_mode', 'Full Display')
             .addQueryParameter('official', 'Any')
             
-        // Questa volta, usiamo il percorso dati completo con il parametro text codificato come slug
-        const finalUrl = url.buildUrl()
-        
         return App.createRequest({
-            url: finalUrl,
+            url: url.buildUrl(),
             method: 'GET',
         })
     }

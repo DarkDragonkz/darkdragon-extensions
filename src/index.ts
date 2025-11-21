@@ -1,9 +1,8 @@
 import { MangaWorld, MangaWorldInfo } from './MangaWorld/MangaWorld'
 import { NineMangaIT, NineMangaITInfo } from './NineMangaIT/NineMangaIT'
 import { WeebCentral, WeebCentralInfo } from './WeebCentral/WeebCentral'
-import * as cheerio from 'cheerio' // Importa cheerio direttamente
+import * as cheerio from 'cheerio'
 
-// Passiamo l'oggetto cheerio importato invece di chiamare App.createCheerio() che non esiste
 export const MangaWorldSource = new MangaWorld(cheerio)
 export const NineMangaITSource = new NineMangaIT(cheerio)
 export const WeebCentralSource = new WeebCentral(cheerio)

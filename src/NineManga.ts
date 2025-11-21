@@ -136,10 +136,6 @@ export abstract class NineManga implements SearchResultsProviding, MangaProvidin
         return App.createPagedResults({ results: [], metadata: { page: -1 } })
     }
 
-    // QUESTI METODI DEVONO ESSERE DEFINITI NELLA CLASSE BASE PER POTER ESSERE "OVERRIDDEN"
-    // O DEVONO ESSERE ASTRATTI SE VOGLIAMO FORZARE L'IMPLEMENTAZIONE.
-    // Li definisco come metodi normali che possono essere sovrascritti.
-
     protected convertTime(timeAgo: string): Date {
         let time: Date
         let trimmed = Number((/\d*/.exec(timeAgo) ?? [])[0])
@@ -158,7 +154,6 @@ export abstract class NineManga implements SearchResultsProviding, MangaProvidin
         return time
     }
     
-    // Aggiunto parseStatus come metodo base per evitare errore di override
     parseStatus(str: string): string {
         let status = 'Unknown'
         switch (str.toLowerCase()) {

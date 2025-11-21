@@ -10,7 +10,6 @@ import {
 } from '@paperback/types'
 
 export class Parser {
-    // FIX: Tipi di Cheerio sostituiti con any
     parseMangaDetails($: any, mangaId: string, source: any): SourceManga {
         const title = $('.bookface img').attr('alt') ?? ''
         const image = $('.bookface img').attr('src') ?? 'https://paperback.moe/icons/logo-alt.svg'
