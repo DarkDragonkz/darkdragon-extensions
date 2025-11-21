@@ -691,8 +691,39 @@ class MangaDex {
         }
     }
     async getViewMoreItems(homepageSectionId, metadata) {
-        // Non implementato per semplicità ora, ritorna vuoto
-        return App.createPagedResults({ results: [] });
+        var _a, _b;
+        const offset = (_a = metadata === null || metadata === void 0 ? void 0 : metadata.offset) !== null && _a !== void 0 ? _a : 0;
+        const limit = 20; // Carichiamo 20 item per volta quando si scorre
+        let url = '';
+        // Parametri comuni: Cover, Lingua EN, Rating (Safe/Suggestive/Erotica), Limite e Offset
+        const commonParams = `&includes[]=cover_art&availableTranslatedLanguage[]=en&limit=${limit}&offset=${offset}&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica`;
+        if (homepageSectionId === 'popular') {
+            url = `${MD_API}/manga?order[followedCount]=desc${commonParams}`;
+        }
+        else if (homepageSectionId === 'latest') {
+            url = `${MD_API}/manga?order[latestUploadedChapter]=desc${commonParams}`;
+        }
+        else {
+            return App.createPagedResults({ results: [] });
+        }
+        const request = App.createRequest({ url, method: 'GET' });
+        const response = await this.requestManager.schedule(request, 1);
+        const json = JSON.parse((_b = response.data) !== null && _b !== void 0 ? _b : '{}');
+        const results = [];
+        if (json.data) {
+            for (const item of json.data) {
+                results.push(this.parsePartialManga(item));
+            }
+        }
+        // Se abbiamo ricevuto risultati, prepariamo l'offset per la pagina successiva
+        let nextMetadata = undefined;
+        if (results.length >= limit) {
+            nextMetadata = { offset: offset + limit };
+        }
+        return App.createPagedResults({
+            results: results,
+            metadata: nextMetadata
+        });
     }
     // Helper per parserizzare i risultati parziali (Home e Search)
     parsePartialManga(item) {

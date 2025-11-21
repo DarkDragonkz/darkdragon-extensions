@@ -658,7 +658,7 @@ const types_1 = require("@paperback/types");
 const NineManga_1 = require("../NineManga");
 const IT_DOMAIN = 'https://it.ninemanga.com';
 exports.NineMangaITInfo = {
-    version: (0, NineManga_1.getExportVersion)('0.0.2'),
+    version: (0, NineManga_1.getExportVersion)('0.0.3'),
     name: 'NineMangaIT',
     description: 'Extension that pulls manga from it.ninemanga.com',
     author: 'NmN',
