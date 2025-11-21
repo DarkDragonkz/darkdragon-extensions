@@ -71,27 +71,34 @@ export class MangaParkParser {
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
         
-        // Selettore per i link dei capitoli
+        // 1. Trova il contenitore principale dei capitoli
         const container = $('div[data-name="chapter-list"]')
-        const links = container.find('a.link-hover').toArray()
+        
+        // 2. Prendi TUTTI i link dentro il contenitore (più robusto di cercare classi specifiche)
+        const links = container.find('a').toArray()
 
         for (const el of links) {
             const link = $(el)
             const href = link.attr('href')
             
-            // Filtriamo link che non sono capitoli del manga corrente
+            // Filtro base: deve essere un link valido e contenere /title/
             if (!href || !href.includes('/title/')) continue
 
-            // ID Capitolo (es: 9939310-chapter-128)
-            const chapterId = href.split('/').pop()
-            if (!chapterId || chapterId.length < 3) continue
-
-            const titleRaw = link.text().trim() // Es: "Chapter 128" o "Vol.0 Ch.78"
+            // Estrazione ID: prendiamo l'ultima parte dell'URL
+            // Es: /title/12345/9939310-chapter-128 -> "9939310-chapter-128"
+            const parts = href.split('/')
+            const chapterId = parts.pop()
             
-            // Recupero data risalendo i parent
+            // Verifica che sia un ID capitolo valido (solitamente lungo e numerico all'inizio)
+            if (!chapterId || chapterId.length < 3 || !chapterId.match(/^\d+/)) continue
+
+            const titleRaw = link.text().trim()
+            if (!titleRaw) continue
+
+            // Cerca la data risalendo l'albero DOM
             let timeStr = ''
             let parent = link.parent()
-            for(let i=0; i<4; i++) {
+            for(let i=0; i<5; i++) { // Risaliamo fino a 5 livelli
                 const timeTag = parent.find('time')
                 if (timeTag.length > 0) {
                     timeStr = timeTag.text().trim()
@@ -100,24 +107,25 @@ export class MangaParkParser {
                 parent = parent.parent()
             }
 
-            // FIX REGEX: Ora riconosce "Chapter 128" (senza punto), "Ch.128", "Episode 128"
-            // Cerca un numero che segue parole chiave comuni o un numero alla fine della stringa
-            const chapNumMatch = titleRaw.match(/(?:ch|chapter|episode|vol)\.?\s*(\d+(\.\d+)?)/i)
-            let chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0
-
-            // Fallback: se non trova "Ch X", cerca l'ultimo numero nel titolo
-            if (chapNum === 0) {
-                 const simpleNum = titleRaw.match(/(\d+(\.\d+)?)/g)
-                 if (simpleNum && simpleNum.length > 0) {
-                     chapNum = parseFloat(simpleNum[simpleNum.length - 1])
-                 }
+            // Parsing Numeri (Volume e Capitolo)
+            // Regex che cerca "Ch. 128", "Chapter 128", "c128", o numeri isolati alla fine
+            const chapNumMatch = titleRaw.match(/(?:ch|chapter|episode|c)(?:\.|apters?|\s)*\s*(\d+(\.\d+)?)/i)
+            let chapNum = 0
+            if (chapNumMatch) {
+                chapNum = parseFloat(chapNumMatch[1] ?? '0')
+            } else {
+                // Fallback: cerca l'ultimo numero nel titolo
+                const simpleNums = titleRaw.match(/(\d+(\.\d+)?)/g)
+                if (simpleNums && simpleNums.length > 0) {
+                    chapNum = parseFloat(simpleNums[simpleNums.length - 1] ?? '0')
+                }
             }
             
             const volMatch = titleRaw.match(/Vol\.(\d+)/i)
-            const volNum = volMatch ? parseFloat(volMatch[1]) : undefined
+            const volNum = volMatch ? parseFloat(volMatch[1] ?? '0') : undefined
 
+            // Titolo visualizzato
             let name = titleRaw
-            // Aggiunta titolo extra se presente
             const extraInfo = link.next('span').text().trim().replace(/^:\s*/, '')
             if (extraInfo) name += ` - ${extraInfo}`
 
@@ -152,7 +160,9 @@ export class MangaParkParser {
             image = this.fixImageUrl(image)
 
             let title = $('img', item).attr('title') || $('img', item).attr('alt')
-            if (!title) title = $(item).closest('div.flex').find('h3 a').text().trim()
+            if (!title) {
+                title = $(item).closest('div.flex').find('h3 a').text().trim()
+            }
             if (!title) title = 'Unknown'
 
             results.push(App.createPartialSourceManga({
