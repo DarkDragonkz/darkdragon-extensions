@@ -474,7 +474,6 @@ class NineManga {
     constructor(cheerio) {
         this.cheerio = cheerio;
         this.userAgentRandomizer = `Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:77.0) Gecko/20100101 Firefox/78.0${Math.floor(Math.random() * 100000)}`;
-        // FIX: Aggiunto Interceptor per NineManga
         this.requestManager = App.createRequestManager({
             requestsPerSecond: 3,
             interceptor: {
@@ -502,7 +501,6 @@ class NineManga {
         return true;
     }
     async getMangaDetails(mangaId) {
-        // Nota: L'interceptor ora gestisce gli header, non serve passarli manualmente se si usa requestManager
         const request = this.createRequest(`${this.baseUrl}/manga/${mangaId}?waring=1`);
         const response = await this.requestManager.schedule(request, this.RETRIES);
         this.checkResponseError(response);
@@ -588,6 +586,18 @@ class NineManga {
         }
         return time;
     }
+    parseStatus(str) {
+        let status = 'Unknown';
+        switch (str.toLowerCase()) {
+            case 'ongoing':
+                status = 'Ongoing';
+                break;
+            case 'completed':
+                status = 'Completed';
+                break;
+        }
+        return status;
+    }
     createRequest(url) {
         return App.createRequest({
             url,
@@ -613,24 +623,11 @@ class NineManga {
     }
     constructHeaders(headers, refererPath) {
         headers = headers !== null && headers !== void 0 ? headers : {};
-        // L'interceptor sovrascriverà questi se necessario, ma li manteniamo per compatibilità
         if (this.userAgentRandomizer !== '') {
             headers['user-agent'] = this.userAgentRandomizer;
         }
         headers['accept-language'] = 'es-ES,es;q=0.9,en;q=0.8,gl;q=0.7';
         return headers;
-    }
-    parseStatus(str) {
-        let status = 'Unknown';
-        switch (str.toLowerCase()) {
-            case 'ongoing':
-                status = 'Ongoing';
-                break;
-            case 'completed':
-                status = 'Completed';
-                break;
-        }
-        return status;
     }
     async getCloudflareBypassRequest() {
         return App.createRequest({
@@ -655,13 +652,79 @@ class NineManga {
 }
 exports.NineManga = NineManga;
 
-},{"./NineMangaParser":63,"./helper":64}],63:[function(require,module,exports){
+},{"./NineMangaParser":64,"./helper":65}],63:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.NineMangaIT = exports.NineMangaITInfo = void 0;
+const types_1 = require("@paperback/types");
+// FIX: Percorsi corretti ../ invece di ./
+const NineManga_1 = require("../NineManga");
+const IT_DOMAIN = 'https://it.ninemanga.com';
+exports.NineMangaITInfo = {
+    version: (0, NineManga_1.getExportVersion)('0.0.2'),
+    name: 'NineMangaIT',
+    description: 'Extension that pulls manga from it.ninemanga.com',
+    author: 'NmN',
+    authorWebsite: 'http://github.com/pandyenmn',
+    icon: 'icon.png',
+    contentRating: types_1.ContentRating.EVERYONE,
+    language: 'it',
+    websiteBaseURL: IT_DOMAIN,
+    sourceTags: [
+        {
+            text: 'Italian',
+            type: types_1.BadgeColor.GREY
+        },
+    ],
+    intents: types_1.SourceIntents.MANGA_CHAPTERS | types_1.SourceIntents.HOMEPAGE_SECTIONS | types_1.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,
+};
+class NineMangaIT extends NineManga_1.NineManga {
+    constructor() {
+        super(...arguments);
+        this.baseUrl = IT_DOMAIN;
+        this.languageCode = 'it';
+        this.genreTag = 'Genere(s)';
+        this.authorTag = 'Author(s)';
+        this.statusTag = 'Stato';
+    }
+    // Ora che parseStatus è definito in NineManga, override è valido
+    parseStatus(str) {
+        let status = 'Unknown';
+        switch (str.toLowerCase()) {
+            case 'in corso':
+                status = 'Ongoing';
+                break;
+            case 'completato':
+                status = 'Completed';
+                break;
+        }
+        return status;
+    }
+    convertTime(timeAgo) {
+        var _a;
+        let time;
+        let trimmed = Number(((_a = /\d*/.exec(timeAgo)) !== null && _a !== void 0 ? _a : [])[0]);
+        trimmed = trimmed == 0 && timeAgo.includes('a') ? 1 : trimmed;
+        if (timeAgo.includes('mins') || timeAgo.includes('minutes') || timeAgo.includes('minute')) {
+            time = new Date(Date.now() - trimmed * 60000);
+        }
+        else if (timeAgo.includes('ore') || timeAgo.includes('hour')) {
+            time = new Date(Date.now() - trimmed * 3600000);
+        }
+        else {
+            time = new Date(timeAgo);
+        }
+        return time;
+    }
+}
+exports.NineMangaIT = NineMangaIT;
+
+},{"../NineManga":62,"@paperback/types":61}],64:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Parser = void 0;
 const types_1 = require("@paperback/types");
 class Parser {
-    // FIX: Tipi di Cheerio sostituiti con any
     parseMangaDetails($, mangaId, source) {
         var _a, _b, _c, _d, _e, _f;
         const title = (_a = $('.bookface img').attr('alt')) !== null && _a !== void 0 ? _a : '';
@@ -917,7 +980,7 @@ class Parser {
 }
 exports.Parser = Parser;
 
-},{"@paperback/types":61}],64:[function(require,module,exports){
+},{"@paperback/types":61}],65:[function(require,module,exports){
 "use strict";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 Object.defineProperty(exports, "__esModule", { value: true });
@@ -961,5 +1024,5 @@ class URLBuilder {
 }
 exports.URLBuilder = URLBuilder;
 
-},{}]},{},[62])(62)
+},{}]},{},[63])(63)
 });
