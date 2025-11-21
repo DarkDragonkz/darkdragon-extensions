@@ -24,12 +24,12 @@ const MD_API = 'https://api.mangadex.org'
 const MD_UPLOADS = 'https://uploads.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '2.0.0',
+    version: '2.0.1', // Bump version
     name: 'MangaDex (EN)',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
     authorWebsite: 'https://github.com/DarkDragonkz',
-    description: 'MangaDex source (English Only)',
+    description: 'MangaDex source (English Only) - Fixed Pagination & Duplicates',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: 'https://mangadex.org',
     sourceTags: [
@@ -46,7 +46,7 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 5, 
+        requestsPerSecond: 4, // Abbassato leggermente per evitare rate-limit aggressivi (429)
         requestTimeout: 20000
     })
 
@@ -56,7 +56,11 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
         const request = App.createRequest({
-            url: `${MD_API}/manga/${mangaId}?includes[]=author&includes[]=artist&includes[]=cover_art`,
+            url: new URLBuilder(MD_API)
+                .addPathComponent('manga')
+                .addPathComponent(mangaId)
+                .addQueryParameter('includes[]', ['author', 'artist', 'cover_art'])
+                .buildUrl(),
             method: 'GET',
         })
 
@@ -98,47 +102,68 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        // URL pulito: Solo inglese, ordinato per capitolo decrescente, limite 500
-        const url = `${MD_API}/manga/${mangaId}/feed?limit=500&translatedLanguage[]=en&order[chapter]=desc&includeFutureUpdates=0`
-
-        const request = App.createRequest({
-            url: url,
-            method: 'GET',
-        })
-
-        const response = await this.requestManager.schedule(request, 1)
-        const data = JSON.parse(response.data ?? '{}')
-        
         const chapters: Chapter[] = []
-        
-        if (!data.data) return []
+        let limit = 500
+        let offset = 0
+        let hasMoreResults = true
 
-        for (const chapter of data.data) {
-            const attr = chapter.attributes
-            
-            // Saltiamo i capitoli che sono solo link esterni (es. MangaPlus)
-            if (attr.externalUrl) continue
+        // FIX: Loop per prendere TUTTI i capitoli (Pagination fix)
+        while (hasMoreResults) {
+            const url = new URLBuilder(MD_API)
+                .addPathComponent('manga')
+                .addPathComponent(mangaId)
+                .addPathComponent('feed')
+                .addQueryParameter('limit', limit)
+                .addQueryParameter('offset', offset)
+                .addQueryParameter('translatedLanguage[]', 'en')
+                .addQueryParameter('order[chapter]', 'desc') // Dal più recente al più vecchio
+                .addQueryParameter('includeFutureUpdates', '0')
+                .buildUrl()
 
-            const chapNum = parseFloat(attr.chapter) || 0
-            
-            // Titolo pulito: Se c'è un titolo specifico lo usa, altrimenti "Chapter X"
-            let title = ''
-            if (attr.title) {
-                title = attr.title
-            } else if (attr.chapter) {
-                title = `Chapter ${attr.chapter}`
-            } else {
-                title = 'Oneshot'
+            const request = App.createRequest({ url, method: 'GET' })
+            const response = await this.requestManager.schedule(request, 1)
+            const data = JSON.parse(response.data ?? '{}')
+
+            if (!data.data || data.data.length === 0) {
+                hasMoreResults = false
+                break
             }
 
-            chapters.push(App.createChapter({
-                id: chapter.id,
-                name: title,
-                chapNum: chapNum,
-                volume: parseFloat(attr.volume) || 0,
-                time: new Date(attr.publishAt),
-                langCode: 'en'
-            }))
+            for (const chapter of data.data) {
+                const attr = chapter.attributes
+                // Salta link esterni (es. MangaPlus) che non sono leggibili in-app
+                if (attr.externalUrl) continue
+
+                const chapNum = parseFloat(attr.chapter) || 0
+                
+                let title = ''
+                if (attr.title) title = attr.title
+                else if (attr.chapter) title = `Chapter ${attr.chapter}`
+                else title = 'Oneshot'
+
+                // FIX: De-duplicazione semplice
+                // Controlliamo se abbiamo già inserito questo numero di capitolo.
+                // Dato che l'API ci dà prima i più recenti (order[chapter]=desc) e poi per data di upload,
+                // se troviamo un duplicato significa che è una versione alternativa o più vecchia dello stesso gruppo.
+                // Per ora, saltiamo i duplicati per avere una lista pulita.
+                const isDuplicate = chapters.some(c => c.chapNum === chapNum && c.chapNum !== 0) // 0 = Oneshot, di solito non li filtriamo
+                if (!isDuplicate || chapNum === 0) {
+                     chapters.push(App.createChapter({
+                        id: chapter.id,
+                        name: title,
+                        chapNum: chapNum,
+                        volume: parseFloat(attr.volume) || 0,
+                        time: new Date(attr.publishAt),
+                        langCode: 'en'
+                    }))
+                }
+            }
+
+            if (data.total && (offset + limit) >= data.total) {
+                hasMoreResults = false
+            } else {
+                offset += limit
+            }
         }
 
         return chapters
@@ -173,12 +198,18 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const limit = 20
         const offset = metadata?.offset ?? 0
         
-        // Cerca titoli che contengono il testo, includendo copertine, ordinati per rilevanza.
-        // Includiamo TUTTI i content rating per essere sicuri di trovare il manga.
-        const url = `${MD_API}/manga?limit=${limit}&offset=${offset}&title=${encodeURIComponent(query.title ?? '')}&includes[]=cover_art&order[relevance]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`
-        
+        const urlBuilder = new URLBuilder(MD_API)
+            .addPathComponent('manga')
+            .addQueryParameter('limit', limit)
+            .addQueryParameter('offset', offset)
+            .addQueryParameter('title', query.title ?? '')
+            .addQueryParameter('includes[]', 'cover_art')
+            .addQueryParameter('order[relevance]', 'desc')
+            // Includiamo i rating per trovare tutto
+            .addQueryParameter('contentRating[]', ['safe', 'suggestive', 'erotica', 'pornographic'])
+
         const request = App.createRequest({
-            url: url,
+            url: urlBuilder.buildUrl(),
             method: 'GET',
         })
 
@@ -190,7 +221,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         if (data.data) {
             for (const manga of data.data) {
                 const attr = manga.attributes
-                // Fallback titolo intelligente
                 const title = attr.title.en ?? Object.values(attr.title)[0] ?? 'Unknown'
                 
                 const coverRel = manga.relationships.find((r: any) => r.type === 'cover_art')
@@ -213,29 +243,38 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        // Sezione Popolari
         const section1 = App.createHomeSection({
             id: 'popular',
             title: 'Popular (English Available)',
             containsMoreItems: false,
             type: HomeSectionType.singleRowNormal
         })
-        sectionCallback(section1)
-
-        // Sezione Ultime Aggiunte
         const section2 = App.createHomeSection({
             id: 'latest',
             title: 'Latest English Updates',
             containsMoreItems: false,
             type: HomeSectionType.singleRowNormal
         })
+        
+        // Callback immediata per mostrare le sezioni vuote mentre caricano
+        sectionCallback(section1)
         sectionCallback(section2)
         
-        const ratings = '&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica'
+        const ratings = ['safe', 'suggestive', 'erotica']
 
-        // Richiesta Popolari (Include lingua inglese disponibile)
-        const popularUrl = `${MD_API}/manga?limit=10&order[followedCount]=desc&includes[]=cover_art&availableTranslatedLanguage[]=en${ratings}`
-        const popularRequest = App.createRequest({ url: popularUrl, method: 'GET' })
+        // --- POPULAR ---
+        const popularRequest = App.createRequest({
+            url: new URLBuilder(MD_API)
+                .addPathComponent('manga')
+                .addQueryParameter('limit', 10)
+                .addQueryParameter('order[followedCount]', 'desc')
+                .addQueryParameter('includes[]', 'cover_art')
+                .addQueryParameter('availableTranslatedLanguage[]', 'en')
+                .addQueryParameter('contentRating[]', ratings)
+                .buildUrl(),
+            method: 'GET'
+        })
+
         const popularResponse = await this.requestManager.schedule(popularRequest, 1)
         const popularData = JSON.parse(popularResponse.data ?? '{}')
         
@@ -246,7 +285,7 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
                 const fileName = coverRel?.attributes?.fileName
                 popularItems.push(App.createPartialSourceManga({
                     mangaId: manga.id,
-                    image: fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : '',
+                    image: fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : 'https://paperback.moe/icons/logo-alt.svg',
                     title: manga.attributes.title.en ?? Object.values(manga.attributes.title)[0] ?? 'Unknown',
                     subtitle: 'Popular'
                 }))
@@ -255,9 +294,20 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         section1.items = popularItems
         sectionCallback(section1)
 
-        // Richiesta Recenti (Filtra per lingua inglese)
-        const latestUrl = `${MD_API}/manga?limit=10&order[createdAt]=desc&includes[]=cover_art&availableTranslatedLanguage[]=en${ratings}`
-        const latestRequest = App.createRequest({ url: latestUrl, method: 'GET' })
+        // --- LATEST ---
+        // FIX: Usiamo order[latestUploadedChapter] invece di createdAt
+        const latestRequest = App.createRequest({
+            url: new URLBuilder(MD_API)
+                .addPathComponent('manga')
+                .addQueryParameter('limit', 10)
+                .addQueryParameter('order[latestUploadedChapter]', 'desc') 
+                .addQueryParameter('includes[]', 'cover_art')
+                .addQueryParameter('availableTranslatedLanguage[]', 'en')
+                .addQueryParameter('contentRating[]', ratings)
+                .buildUrl(),
+            method: 'GET'
+        })
+
         const latestResponse = await this.requestManager.schedule(latestRequest, 1)
         const latestData = JSON.parse(latestResponse.data ?? '{}')
         
@@ -268,9 +318,9 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
                 const fileName = coverRel?.attributes?.fileName
                 latestItems.push(App.createPartialSourceManga({
                     mangaId: manga.id,
-                    image: fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : '',
+                    image: fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : 'https://paperback.moe/icons/logo-alt.svg',
                     title: manga.attributes.title.en ?? Object.values(manga.attributes.title)[0] ?? 'Unknown',
-                    subtitle: 'New Entry'
+                    subtitle: 'New Update'
                 }))
             }
         }
