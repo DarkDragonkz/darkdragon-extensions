@@ -767,17 +767,26 @@ var _Sources = (() => {
       $('a[href*="/chapters/"]').each((_, element) => {
         const href = $(element).attr("href");
         const id = href?.split("/chapters/")[1];
-        let name = $(element).find('span:contains("Chapter"), span:contains("Episode")').first().text().trim();
-        if (!name) name = $(element).find(".grow span").first().text().trim();
-        if (!name) name = $(element).text().trim();
+        let name = $(element).find(".grow span, span.font-bold").first().text().trim();
+        if (!name) {
+          const clone = $(element).clone();
+          clone.find("time").remove();
+          name = clone.text().trim();
+        }
+        name = name.replace(/(\r\n|\n|\r)/gm, " ").replace(/\s+/g, " ").trim();
         const numMatch = name.match(/(\d+(\.\d+)?)/g);
         const chapNum = numMatch ? parseFloat(numMatch[numMatch.length - 1] ?? "0") : 0;
+        const lowerName = name.toLowerCase();
+        if (lowerName === `chapter ${chapNum}` || lowerName === `episode ${chapNum}` || lowerName === `ch. ${chapNum}`) {
+          name = "";
+        }
         const timeStr = $(element).find("time").attr("datetime");
         const time = timeStr ? new Date(timeStr) : /* @__PURE__ */ new Date();
         if (id) {
           chapters.push(App.createChapter({
             id,
             name,
+            // Ora è pulito e senza spazi
             chapNum,
             langCode: "en",
             time
@@ -938,7 +947,7 @@ var _Sources = (() => {
   // src/WeebCentral/WeebCentral.ts
   var DOMAIN = "https://weebcentral.com";
   var WeebCentralInfo = {
-    version: "1.0.15",
+    version: "1.0.16",
     name: "WeebCentral",
     icon: "icon.png",
     author: "DarkDragonkzz",
