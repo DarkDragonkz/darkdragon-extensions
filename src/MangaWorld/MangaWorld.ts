@@ -18,12 +18,12 @@ import {
 } from '@paperback/types'
 
 import { Parser } from './parser'
-import { URLBuilder } from './helper'
+import { URLBuilder } from '../helper'
 
 const MW_DOMAIN = 'https://www.mangaworld.mx'
 
 export const MangaWorldInfo: SourceInfo = {
-    version: '3.0.4',
+    version: '3.0.6', // Bump version
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld (0.8).',
     author: 'NmN',
@@ -35,7 +35,7 @@ export const MangaWorldInfo: SourceInfo = {
     sourceTags: [
         {
             text: 'ITALIAN',
-            type: BadgeColor.GREEN,
+            type: BadgeColor.GREY,
         },
     ],
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,
@@ -44,15 +44,30 @@ export const MangaWorldInfo: SourceInfo = {
 export class MangaWorld implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding { 
     baseUrl = MW_DOMAIN
     
-    // NOTA: Abbiamo rimosso l'import di CheerioAPI e usiamo 'any' qui.
-    // Questo risolve definitivamente l'errore TS2305.
     constructor(private cheerio: any) {}
     
     RETRIES = 10
     parser = new Parser()
 
+    // FIX: Aggiunto Interceptor per gestire Referer e User-Agent automaticamente
     requestManager = App.createRequestManager({
         requestsPerSecond: 8,
+        requestTimeout: 20000,
+        interceptor: {
+            interceptRequest: async (request: any) => {
+                request.headers = {
+                    ...(request.headers ?? {}),
+                    ...{
+                        'referer': `${this.baseUrl}/`,
+                        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    }
+                }
+                return request
+            },
+            interceptResponse: async (response: any) => {
+                return response
+            }
+        }
     })
     
     getMangaShareUrl(mangaId: string): string {
@@ -140,10 +155,6 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
     }
 
 
-    /**
-     * Parses a time string from a Madara source into a Date object.
-     * Copied from Madara.ts made by gamefuzzy
-     */
     protected convertTime(timeAgo: string): Date {
         let time: Date
         let trimmed = Number((/\d*/.exec(timeAgo) ?? [])[0])
