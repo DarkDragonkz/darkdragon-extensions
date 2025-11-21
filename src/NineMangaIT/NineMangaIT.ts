@@ -23,7 +23,7 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '1.0.0',
+    version: '1.0.2', // Bump version per forzare l'aggiornamento
     name: 'NineMangaIT',
     description: 'Extension that pulls manga from it.ninemanga.com',
     author: 'NmN',
@@ -46,7 +46,6 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     parser = new NineMangaITParser()
 
     // HARDCODED DESKTOP USER AGENT
-    // Questo è il trucco per far funzionare le sezioni Hot/New
     readonly userAgentDesktop = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
     constructor(private cheerio: any) {}
@@ -95,23 +94,14 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // NOTA: NineManga crea l'url del capitolo come "IDCapitolo-10-1.html" o simile
-        // L'ID passato è solitamente l'URL relativo o la parte finale
-        // Assicuriamoci di chiamare la prima pagina
         let url = `${this.baseUrl}/chapter/${chapterId}`
         if (!chapterId.includes('chapter/')) {
-             // Se chapterId è solo il codice finale, costruiamo l'URL in qualche modo o usiamo link diretto
-             // Tuttavia, nel parserChapters abbiamo salvato l'intero href relativo.
-             // Quindi basta appenderlo alla base se non c'è slash iniziale
              if (chapterId.startsWith('/')) url = `${this.baseUrl}${chapterId}`
              else url = `${this.baseUrl}/${chapterId}`
         }
         
-        // Aggiungiamo parametro per evitare redirect strani
         if (!url.includes('.html')) url += '.html'
 
-        // Per NineMangaIT, la pagina del lettore spesso ha paginazione -10-1
-        // Proviamo a chiamare l'URL base del capitolo
         const request = App.createRequest({
             url: url,
             method: 'GET'
@@ -142,7 +132,6 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         const manga = this.parser.parseSearchResults($, this.baseUrl)
         
         page++
-        // Se ci sono meno di 30 risultati, probabilmente è l'ultima pagina
         if (manga.length < 10) page = -1
 
         return App.createPagedResults({
@@ -152,22 +141,27 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        const request = App.createRequest({
-            url: this.baseUrl,
-            method: 'GET'
-        })
-        const response = await this.requestManager.schedule(request, 1)
-        const $ = this.cheerio.load(response.data)
-        this.parser.parseHomeSections($, sectionCallback, this.baseUrl)
+        // FIX: Richiediamo SIA la Home (per le classifiche) SIA la pagina Updates (per avere le immagini)
+        const requestHome = App.createRequest({ url: this.baseUrl, method: 'GET' })
+        const requestUpdates = App.createRequest({ url: `${this.baseUrl}/list/New-Update/`, method: 'GET' })
+
+        // Eseguiamo in parallelo
+        const [responseHome, responseUpdates] = await Promise.all([
+            this.requestManager.schedule(requestHome, 1),
+            this.requestManager.schedule(requestUpdates, 1)
+        ])
+
+        const $home = this.cheerio.load(responseHome.data)
+        const $updates = this.cheerio.load(responseUpdates.data)
+
+        this.parser.parseHomeSections($home, $updates, sectionCallback, this.baseUrl)
     }
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
-        // Implementazione base: ritorna vuoto per ora, o si può implementare paginazione per "Ultimi Aggiornamenti"
-        // usando /list/New-Update/?page=X
         let page = metadata?.page ?? 1
         let url = ''
         
-        if (homepageSectionId === 'updates') {
+        if (homepageSectionId === 'updates' || homepageSectionId === 'recent') {
             url = `${this.baseUrl}/list/New-Update/?page=${page}`
         } else if (homepageSectionId === 'popular') {
             url = `${this.baseUrl}/list/Hot-Book/?page=${page}`
@@ -180,7 +174,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         const request = App.createRequest({ url, method: 'GET' })
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
-        const manga = this.parser.parseSearchResults($, this.baseUrl) // Riutilizziamo il parser di ricerca che è simile
+        const manga = this.parser.parseSearchResults($, this.baseUrl)
 
         if (manga.length > 0) {
              return App.createPagedResults({

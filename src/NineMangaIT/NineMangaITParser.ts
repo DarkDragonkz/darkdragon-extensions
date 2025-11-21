@@ -69,7 +69,6 @@ export class NineMangaITParser {
 
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
-        // Nota: I capitoli sono spesso in ordine inverso nell'HTML
         const arrChapters = $('.sub_vol_ul li').toArray().reverse()
         let prevChapNum = 1
 
@@ -78,7 +77,6 @@ export class NineMangaITParser {
             const id = link.attr('href')?.replace('.html', '').replace(/\/$/, '') ?? ''
             const name = link.attr('title') ?? link.text().trim()
             
-            // Cerchiamo di estrarre il numero dal titolo, fallback a un contatore
             const chapNumRegex = /(\d+(\.\d+)?)/g
             const match = name.match(chapNumRegex)
             let chapNum = prevChapNum
@@ -106,16 +104,7 @@ export class NineMangaITParser {
 
     async parseChapterDetails($: any, mangaId: string, id: string, requestManager: any, baseUrl: string, cheerio: any): Promise<ChapterDetails> {
         const pages: string[] = []
-        
-        // NineManga usa un sistema di paginazione nel reader (1-10-1, 1-10-2...)
-        // Dobbiamo capire quante pagine ci sono dal menu a tendina
         const pageOptions = $('select#page option').toArray()
-        
-        // Logica: Scarichiamo la prima pagina (che abbiamo già in $) per trovare l'immagine,
-        // poi cicliamo le altre opzioni se necessario.
-        
-        // MA NineManga carica le immagini spesso con chiamate separate o sono presenti nel DOM.
-        // Approccio "Brute Force" sicuro: cicliamo le opzioni della select box.
         
         let firstPageValue = ''
         if (pageOptions.length > 0) {
@@ -126,13 +115,6 @@ export class NineMangaITParser {
             const pageUrlRelative = $(option).attr('value')
             if (!pageUrlRelative) continue
 
-            // Se è la prima pagina, usiamo il $ corrente per risparmiare una richiesta (se contiene l'immagine)
-            // Ma per semplicità e sicurezza su NineManga (dove l'immagine cambia caricando l'URL), facciamo la richiesta.
-            
-            // Saltiamo la richiesta se l'abbiamo già fatta (il main loop chiamante ha fatto la prima)
-            // Ottimizzazione: estraiamo l'immagine dalla pagina corrente
-            // Poi per le successive facciamo richieste.
-            
             let currentPage$ = $
             if (pageUrlRelative !== firstPageValue) {
                 const request = App.createRequest({
@@ -193,22 +175,22 @@ export class NineMangaITParser {
         return [App.createTagSection({ id: '0', label: 'Generi', tags: genres })]
     }
 
-    parseHomeSections($: any, sectionCallback: (section: HomeSection) => void, baseUrl: string): void {
-        // Sezioni
+    // FIX: Ora accettiamo anche $updates per la quarta sezione
+    parseHomeSections($home: any, $updates: any, sectionCallback: (section: HomeSection) => void, baseUrl: string): void {
         const secFeatured = App.createHomeSection({ id: 'featured', title: 'In Evidenza', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
         const secPopular = App.createHomeSection({ id: 'popular', title: 'Popolari', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
         const secNew = App.createHomeSection({ id: 'new', title: 'Nuove Aggiunte', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
-        const secUpdates = App.createHomeSection({ id: 'updates', title: 'Ultimi Aggiornamenti', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
+        const secUpdates = App.createHomeSection({ id: 'recent', title: 'Ultimi Aggiornamenti', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
 
-        // 1. In Evidenza (.pop_update)
+        // 1. In Evidenza (dalla Home)
         const featuredItems: PartialSourceManga[] = []
-        $('.pop_update li').each((_: any, obj: any) => {
-            const link = $('.bookname', obj)
+        $home('.pop_update li').each((_: any, obj: any) => {
+            const link = $home('.bookname', obj)
             const id = link.attr('href')?.replace(`${baseUrl}/manga/`, '').replace('.html', '')
-            let title = $('.bookface', obj).attr('title')
+            let title = $home('.bookface', obj).attr('title')
             if (!title) title = link.text().trim()
             
-            const image = $('.bookface img', obj).attr('src')
+            const image = $home('.bookface img', obj).attr('src')
 
             if (id && title) {
                 featuredItems.push(App.createPartialSourceManga({
@@ -222,17 +204,18 @@ export class NineMangaITParser {
         secFeatured.items = featuredItems
         sectionCallback(secFeatured)
 
-        // 2. Popolari (Rightbox -> Prima UL)
-        const popularItems: PartialSourceManga[] = []
-        const rightBoxLists = $('.rightbox ul')
+        // 2. Popolari & 3. Nuovi (dalla Home)
+        const rightBoxLists = $home('.rightbox ul')
         
+        // Popolari
+        const popularItems: PartialSourceManga[] = []
         if (rightBoxLists.length > 0) {
             rightBoxLists.eq(0).find('li').each((_: any, obj: any) => {
-                const link = $('dt a', obj)
+                const link = $home('dt a', obj)
                 const id = link.attr('href')?.replace(`${baseUrl}/manga/`, '').replace('.html', '')
-                const image = $('img', link).attr('src')
-                let title = $('img', link).attr('alt')
-                if (!title) title = $('dd a.show_book_desc b', obj).text().trim()
+                const image = $home('img', link).attr('src')
+                let title = $home('img', link).attr('alt')
+                if (!title) title = $home('dd a.show_book_desc b', obj).text().trim()
 
                 if (id && title) {
                     popularItems.push(App.createPartialSourceManga({
@@ -247,15 +230,15 @@ export class NineMangaITParser {
         secPopular.items = popularItems
         sectionCallback(secPopular)
 
-        // 3. Nuovi (Rightbox -> Seconda UL)
+        // Nuovi
         const newItems: PartialSourceManga[] = []
         if (rightBoxLists.length > 1) {
             rightBoxLists.eq(1).find('li').each((_: any, obj: any) => {
-                const link = $('dt a', obj)
+                const link = $home('dt a', obj)
                 const id = link.attr('href')?.replace(`${baseUrl}/manga/`, '').replace('.html', '')
-                const image = $('img', link).attr('src')
-                let title = $('img', link).attr('alt')
-                if (!title) title = $('dd a.show_book_desc b', obj).text().trim()
+                const image = $home('img', link).attr('src')
+                let title = $home('img', link).attr('alt')
+                if (!title) title = $home('dd a.show_book_desc b', obj).text().trim()
 
                 if (id && title) {
                     newItems.push(App.createPartialSourceManga({
@@ -270,23 +253,28 @@ export class NineMangaITParser {
         secNew.items = newItems
         sectionCallback(secNew)
 
-        // 4. Ultimi Aggiornamenti (.homeupdate)
+        // 4. Ultimi Aggiornamenti (Dalla pagina UPDATES dedicata)
+        // Qui usiamo $updates invece di $home!
         const updateItems: PartialSourceManga[] = []
-        $('.homeupdate li').each((_: any, obj: any) => {
-            const link = $('h1.bookopen a', obj)
+        $updates('.direlist .bookinfo').each((_: any, obj: any) => {
+            const link = $updates('.bookname', obj)
             const id = link.attr('href')?.replace(`${baseUrl}/manga/`, '').replace('.html', '')
             const title = link.text().trim()
-            const latestChap = $('dl dt a', obj).first().text().trim()
+            const subTitle = $updates('.chaptername', obj).text().trim()
+            
+            let image = $updates('dt img', obj).attr('src')
+            if (!image) image = $updates('dt img', obj).attr('data-src')
 
             if (id && title) {
                 updateItems.push(App.createPartialSourceManga({
-                    mangaId: id,
-                    image: 'https://paperback.moe/icons/logo-alt.svg', // Fallback icona
+                    image: image ?? '',
                     title: title,
-                    subtitle: latestChap
+                    mangaId: id,
+                    subtitle: subTitle,
                 }))
             }
         })
+        
         secUpdates.items = updateItems
         sectionCallback(secUpdates)
     }
@@ -303,7 +291,7 @@ export class NineMangaITParser {
         } else if (timeAgo.includes('days') || timeAgo.includes('day')) {
             time = new Date(Date.now() - trimmed * 86400000)
         } else {
-            time = new Date(timeAgo) // Prova formato data standard
+            time = new Date(timeAgo)
         }
         
         if (isNaN(time.getTime())) return new Date()
