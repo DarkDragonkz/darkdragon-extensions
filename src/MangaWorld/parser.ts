@@ -13,12 +13,22 @@ export class Parser {
     parseMangaDetails($: any, mangaId: string): SourceManga {
         const title = $('.name.bigger').text().trim() ?? ''
         
-        // FIX: Supporto Lazy Loading (data-src)
-        let image = $('.thumb.mb-3.text-center img').attr('src') ?? ''
-        if (image.includes('loading') || !image) {
-            image = $('.thumb.mb-3.text-center img').attr('data-src') ?? ''
+        // FIX: Logica avanzata per le immagini (Lazy Loading + URL Relativi)
+        const imgElement = $('.thumb.mb-3.text-center img')
+        let image = imgElement.attr('src') ?? ''
+        
+        // Se l'src è un placeholder, vuoto o base64, cerca negli attributi data-*
+        if (!image || image.includes('loading') || image.startsWith('data:')) {
+            image = imgElement.attr('data-src') ?? imgElement.attr('data-original') ?? ''
         }
         
+        // Se l'URL è relativo (es. /uploads/...), aggiungi il dominio
+        if (image && image.startsWith('/')) {
+            image = 'https://www.mangaworld.mx' + image
+        }
+        // Fallback icona se non trova nulla
+        if (!image) image = 'https://paperback.moe/icons/logo-alt.svg'
+
         const desc = $('#noidungm').text().trim() ?? ''
         let hentai = false
         let author = ''
@@ -57,7 +67,7 @@ export class Parser {
             arrayTags.push({ id: id, label: label })
         }
 
-        const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'genres', tags: arrayTags.map((x) => App.createTag(x)) })]
+        const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags.map((x) => App.createTag(x)) })]
         return App.createSourceManga({
             id: mangaId,
             mangaInfo: App.createMangaInfo({
@@ -99,8 +109,18 @@ export class Parser {
     parseChapterDetails($: any, mangaId: string, id: string): ChapterDetails {
         const pages: string[] = []
         for (const item of $('.col-12.text-center.position-relative img').toArray()) {
-            const imageUrl = $(item).attr('src')
+            let imageUrl = $(item).attr('src')
+            // Gestione lazy loading anche nel reader
+            if (!imageUrl || imageUrl.includes('loading')) {
+                imageUrl = $(item).attr('data-src') ?? $(item).attr('data-original')
+            }
+            
             if (!imageUrl) continue
+            
+            if (imageUrl.startsWith('/')) {
+                imageUrl = 'https://www.mangaworld.mx' + imageUrl
+            }
+            
             pages.push(imageUrl.trim())
         }
         return App.createChapterDetails({
@@ -134,10 +154,13 @@ export class Parser {
 
             const title = $('a', item).attr('title') ?? ''
             
-            // FIX: Supporto Lazy Loading anche nella ricerca
-            let image = $('a img', item).attr('src') ?? ''
-            if (image.includes('loading') || !image) {
-                image = $('a img', item).attr('data-src') ?? ''
+            const imgElement = $('a img', item)
+            let image = imgElement.attr('src') ?? ''
+            if (image.includes('loading') || !image || image.startsWith('data:')) {
+                image = imgElement.attr('data-src') ?? imgElement.attr('data-original') ?? ''
+            }
+            if (image && image.startsWith('/')) {
+                image = 'https://www.mangaworld.mx' + image
             }
             
             results.push(
@@ -184,8 +207,14 @@ export class Parser {
             const id = (($('a', obj).attr('href') ?? '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ['null'])[0] ?? ''
             const title = $('a', obj).attr('title') ?? ''
             
-            let image = $('a img', obj).attr('src') ?? ''
-            if (image.includes('loading') || !image) image = $('a img', obj).attr('data-src') ?? ''
+            const imgElement = $('a img', obj)
+            let image = imgElement.attr('src') ?? ''
+            if (image.includes('loading') || !image || image.startsWith('data:')) {
+                image = imgElement.attr('data-src') ?? imgElement.attr('data-original') ?? ''
+            }
+            if (image && image.startsWith('/')) {
+                image = 'https://www.mangaworld.mx' + image
+            }
 
             const sub = $('.d-flex.flex-wrap.flex-row a', obj).first().attr('title') ?? ''
             latestManga.push(
@@ -203,8 +232,15 @@ export class Parser {
         let i = 0
         for (const obj of arrHotTitle) {
             const id = (($('a', obj).attr('href') ?? '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ['null'])[0] ?? ''
-            let image = $('.img-fluid', obj).attr('src') ?? ''
-            if (image.includes('loading') || !image) image = $('.img-fluid', obj).attr('data-src') ?? ''
+            
+            const imgElement = $('.img-fluid', obj)
+            let image = imgElement.attr('src') ?? ''
+            if (image.includes('loading') || !image || image.startsWith('data:')) {
+                image = imgElement.attr('data-src') ?? imgElement.attr('data-original') ?? ''
+            }
+            if (image && image.startsWith('/')) {
+                image = 'https://www.mangaworld.mx' + image
+            }
 
             const title = $('.name', obj).text().trim()
             if (i == 10) break
@@ -223,8 +259,15 @@ export class Parser {
         sectionCallback(section2)
         for (const obj of arrTrending) {
             const id = (($('a', obj).attr('href') ?? '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ['null'])[0] ?? ''
-            let image = $('a img', obj).attr('src') ?? ''
-            if (image.includes('loading') || !image) image = $('a img', obj).attr('data-src') ?? ''
+            
+            const imgElement = $('a img', obj)
+            let image = imgElement.attr('src') ?? ''
+            if (image.includes('loading') || !image || image.startsWith('data:')) {
+                image = imgElement.attr('data-src') ?? imgElement.attr('data-original') ?? ''
+            }
+            if (image && image.startsWith('/')) {
+                image = 'https://www.mangaworld.mx' + image
+            }
 
             const title = $('.manga-title', obj).text().trim()
             trending.push(
@@ -247,8 +290,15 @@ export class Parser {
             const id = (($('a', obj).attr('href') ?? '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ['null'])[0] ?? ''
 
             const title = $('a', obj).attr('title') ?? ''
-            let image = $('a img', obj).attr('src') ?? ''
-            if (image.includes('loading') || !image) image = $('a img', obj).attr('data-src') ?? ''
+            
+            const imgElement = $('a img', obj)
+            let image = imgElement.attr('src') ?? ''
+            if (image.includes('loading') || !image || image.startsWith('data:')) {
+                image = imgElement.attr('data-src') ?? imgElement.attr('data-original') ?? ''
+            }
+            if (image && image.startsWith('/')) {
+                image = 'https://www.mangaworld.mx' + image
+            }
 
             const sub = $('.d-flex.flex-wrap.flex-row a', obj).first().attr('title') ?? ''
 
