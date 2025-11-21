@@ -13,20 +13,16 @@ export class Parser {
     parseMangaDetails($: any, mangaId: string): SourceManga {
         const title = $('.name.bigger').text().trim() ?? ''
         
-        // FIX: Logica avanzata per le immagini (Lazy Loading + URL Relativi)
         const imgElement = $('.thumb.mb-3.text-center img')
         let image = imgElement.attr('src') ?? ''
         
-        // Se l'src è un placeholder, vuoto o base64, cerca negli attributi data-*
         if (!image || image.includes('loading') || image.startsWith('data:')) {
             image = imgElement.attr('data-src') ?? imgElement.attr('data-original') ?? ''
         }
         
-        // Se l'URL è relativo (es. /uploads/...), aggiungi il dominio
         if (image && image.startsWith('/')) {
             image = 'https://www.mangaworld.mx' + image
         }
-        // Fallback icona se non trova nulla
         if (!image) image = 'https://paperback.moe/icons/logo-alt.svg'
 
         const desc = $('#noidungm').text().trim() ?? ''
@@ -110,7 +106,6 @@ export class Parser {
         const pages: string[] = []
         for (const item of $('.col-12.text-center.position-relative img').toArray()) {
             let imageUrl = $(item).attr('src')
-            // Gestione lazy loading anche nel reader
             if (!imageUrl || imageUrl.includes('loading')) {
                 imageUrl = $(item).attr('data-src') ?? $(item).attr('data-original')
             }
@@ -229,6 +224,7 @@ export class Parser {
         section1.items = latestManga
         sectionCallback(section1)
 
+        // FIX: Titoli duplicati
         let i = 0
         for (const obj of arrHotTitle) {
             const id = (($('a', obj).attr('href') ?? '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ['null'])[0] ?? ''
@@ -242,13 +238,16 @@ export class Parser {
                 image = 'https://www.mangaworld.mx' + image
             }
 
-            const title = $('.name', obj).text().trim()
+            // PRENDIAMO IL TITOLO DAL LINK DIRETTAMENTE PER EVITARE DUPLICATI
+            let title = $('a', obj).attr('title') 
+            if (!title) title = $('.name', obj).text().trim() // fallback
+
             if (i == 10) break
             i++
             hotTitles.push(
                 App.createPartialSourceManga({
                     image,
-                    title: title,
+                    title: title ?? 'Unknown',
                     mangaId: id,
                     subtitle: undefined,
                 })
