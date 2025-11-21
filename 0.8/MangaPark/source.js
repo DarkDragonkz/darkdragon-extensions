@@ -914,8 +914,8 @@ var _Sources = (() => {
   // src/MangaPark/MangaPark.ts
   var MP_DOMAIN2 = "https://mangapark.net";
   var MangaParkInfo = {
-    version: "1.0.4",
-    // Bump version per forzare aggiornamento
+    version: "1.0.5",
+    // Bump version
     name: "MangaPark",
     icon: "icon.png",
     author: "DarkDragonkzz",
@@ -980,26 +980,20 @@ var _Sources = (() => {
       });
       const response = await this.requestManager.schedule(request, 1);
       const $ = this.cheerio.load(response.data);
-      const jsonScript = $('script[type="qwik/json"]').html();
-      let pages = [];
-      if (jsonScript) {
-        try {
-          const jsonData = JSON.parse(jsonScript);
-          const objs = jsonData.objs || [];
-          for (const item of objs) {
-            if (Array.isArray(item) && item.length > 0) {
-              if (typeof item[0] === "string" && item[0].startsWith("http")) {
-                if (item.every((x) => typeof x === "string" && x.startsWith("http"))) {
-                  if (item.length > pages.length) pages = item;
-                }
-              }
-            }
-          }
-        } catch (e) {
-          console.log("JSON parse failed, trying fallback");
+      const pages = [];
+      $('div[data-name="image-item"] img').each((_, el) => {
+        const img = $(el);
+        let src = img.attr("src");
+        if (!src || src.startsWith("data:") || src.includes("loading")) {
+          src = img.attr("data-src") || img.attr("srcset");
         }
+        if (src && src.startsWith("http")) {
+          pages.push(src);
+        }
+      });
+      if (pages.length === 0) {
+        throw new Error(`No pages found for chapter ${chapterId}`);
       }
-      if (pages.length === 0) throw new Error("No pages found");
       return App.createChapterDetails({
         id: chapterId,
         mangaId,
