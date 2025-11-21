@@ -463,11 +463,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MangaDex = exports.MangaDexInfo = void 0;
 const types_1 = require("@paperback/types");
 const helper_1 = require("../helper");
-const MangaDexSettings_1 = require("./MangaDexSettings");
 const MD_API = 'https://api.mangadex.org';
 const MD_UPLOADS = 'https://uploads.mangadex.org';
 exports.MangaDexInfo = {
-    version: '1.0.0',
+    version: '1.0.3',
     name: 'MangaDex',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
@@ -481,28 +480,21 @@ exports.MangaDexInfo = {
             type: types_1.BadgeColor.BLUE,
         },
     ],
-    intents: types_1.SourceIntents.MANGA_CHAPTERS | types_1.SourceIntents.HOMEPAGE_SECTIONS | types_1.SourceIntents.SETTINGS_UI,
+    intents: types_1.SourceIntents.MANGA_CHAPTERS | types_1.SourceIntents.HOMEPAGE_SECTIONS,
 };
 class MangaDex {
     constructor(cheerio) {
         this.cheerio = cheerio;
-        // State Manager per salvare le impostazioni delle lingue
-        this.stateManager = App.createSourceStateManager();
         this.requestManager = App.createRequestManager({
             requestsPerSecond: 5,
             requestTimeout: 20000
         });
-    }
-    // Implementazione Menu Impostazioni
-    async getSourceMenu() {
-        return new MangaDexSettings_1.MangaDexSettings(this);
     }
     getMangaShareUrl(mangaId) {
         return `https://mangadex.org/title/${mangaId}`;
     }
     async getMangaDetails(mangaId) {
         var _a, _b, _c, _d, _e, _f;
-        // Richiediamo anche autore, artista e cover art in una sola chiamata
         const request = App.createRequest({
             url: `${MD_API}/manga/${mangaId}?includes[]=author&includes[]=artist&includes[]=cover_art`,
             method: 'GET',
@@ -511,18 +503,13 @@ class MangaDex {
         const data = JSON.parse((_a = response.data) !== null && _a !== void 0 ? _a : '{}');
         const attributes = data.data.attributes;
         const relationships = data.data.relationships;
-        // Titolo (preferisci inglese, altrimenti il primo disponibile)
         const title = (_c = (_b = attributes.title.en) !== null && _b !== void 0 ? _b : Object.values(attributes.title)[0]) !== null && _c !== void 0 ? _c : 'Unknown Title';
-        // Descrizione
         const desc = (_e = (_d = attributes.description.en) !== null && _d !== void 0 ? _d : Object.values(attributes.description)[0]) !== null && _e !== void 0 ? _e : '';
-        // Autore e Artista
         const authors = relationships.filter((r) => r.type === 'author').map((r) => { var _a; return (_a = r.attributes) === null || _a === void 0 ? void 0 : _a.name; }).filter((n) => n);
         const artists = relationships.filter((r) => r.type === 'artist').map((r) => { var _a; return (_a = r.attributes) === null || _a === void 0 ? void 0 : _a.name; }).filter((n) => n);
-        // Copertina
         const coverRel = relationships.find((r) => r.type === 'cover_art');
         const fileName = (_f = coverRel === null || coverRel === void 0 ? void 0 : coverRel.attributes) === null || _f === void 0 ? void 0 : _f.fileName;
         const image = fileName ? `${MD_UPLOADS}/covers/${mangaId}/${fileName}` : 'https://paperback.moe/icons/logo-alt.svg';
-        // Status
         let status = 'Ongoing';
         if (attributes.status === 'completed')
             status = 'Completed';
@@ -530,7 +517,6 @@ class MangaDex {
             status = 'Hiatus';
         if (attributes.status === 'cancelled')
             status = 'Cancelled';
-        // Tags
         const tags = [App.createTagSection({ id: '0', label: 'Genres', tags: [] })];
         tags[0].tags = attributes.tags.map((tag) => App.createTag({ id: tag.id, label: tag.attributes.name.en }));
         return App.createSourceManga({
@@ -548,19 +534,17 @@ class MangaDex {
     }
     async getChapters(mangaId) {
         var _a;
-        // Recupera le lingue salvate nelle impostazioni
-        let languages = await this.stateManager.retrieve('languages');
-        if (!languages || languages.length === 0)
-            languages = MangaDexSettings_1.DEFAULT_LANGUAGES;
-        // Costruisci i parametri per la query
+        // Lingue di default: Italiano e Inglese
+        const languages = ['it', 'en'];
         const url = new helper_1.URLBuilder(MD_API)
             .addPathComponent('manga')
             .addPathComponent(mangaId)
             .addPathComponent('feed')
             .addQueryParameter('limit', '500')
-            .addQueryParameter('order[chapter]', 'desc')
-            .addQueryParameter('translatedLanguage[]', languages);
-        // .addQueryParameter('contentRating[]', ['safe', 'suggestive', 'erotica', 'pornographic']) // Opzionale: mostra tutto
+            .addQueryParameter('order[chapter]', 'desc');
+        for (const lang of languages) {
+            url.addQueryParameter('translatedLanguage[]', lang);
+        }
         const request = App.createRequest({
             url: url.buildUrl(),
             method: 'GET',
@@ -570,13 +554,11 @@ class MangaDex {
         const chapters = [];
         for (const chapter of data.data) {
             const attr = chapter.attributes;
-            // Salta capitoli esterni (es. MangaPlus link)
             if (attr.externalUrl)
                 continue;
             const lang = attr.translatedLanguage;
             const chapNum = parseFloat(attr.chapter) || 0;
             const title = attr.title ? `${attr.title}` : (attr.chapter ? `Chapter ${attr.chapter}` : 'Oneshot');
-            // Aggiungiamo bandiera al titolo per chiarezza se ci sono più lingue
             let flag = '';
             if (lang === 'it')
                 flag = '🇮🇹 ';
@@ -590,15 +572,13 @@ class MangaDex {
                 chapNum: chapNum,
                 volume: parseFloat(attr.volume) || 0,
                 time: new Date(attr.publishAt),
-                langCode: lang,
-                group: '' // MangaDex ha i gruppi nelle relationships, si potrebbe estrarre ma rallenta
+                langCode: lang
             }));
         }
         return chapters;
     }
     async getChapterDetails(mangaId, chapterId) {
         var _a;
-        // 1. Chiedi al server "At-Home" dove trovare le immagini
         const request = App.createRequest({
             url: `${MD_API}/at-home/server/${chapterId}`,
             method: 'GET',
@@ -607,7 +587,7 @@ class MangaDex {
         const data = JSON.parse((_a = response.data) !== null && _a !== void 0 ? _a : '{}');
         const baseUrl = data.baseUrl;
         const hash = data.chapter.hash;
-        const fileNames = data.chapter.data; // Usa 'data' per alta qualità, 'dataSaver' per risparmio dati
+        const fileNames = data.chapter.data;
         const pages = [];
         for (const file of fileNames) {
             pages.push(`${baseUrl}/data/${hash}/${file}`);
@@ -627,8 +607,8 @@ class MangaDex {
             .addQueryParameter('limit', limit.toString())
             .addQueryParameter('offset', offset.toString())
             .addQueryParameter('title', (_b = query.title) !== null && _b !== void 0 ? _b : '')
-            .addQueryParameter('includes[]', 'cover_art') // Per avere la copertina subito
-            .addQueryParameter('order[relevance]', 'desc'); // Ordina per rilevanza
+            .addQueryParameter('includes[]', 'cover_art')
+            .addQueryParameter('order[relevance]', 'desc');
         const request = App.createRequest({
             url: url.buildUrl(),
             method: 'GET',
@@ -639,7 +619,6 @@ class MangaDex {
         for (const manga of data.data) {
             const attr = manga.attributes;
             const title = (_e = (_d = attr.title.en) !== null && _d !== void 0 ? _d : Object.values(attr.title)[0]) !== null && _e !== void 0 ? _e : 'Unknown';
-            // Trova la copertina nelle relationships
             const coverRel = manga.relationships.find((r) => r.type === 'cover_art');
             const fileName = (_f = coverRel === null || coverRel === void 0 ? void 0 : coverRel.attributes) === null || _f === void 0 ? void 0 : _f.fileName;
             const image = fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : 'https://paperback.moe/icons/logo-alt.svg';
@@ -657,7 +636,6 @@ class MangaDex {
     }
     async getHomePageSections(sectionCallback) {
         var _a, _b, _c, _d, _e, _f, _g, _h;
-        // Sezione 1: Popolari (Titoli con più Follows)
         const section1 = App.createHomeSection({
             id: 'popular',
             title: 'Popular on MangaDex',
@@ -665,15 +643,13 @@ class MangaDex {
             type: types_1.HomeSectionType.singleRowNormal
         });
         sectionCallback(section1);
-        // Sezione 2: Ultime Aggiunte (per le lingue selezionate)
         const section2 = App.createHomeSection({
             id: 'latest',
-            title: 'Latest Updates (Filtered)',
+            title: 'Latest Updates',
             containsMoreItems: false,
             type: types_1.HomeSectionType.singleRowNormal
         });
         sectionCallback(section2);
-        // Recupera Popolari
         const popularUrl = new helper_1.URLBuilder(MD_API)
             .addPathComponent('manga')
             .addQueryParameter('limit', '10')
@@ -696,12 +672,10 @@ class MangaDex {
         }
         section1.items = popularItems;
         sectionCallback(section1);
-        // Recupera Recenti (Qui servirebbe una logica complessa per prendere i manga dai capitoli, 
-        // ma per semplicità prendiamo i manga creati di recente o aggiornati)
         const latestUrl = new helper_1.URLBuilder(MD_API)
             .addPathComponent('manga')
             .addQueryParameter('limit', '10')
-            .addQueryParameter('order[createdAt]', 'desc') // Manga creati di recente
+            .addQueryParameter('order[createdAt]', 'desc')
             .addQueryParameter('includes[]', 'cover_art')
             .buildUrl();
         const latestRequest = App.createRequest({ url: latestUrl, method: 'GET' });
@@ -727,64 +701,7 @@ class MangaDex {
 }
 exports.MangaDex = MangaDex;
 
-},{"../helper":64,"./MangaDexSettings":63,"@paperback/types":61}],63:[function(require,module,exports){
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.MangaDexSettings = exports.DEFAULT_LANGUAGES = exports.LANGUAGES = void 0;
-const types_1 = require("@paperback/types");
-// Lista delle lingue supportate da MangaDex che vogliamo filtrare
-exports.LANGUAGES = [
-    { id: 'it', name: 'Italiano' },
-    { id: 'en', name: 'English' },
-    { id: 'es', name: 'Spanish' },
-    { id: 'fr', name: 'French' },
-    { id: 'de', name: 'German' },
-    { id: 'ja', name: 'Japanese' }
-];
-exports.DEFAULT_LANGUAGES = ['it', 'en'];
-class MangaDexSettings extends types_1.Form {
-    async getSections() {
-        const sections = [];
-        const source = this.source; // Accesso allo state manager della source
-        // Ottieni le lingue salvate o usa il default
-        let selectedLanguages = await source.stateManager.retrieve('languages');
-        if (!selectedLanguages) {
-            selectedLanguages = exports.DEFAULT_LANGUAGES;
-            await source.stateManager.store('languages', selectedLanguages);
-        }
-        // Crea una riga switch per ogni lingua
-        const languageRows = exports.LANGUAGES.map(lang => {
-            return (0, types_1.Switch)(lang.id, {
-                label: lang.name,
-                value: selectedLanguages.includes(lang.id),
-                onValueChange: Application.Selector(this, 'onLanguageChange')
-            });
-        });
-        sections.push((0, types_1.Section)('Languages Filter', languageRows));
-        return sections;
-    }
-    async onLanguageChange(value, context) {
-        const source = this.source;
-        const langId = context.id;
-        let selectedLanguages = await source.stateManager.retrieve('languages');
-        if (!selectedLanguages)
-            selectedLanguages = exports.DEFAULT_LANGUAGES;
-        if (value) {
-            // Aggiungi lingua se non c'è
-            if (!selectedLanguages.includes(langId))
-                selectedLanguages.push(langId);
-        }
-        else {
-            // Rimuovi lingua
-            selectedLanguages = selectedLanguages.filter(l => l !== langId);
-        }
-        // Salva
-        await source.stateManager.store('languages', selectedLanguages);
-    }
-}
-exports.MangaDexSettings = MangaDexSettings;
-
-},{"@paperback/types":61}],64:[function(require,module,exports){
+},{"../helper":63,"@paperback/types":61}],63:[function(require,module,exports){
 "use strict";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 Object.defineProperty(exports, "__esModule", { value: true });
