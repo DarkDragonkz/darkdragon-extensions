@@ -625,18 +625,14 @@ class Parser {
     parseMangaDetails($, mangaId) {
         var _a, _b, _c, _d, _e, _f, _g;
         const title = (_a = $('.name.bigger').text().trim()) !== null && _a !== void 0 ? _a : '';
-        // FIX: Logica avanzata per le immagini (Lazy Loading + URL Relativi)
         const imgElement = $('.thumb.mb-3.text-center img');
         let image = (_b = imgElement.attr('src')) !== null && _b !== void 0 ? _b : '';
-        // Se l'src è un placeholder, vuoto o base64, cerca negli attributi data-*
         if (!image || image.includes('loading') || image.startsWith('data:')) {
             image = (_d = (_c = imgElement.attr('data-src')) !== null && _c !== void 0 ? _c : imgElement.attr('data-original')) !== null && _d !== void 0 ? _d : '';
         }
-        // Se l'URL è relativo (es. /uploads/...), aggiungi il dominio
         if (image && image.startsWith('/')) {
             image = 'https://www.mangaworld.mx' + image;
         }
-        // Fallback icona se non trova nulla
         if (!image)
             image = 'https://paperback.moe/icons/logo-alt.svg';
         const desc = (_e = $('#noidungm').text().trim()) !== null && _e !== void 0 ? _e : '';
@@ -716,7 +712,6 @@ class Parser {
         const pages = [];
         for (const item of $('.col-12.text-center.position-relative img').toArray()) {
             let imageUrl = $(item).attr('src');
-            // Gestione lazy loading anche nel reader
             if (!imageUrl || imageUrl.includes('loading')) {
                 imageUrl = (_a = $(item).attr('data-src')) !== null && _a !== void 0 ? _a : $(item).attr('data-original');
             }
@@ -820,6 +815,7 @@ class Parser {
         }
         section1.items = latestManga;
         sectionCallback(section1);
+        // FIX: Titoli duplicati
         let i = 0;
         for (const obj of arrHotTitle) {
             const id = (_l = ((_k = ((_j = $('a', obj).attr('href')) !== null && _j !== void 0 ? _j : '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i)) !== null && _k !== void 0 ? _k : ['null'])[0]) !== null && _l !== void 0 ? _l : '';
@@ -831,13 +827,16 @@ class Parser {
             if (image && image.startsWith('/')) {
                 image = 'https://www.mangaworld.mx' + image;
             }
-            const title = $('.name', obj).text().trim();
+            // PRENDIAMO IL TITOLO DAL LINK DIRETTAMENTE PER EVITARE DUPLICATI
+            let title = $('a', obj).attr('title');
+            if (!title)
+                title = $('.name', obj).text().trim(); // fallback
             if (i == 10)
                 break;
             i++;
             hotTitles.push(App.createPartialSourceManga({
                 image,
-                title: title,
+                title: title !== null && title !== void 0 ? title : 'Unknown',
                 mangaId: id,
                 subtitle: undefined,
             }));

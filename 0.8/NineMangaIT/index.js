@@ -723,14 +723,13 @@ class Parser {
     parseMangaDetails($, mangaId, source) {
         var _a, _b, _c, _d, _e, _f, _g;
         const title = (_a = $('.bookface img').attr('alt')) !== null && _a !== void 0 ? _a : '';
-        // FIX: Lazy Loading
         let image = (_b = $('.bookface img').attr('src')) !== null && _b !== void 0 ? _b : '';
         if (!image || image.includes('logo-alt')) {
             image = (_c = $('.bookface img').attr('data-src')) !== null && _c !== void 0 ? _c : 'https://paperback.moe/icons/logo-alt.svg';
         }
         let desc = (_d = $('.bookintro p').text().trim().replace('Summary:', '')) !== null && _d !== void 0 ? _d : '';
         if (desc == '')
-            desc = `No Decscription provided by the source(${source.baseUrl})`;
+            desc = `No Description provided by the source(${source.baseUrl})`;
         let author = '';
         let status_str = '';
         let hentai = false;
@@ -849,100 +848,103 @@ class Parser {
         return [App.createTagSection({ id: '0', label: 'genres', tags: genres })];
     }
     async parseHomeSections($, $$, sectionCallback, source) {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w;
-        const section1 = App.createHomeSection({
-            id: '1',
-            title: 'Latest Manga',
-            containsMoreItems: false,
-            type: types_1.HomeSectionType.singleRowNormal,
-        });
-        const section2 = App.createHomeSection({
-            id: '2',
-            title: 'Popular',
-            containsMoreItems: false,
-            type: types_1.HomeSectionType.singleRowNormal,
-        });
-        const section3 = App.createHomeSection({
-            id: '3',
-            title: 'Hot Manga',
-            containsMoreItems: false,
-            type: types_1.HomeSectionType.singleRowNormal,
-        });
-        const section4 = App.createHomeSection({
-            id: '4',
-            title: 'New Manga',
-            containsMoreItems: false,
-            type: types_1.HomeSectionType.singleRowNormal,
-        });
-        const popular = [];
-        const hot = [];
-        const latest = [];
-        const newManga = [];
-        const arrLatest = $$('.direlist .bookinfo').toArray();
-        const arrPopular = $('.pop_update li').toArray();
-        const arrHot = $('.rightbox ul:nth-child(3) li dl').toArray();
-        const arrNew = $('.rightbox ul:nth-child(6) li dl').toArray();
-        for (const obj of arrLatest) {
-            const id = (_b = (_a = $$('.bookname', obj).attr('href')) === null || _a === void 0 ? void 0 : _a.replace(`${source.baseUrl}/manga/`, '').replace('.html', '')) !== null && _b !== void 0 ? _b : '';
-            const title = (_c = $$('.bookname', obj).text().trim()) !== null && _c !== void 0 ? _c : '';
-            const subTitle = (_d = $$('.chaptername', obj).text().trim().toUpperCase().replace(title.toUpperCase(), '').trim()) !== null && _d !== void 0 ? _d : '';
-            let image = (_e = $$('dt img', obj).attr('src')) !== null && _e !== void 0 ? _e : '';
-            if (!image)
-                image = (_f = $$('dt img', obj).attr('data-src')) !== null && _f !== void 0 ? _f : '';
-            latest.push(App.createPartialSourceManga({
-                image,
-                title: title,
-                mangaId: id,
-                subtitle: subTitle,
-            }));
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
+        // Definiamo le sezioni come richieste dall'utente
+        const sectionAggiornamenti = App.createHomeSection({ id: 'top_update', title: 'In Evidenza', containsMoreItems: false, type: types_1.HomeSectionType.singleRowNormal });
+        const sectionPopolari = App.createHomeSection({ id: 'popular', title: 'Popolari', containsMoreItems: false, type: types_1.HomeSectionType.singleRowNormal });
+        const sectionNuovi = App.createHomeSection({ id: 'new', title: 'Nuove Aggiunte', containsMoreItems: false, type: types_1.HomeSectionType.singleRowNormal });
+        const sectionRecenti = App.createHomeSection({ id: 'recent', title: 'Ultimi Caricamenti', containsMoreItems: true, type: types_1.HomeSectionType.singleRowNormal });
+        const aggiornamenti = [];
+        const popolari = [];
+        const nuovi = [];
+        const recenti = [];
+        // 1. PARSING "AGGIORNARE" (Top Slider - .pop_update)
+        const arrAggiornamenti = $('.pop_update li').toArray();
+        for (const obj of arrAggiornamenti) {
+            const href = $('.bookname', obj).attr('href');
+            const id = (_a = href === null || href === void 0 ? void 0 : href.replace(`${source.baseUrl}/manga/`, '').replace('.html', '')) !== null && _a !== void 0 ? _a : '';
+            // Pulizia del titolo (rimuove la data in rosso se presente)
+            let title = (_b = $('.bookface', obj).attr('title')) !== null && _b !== void 0 ? _b : '';
+            if (!title)
+                title = $('.bookname', obj).text().trim();
+            let image = (_c = $('.bookface img', obj).attr('src')) !== null && _c !== void 0 ? _c : '';
+            if (id && title) {
+                aggiornamenti.push(App.createPartialSourceManga({
+                    image,
+                    title: title,
+                    mangaId: id,
+                    subtitle: 'Aggiornato'
+                }));
+            }
         }
-        section1.items = latest;
-        sectionCallback(section1);
-        for (const obj of arrPopular) {
-            const id = (_h = (_g = $('a', obj).attr('href')) === null || _g === void 0 ? void 0 : _g.replace(`${source.baseUrl}/manga/`, '').replace('.html', '')) !== null && _h !== void 0 ? _h : '';
-            const title = (_j = $('a', obj).attr('title')) !== null && _j !== void 0 ? _j : '';
-            let image = (_k = $('img', obj).attr('src')) !== null && _k !== void 0 ? _k : '';
-            if (!image)
-                image = (_l = $('img', obj).attr('data-src')) !== null && _l !== void 0 ? _l : '';
-            popular.push(App.createPartialSourceManga({
-                image,
-                title: title,
-                mangaId: id,
-                subtitle: undefined,
-            }));
+        sectionAggiornamenti.items = aggiornamenti;
+        sectionCallback(sectionAggiornamenti);
+        // 2. PARSING "POPOLARE" (Rightbox)
+        // Cerchiamo l'header che contiene "Popolare" e prendiamo la UL successiva
+        const popularHeader = $('.rightbox .ttline').filter((_, e) => $(e).text().includes('Popolare'));
+        const popularList = popularHeader.next('ul').find('li').toArray();
+        for (const obj of popularList) {
+            const link = $('dt a', obj);
+            const id = (_e = (_d = link.attr('href')) === null || _d === void 0 ? void 0 : _d.replace(`${source.baseUrl}/manga/`, '').replace('.html', '')) !== null && _e !== void 0 ? _e : '';
+            let image = (_f = $('img', link).attr('src')) !== null && _f !== void 0 ? _f : '';
+            let title = (_g = $('img', link).attr('alt')) !== null && _g !== void 0 ? _g : '';
+            if (!title)
+                title = $('dd a.show_book_desc b', obj).text().trim();
+            if (id) {
+                popolari.push(App.createPartialSourceManga({
+                    image,
+                    title: title,
+                    mangaId: id,
+                    subtitle: undefined
+                }));
+            }
         }
-        section2.items = popular;
-        sectionCallback(section2);
-        for (const obj of arrHot) {
-            const id = (_o = (_m = $('a', obj).attr('href')) === null || _m === void 0 ? void 0 : _m.replace(`${source.baseUrl}/manga/`, '').replace('.html', '')) !== null && _o !== void 0 ? _o : '';
-            const title = (_p = $('img', obj).attr('alt')) !== null && _p !== void 0 ? _p : '';
-            let image = (_q = $('img', obj).attr('src')) !== null && _q !== void 0 ? _q : '';
-            if (!image)
-                image = (_r = $('img', obj).attr('data-src')) !== null && _r !== void 0 ? _r : '';
-            hot.push(App.createPartialSourceManga({
-                image,
-                title: title,
-                mangaId: id,
-                subtitle: undefined,
-            }));
+        sectionPopolari.items = popolari;
+        sectionCallback(sectionPopolari);
+        // 3. PARSING "NUOVO" (Rightbox)
+        // Stessa logica: cerchiamo header "Nuovo"
+        const newHeader = $('.rightbox .ttline').filter((_, e) => $(e).text().includes('Nuovo'));
+        const newList = newHeader.next('ul').find('li').toArray();
+        for (const obj of newList) {
+            const link = $('dt a', obj);
+            const id = (_j = (_h = link.attr('href')) === null || _h === void 0 ? void 0 : _h.replace(`${source.baseUrl}/manga/`, '').replace('.html', '')) !== null && _j !== void 0 ? _j : '';
+            let image = (_k = $('img', link).attr('src')) !== null && _k !== void 0 ? _k : '';
+            let title = (_l = $('img', link).attr('alt')) !== null && _l !== void 0 ? _l : '';
+            if (!title)
+                title = $('dd a.show_book_desc b', obj).text().trim();
+            if (id) {
+                nuovi.push(App.createPartialSourceManga({
+                    image,
+                    title: title,
+                    mangaId: id,
+                    subtitle: 'Novità'
+                }));
+            }
         }
-        section3.items = hot;
-        sectionCallback(section3);
-        for (const obj of arrNew) {
-            const id = (_t = (_s = $('a', obj).attr('href')) === null || _s === void 0 ? void 0 : _s.replace(`${source.baseUrl}/manga/`, '').replace('.html', '')) !== null && _t !== void 0 ? _t : '';
-            const title = (_u = $('img', obj).attr('alt')) !== null && _u !== void 0 ? _u : '';
-            let image = (_v = $('img', obj).attr('src')) !== null && _v !== void 0 ? _v : '';
-            if (!image)
-                image = (_w = $('img', obj).attr('data-src')) !== null && _w !== void 0 ? _w : '';
-            newManga.push(App.createPartialSourceManga({
-                image,
-                title: title,
-                mangaId: id,
-                subtitle: undefined,
-            }));
+        sectionNuovi.items = nuovi;
+        sectionCallback(sectionNuovi);
+        // 4. PARSING "ULTIMI AGGIORNAMENTI MANGA" (Lista Centrale - .homeupdate)
+        // Nota: Questa sezione nell'HTML non ha immagini (solo testo). Useremo un fallback.
+        const arrRecenti = $('.homeupdate li').toArray();
+        for (const obj of arrRecenti) {
+            const link = $('h1.bookopen a', obj);
+            const href = link.attr('href');
+            const id = (_m = href === null || href === void 0 ? void 0 : href.replace(`${source.baseUrl}/manga/`, '').replace('.html', '')) !== null && _m !== void 0 ? _m : '';
+            const title = link.text().trim();
+            const latestChap = $('dl dt a', obj).text().trim();
+            // Fallback icona obbligatorio perché l'HTML non ha img qui
+            const image = 'https://paperback.moe/icons/logo-alt.svg';
+            if (id && title) {
+                recenti.push(App.createPartialSourceManga({
+                    image,
+                    title: title,
+                    mangaId: id,
+                    subtitle: latestChap
+                }));
+            }
         }
-        section4.items = newManga;
-        sectionCallback(section4);
+        sectionRecenti.items = recenti;
+        sectionCallback(sectionRecenti);
     }
     filterUpdatedManga($, time, ids, source) {
         var _a, _b, _c;
