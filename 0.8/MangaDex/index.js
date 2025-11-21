@@ -462,11 +462,10 @@ __exportStar(require("./compat/DyamicUI"), exports);
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MangaDex = exports.MangaDexInfo = void 0;
 const types_1 = require("@paperback/types");
-const helper_1 = require("../helper");
 const MD_API = 'https://api.mangadex.org';
 const MD_UPLOADS = 'https://uploads.mangadex.org';
 exports.MangaDexInfo = {
-    version: '1.0.3',
+    version: '1.0.4',
     name: 'MangaDex',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
@@ -534,26 +533,31 @@ class MangaDex {
     }
     async getChapters(mangaId) {
         var _a;
-        // Lingue di default: Italiano e Inglese
-        const languages = ['it', 'en'];
-        const url = new helper_1.URLBuilder(MD_API)
-            .addPathComponent('manga')
-            .addPathComponent(mangaId)
-            .addPathComponent('feed')
-            .addQueryParameter('limit', '500')
-            .addQueryParameter('order[chapter]', 'desc');
+        const languages = ['it', 'en']; // Lingue desiderate
+        const ratings = ['safe', 'suggestive', 'erotica', 'pornographic']; // Content ratings necessari per vedere tutto
+        // Costruzione manuale dell'URL per gestire correttamente gli array di parametri
+        let url = `${MD_API}/manga/${mangaId}/feed?limit=500&order[chapter]=desc`;
         for (const lang of languages) {
-            url.addQueryParameter('translatedLanguage[]', lang);
+            url += `&translatedLanguage[]=${lang}`;
         }
+        for (const rating of ratings) {
+            url += `&contentRating[]=${rating}`;
+        }
+        // Escludi link esterni
+        url += '&includeFutureUpdates=0';
         const request = App.createRequest({
-            url: url.buildUrl(),
+            url: url,
             method: 'GET',
         });
         const response = await this.requestManager.schedule(request, 1);
         const data = JSON.parse((_a = response.data) !== null && _a !== void 0 ? _a : '{}');
         const chapters = [];
+        // Se non ci sono dati o c'è un errore, ritorna array vuoto
+        if (!data.data)
+            return [];
         for (const chapter of data.data) {
             const attr = chapter.attributes;
+            // Salta capitoli esterni (es. MangaPlus)
             if (attr.externalUrl)
                 continue;
             const lang = attr.translatedLanguage;
@@ -602,32 +606,32 @@ class MangaDex {
         var _a, _b, _c, _d, _e, _f;
         const limit = 20;
         const offset = (_a = metadata === null || metadata === void 0 ? void 0 : metadata.offset) !== null && _a !== void 0 ? _a : 0;
-        const url = new helper_1.URLBuilder(MD_API)
-            .addPathComponent('manga')
-            .addQueryParameter('limit', limit.toString())
-            .addQueryParameter('offset', offset.toString())
-            .addQueryParameter('title', (_b = query.title) !== null && _b !== void 0 ? _b : '')
-            .addQueryParameter('includes[]', 'cover_art')
-            .addQueryParameter('order[relevance]', 'desc');
+        const ratings = ['safe', 'suggestive', 'erotica', 'pornographic'];
+        let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&title=${encodeURIComponent((_b = query.title) !== null && _b !== void 0 ? _b : '')}&includes[]=cover_art&order[relevance]=desc`;
+        for (const rating of ratings) {
+            url += `&contentRating[]=${rating}`;
+        }
         const request = App.createRequest({
-            url: url.buildUrl(),
+            url: url,
             method: 'GET',
         });
         const response = await this.requestManager.schedule(request, 1);
         const data = JSON.parse((_c = response.data) !== null && _c !== void 0 ? _c : '{}');
         const results = [];
-        for (const manga of data.data) {
-            const attr = manga.attributes;
-            const title = (_e = (_d = attr.title.en) !== null && _d !== void 0 ? _d : Object.values(attr.title)[0]) !== null && _e !== void 0 ? _e : 'Unknown';
-            const coverRel = manga.relationships.find((r) => r.type === 'cover_art');
-            const fileName = (_f = coverRel === null || coverRel === void 0 ? void 0 : coverRel.attributes) === null || _f === void 0 ? void 0 : _f.fileName;
-            const image = fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : 'https://paperback.moe/icons/logo-alt.svg';
-            results.push(App.createPartialSourceManga({
-                mangaId: manga.id,
-                image: image,
-                title: title,
-                subtitle: attr.status
-            }));
+        if (data.data) {
+            for (const manga of data.data) {
+                const attr = manga.attributes;
+                const title = (_e = (_d = attr.title.en) !== null && _d !== void 0 ? _d : Object.values(attr.title)[0]) !== null && _e !== void 0 ? _e : 'Unknown';
+                const coverRel = manga.relationships.find((r) => r.type === 'cover_art');
+                const fileName = (_f = coverRel === null || coverRel === void 0 ? void 0 : coverRel.attributes) === null || _f === void 0 ? void 0 : _f.fileName;
+                const image = fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : 'https://paperback.moe/icons/logo-alt.svg';
+                results.push(App.createPartialSourceManga({
+                    mangaId: manga.id,
+                    image: image,
+                    title: title,
+                    subtitle: attr.status
+                }));
+            }
         }
         return App.createPagedResults({
             results: results,
@@ -650,47 +654,44 @@ class MangaDex {
             type: types_1.HomeSectionType.singleRowNormal
         });
         sectionCallback(section2);
-        const popularUrl = new helper_1.URLBuilder(MD_API)
-            .addPathComponent('manga')
-            .addQueryParameter('limit', '10')
-            .addQueryParameter('order[followedCount]', 'desc')
-            .addQueryParameter('includes[]', 'cover_art')
-            .buildUrl();
+        const ratings = '&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica';
+        // Popolari
+        const popularUrl = `${MD_API}/manga?limit=10&order[followedCount]=desc&includes[]=cover_art${ratings}`;
         const popularRequest = App.createRequest({ url: popularUrl, method: 'GET' });
         const popularResponse = await this.requestManager.schedule(popularRequest, 1);
         const popularData = JSON.parse((_a = popularResponse.data) !== null && _a !== void 0 ? _a : '{}');
         const popularItems = [];
-        for (const manga of popularData.data) {
-            const coverRel = manga.relationships.find((r) => r.type === 'cover_art');
-            const fileName = (_b = coverRel === null || coverRel === void 0 ? void 0 : coverRel.attributes) === null || _b === void 0 ? void 0 : _b.fileName;
-            popularItems.push(App.createPartialSourceManga({
-                mangaId: manga.id,
-                image: fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : '',
-                title: (_d = (_c = manga.attributes.title.en) !== null && _c !== void 0 ? _c : Object.values(manga.attributes.title)[0]) !== null && _d !== void 0 ? _d : 'Unknown',
-                subtitle: 'Popular'
-            }));
+        if (popularData.data) {
+            for (const manga of popularData.data) {
+                const coverRel = manga.relationships.find((r) => r.type === 'cover_art');
+                const fileName = (_b = coverRel === null || coverRel === void 0 ? void 0 : coverRel.attributes) === null || _b === void 0 ? void 0 : _b.fileName;
+                popularItems.push(App.createPartialSourceManga({
+                    mangaId: manga.id,
+                    image: fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : '',
+                    title: (_d = (_c = manga.attributes.title.en) !== null && _c !== void 0 ? _c : Object.values(manga.attributes.title)[0]) !== null && _d !== void 0 ? _d : 'Unknown',
+                    subtitle: 'Popular'
+                }));
+            }
         }
         section1.items = popularItems;
         sectionCallback(section1);
-        const latestUrl = new helper_1.URLBuilder(MD_API)
-            .addPathComponent('manga')
-            .addQueryParameter('limit', '10')
-            .addQueryParameter('order[createdAt]', 'desc')
-            .addQueryParameter('includes[]', 'cover_art')
-            .buildUrl();
+        // Ultime Aggiunte
+        const latestUrl = `${MD_API}/manga?limit=10&order[createdAt]=desc&includes[]=cover_art${ratings}`;
         const latestRequest = App.createRequest({ url: latestUrl, method: 'GET' });
         const latestResponse = await this.requestManager.schedule(latestRequest, 1);
         const latestData = JSON.parse((_e = latestResponse.data) !== null && _e !== void 0 ? _e : '{}');
         const latestItems = [];
-        for (const manga of latestData.data) {
-            const coverRel = manga.relationships.find((r) => r.type === 'cover_art');
-            const fileName = (_f = coverRel === null || coverRel === void 0 ? void 0 : coverRel.attributes) === null || _f === void 0 ? void 0 : _f.fileName;
-            latestItems.push(App.createPartialSourceManga({
-                mangaId: manga.id,
-                image: fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : '',
-                title: (_h = (_g = manga.attributes.title.en) !== null && _g !== void 0 ? _g : Object.values(manga.attributes.title)[0]) !== null && _h !== void 0 ? _h : 'Unknown',
-                subtitle: 'New Entry'
-            }));
+        if (latestData.data) {
+            for (const manga of latestData.data) {
+                const coverRel = manga.relationships.find((r) => r.type === 'cover_art');
+                const fileName = (_f = coverRel === null || coverRel === void 0 ? void 0 : coverRel.attributes) === null || _f === void 0 ? void 0 : _f.fileName;
+                latestItems.push(App.createPartialSourceManga({
+                    mangaId: manga.id,
+                    image: fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : '',
+                    title: (_h = (_g = manga.attributes.title.en) !== null && _g !== void 0 ? _g : Object.values(manga.attributes.title)[0]) !== null && _h !== void 0 ? _h : 'Unknown',
+                    subtitle: 'New Entry'
+                }));
+            }
         }
         section2.items = latestItems;
         sectionCallback(section2);
@@ -701,49 +702,5 @@ class MangaDex {
 }
 exports.MangaDex = MangaDex;
 
-},{"../helper":63,"@paperback/types":61}],63:[function(require,module,exports){
-"use strict";
-/* eslint-disable @typescript-eslint/no-explicit-any */
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.URLBuilder = void 0;
-class URLBuilder {
-    constructor(baseUrl) {
-        this.parameters = {};
-        this.pathComponents = [];
-        this.baseUrl = baseUrl.replace(/(^\/)?(?=.*)(\/$)?/gim, '');
-    }
-    addPathComponent(component) {
-        this.pathComponents.push(component.replace(/(^\/)?(?=.*)(\/$)?/gim, ''));
-        return this;
-    }
-    addQueryParameter(key, value) {
-        this.parameters[key] = value;
-        return this;
-    }
-    buildUrl({ addTrailingSlash, includeUndefinedParameters } = { addTrailingSlash: false, includeUndefinedParameters: false }) {
-        let finalUrl = this.baseUrl + '/';
-        finalUrl += this.pathComponents.join('/');
-        finalUrl += addTrailingSlash ? '/' : '';
-        finalUrl += Object.values(this.parameters).length > 0 ? '?' : '';
-        finalUrl += Object.entries(this.parameters).map(entry => {
-            if (entry[1] == null && !includeUndefinedParameters) {
-                return undefined;
-            }
-            if (Array.isArray(entry[1])) {
-                return `${entry[0]}=` + entry[1].map(value => value || includeUndefinedParameters ? `${value},` : undefined)
-                    .filter(x => x !== undefined)
-                    .join('');
-            }
-            if (typeof entry[1] === 'object') {
-                return Object.keys(entry[1]).map(key => `${entry[0]}[${key}]=${entry[1][key]}`)
-                    .join('&');
-            }
-            return `${entry[0]}=${entry[1]}`;
-        }).filter(x => x !== undefined).join('&');
-        return finalUrl;
-    }
-}
-exports.URLBuilder = URLBuilder;
-
-},{}]},{},[62])(62)
+},{"@paperback/types":61}]},{},[62])(62)
 });
