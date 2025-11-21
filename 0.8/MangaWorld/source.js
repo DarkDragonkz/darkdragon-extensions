@@ -645,10 +645,14 @@ exports.Parser = void 0;
 const types_1 = require("@paperback/types");
 class Parser {
     parseMangaDetails($, mangaId) {
-        var _a, _b, _c, _d, _e;
+        var _a, _b, _c, _d, _e, _f;
         const title = (_a = $('.name.bigger').text().trim()) !== null && _a !== void 0 ? _a : '';
-        const image = (_b = $('.thumb.mb-3.text-center img').attr('src')) !== null && _b !== void 0 ? _b : '';
-        const desc = (_c = $('#noidungm').text().trim()) !== null && _c !== void 0 ? _c : '';
+        // FIX: Supporto Lazy Loading (data-src)
+        let image = (_b = $('.thumb.mb-3.text-center img').attr('src')) !== null && _b !== void 0 ? _b : '';
+        if (image.includes('loading') || !image) {
+            image = (_c = $('.thumb.mb-3.text-center img').attr('data-src')) !== null && _c !== void 0 ? _c : '';
+        }
+        const desc = (_d = $('#noidungm').text().trim()) !== null && _d !== void 0 ? _d : '';
         let hentai = false;
         let author = '';
         let artist = '';
@@ -663,7 +667,7 @@ class Parser {
                         .each((_, e) => {
                         var _a, _b;
                         label_arr.push($(e).text());
-                        id_arr.push((_b = (_a = $(e).attr('href')) === null || _a === void 0 ? void 0 : _a.replace('https://www.mangaworld.in/archive?genre=', '')) !== null && _b !== void 0 ? _b : '');
+                        id_arr.push((_b = (_a = $(e).attr('href')) === null || _a === void 0 ? void 0 : _a.replace('https://www.mangaworld.mx/archive?genre=', '')) !== null && _b !== void 0 ? _b : '');
                     });
                     break;
                 case 2:
@@ -678,8 +682,8 @@ class Parser {
         const status = 'Ongoing';
         const arrayTags = [];
         for (const j in label_arr) {
-            const id = (_d = id_arr[j]) !== null && _d !== void 0 ? _d : '';
-            const label = (_e = label_arr[j]) !== null && _e !== void 0 ? _e : '';
+            const id = (_e = id_arr[j]) !== null && _e !== void 0 ? _e : '';
+            const label = (_f = label_arr[j]) !== null && _f !== void 0 ? _f : '';
             if (['ADULTI', 'SMUT', 'MATURO', 'HENTAI'].includes(id.toUpperCase()))
                 hentai = true;
             if (!id || !label)
@@ -752,12 +756,16 @@ class Parser {
         return [App.createTagSection({ id: '0', label: 'Generi', tags: genres })];
     }
     parseSearchResults($) {
-        var _a, _b, _c, _d, _e;
+        var _a, _b, _c, _d, _e, _f;
         const results = [];
         for (const item of $('.comics-grid .entry').toArray()) {
             const id = (_c = ((_b = ((_a = $('a', item).attr('href')) !== null && _a !== void 0 ? _a : '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i)) !== null && _b !== void 0 ? _b : ['null'])[0]) !== null && _c !== void 0 ? _c : '';
             const title = (_d = $('a', item).attr('title')) !== null && _d !== void 0 ? _d : '';
-            const image = (_e = $('a img', item).attr('src')) !== null && _e !== void 0 ? _e : '';
+            // FIX: Supporto Lazy Loading anche nella ricerca
+            let image = (_e = $('a img', item).attr('src')) !== null && _e !== void 0 ? _e : '';
+            if (image.includes('loading') || !image) {
+                image = (_f = $('a img', item).attr('data-src')) !== null && _f !== void 0 ? _f : '';
+            }
             results.push(App.createPartialSourceManga({
                 image,
                 title: title,
@@ -768,7 +776,7 @@ class Parser {
         return results;
     }
     parseHomeSections($, sectionCallback) {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s;
         const section1 = App.createHomeSection({
             id: '1',
             title: 'Ultimi capitoli aggiunti',
@@ -796,8 +804,10 @@ class Parser {
         for (const obj of arrLatest) {
             const id = (_c = ((_b = ((_a = $('a', obj).attr('href')) !== null && _a !== void 0 ? _a : '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i)) !== null && _b !== void 0 ? _b : ['null'])[0]) !== null && _c !== void 0 ? _c : '';
             const title = (_d = $('a', obj).attr('title')) !== null && _d !== void 0 ? _d : '';
-            const image = (_e = $('a img', obj).attr('src')) !== null && _e !== void 0 ? _e : '';
-            const sub = (_f = $('.d-flex.flex-wrap.flex-row a', obj).first().attr('title')) !== null && _f !== void 0 ? _f : '';
+            let image = (_e = $('a img', obj).attr('src')) !== null && _e !== void 0 ? _e : '';
+            if (image.includes('loading') || !image)
+                image = (_f = $('a img', obj).attr('data-src')) !== null && _f !== void 0 ? _f : '';
+            const sub = (_g = $('.d-flex.flex-wrap.flex-row a', obj).first().attr('title')) !== null && _g !== void 0 ? _g : '';
             latestManga.push(App.createPartialSourceManga({
                 image,
                 title: title,
@@ -809,8 +819,10 @@ class Parser {
         sectionCallback(section1);
         let i = 0;
         for (const obj of arrHotTitle) {
-            const id = (_j = ((_h = ((_g = $('a', obj).attr('href')) !== null && _g !== void 0 ? _g : '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i)) !== null && _h !== void 0 ? _h : ['null'])[0]) !== null && _j !== void 0 ? _j : '';
-            const image = (_k = $('.img-fluid', obj).attr('src')) !== null && _k !== void 0 ? _k : '';
+            const id = (_k = ((_j = ((_h = $('a', obj).attr('href')) !== null && _h !== void 0 ? _h : '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i)) !== null && _j !== void 0 ? _j : ['null'])[0]) !== null && _k !== void 0 ? _k : '';
+            let image = (_l = $('.img-fluid', obj).attr('src')) !== null && _l !== void 0 ? _l : '';
+            if (image.includes('loading') || !image)
+                image = (_m = $('.img-fluid', obj).attr('data-src')) !== null && _m !== void 0 ? _m : '';
             const title = $('.name', obj).text().trim();
             if (i == 10)
                 break;
@@ -825,8 +837,10 @@ class Parser {
         section2.items = hotTitles;
         sectionCallback(section2);
         for (const obj of arrTrending) {
-            const id = (_o = ((_m = ((_l = $('a', obj).attr('href')) !== null && _l !== void 0 ? _l : '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i)) !== null && _m !== void 0 ? _m : ['null'])[0]) !== null && _o !== void 0 ? _o : '';
-            const image = (_p = $('a img', obj).attr('src')) !== null && _p !== void 0 ? _p : '';
+            const id = (_q = ((_p = ((_o = $('a', obj).attr('href')) !== null && _o !== void 0 ? _o : '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i)) !== null && _p !== void 0 ? _p : ['null'])[0]) !== null && _q !== void 0 ? _q : '';
+            let image = (_r = $('a img', obj).attr('src')) !== null && _r !== void 0 ? _r : '';
+            if (image.includes('loading') || !image)
+                image = (_s = $('a img', obj).attr('data-src')) !== null && _s !== void 0 ? _s : '';
             const title = $('.manga-title', obj).text().trim();
             trending.push(App.createPartialSourceManga({
                 image,
@@ -839,14 +853,16 @@ class Parser {
         sectionCallback(section3);
     }
     parseViewMore($) {
-        var _a, _b, _c, _d, _e, _f;
+        var _a, _b, _c, _d, _e, _f, _g;
         const more = [];
         const arrLatest = $('.col-sm-12.col-md-8.col-xl-9 .comics-grid .entry').toArray();
         for (const obj of arrLatest) {
             const id = (_c = ((_b = ((_a = $('a', obj).attr('href')) !== null && _a !== void 0 ? _a : '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i)) !== null && _b !== void 0 ? _b : ['null'])[0]) !== null && _c !== void 0 ? _c : '';
             const title = (_d = $('a', obj).attr('title')) !== null && _d !== void 0 ? _d : '';
-            const image = (_e = $('a img', obj).attr('src')) !== null && _e !== void 0 ? _e : '';
-            const sub = (_f = $('.d-flex.flex-wrap.flex-row a', obj).first().attr('title')) !== null && _f !== void 0 ? _f : '';
+            let image = (_e = $('a img', obj).attr('src')) !== null && _e !== void 0 ? _e : '';
+            if (image.includes('loading') || !image)
+                image = (_f = $('a img', obj).attr('data-src')) !== null && _f !== void 0 ? _f : '';
+            const sub = (_g = $('.d-flex.flex-wrap.flex-row a', obj).first().attr('title')) !== null && _g !== void 0 ? _g : '';
             more.push(App.createPartialSourceManga({
                 image,
                 title: title,

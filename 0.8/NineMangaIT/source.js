@@ -727,10 +727,14 @@ exports.Parser = void 0;
 const types_1 = require("@paperback/types");
 class Parser {
     parseMangaDetails($, mangaId, source) {
-        var _a, _b, _c, _d, _e, _f;
+        var _a, _b, _c, _d, _e, _f, _g;
         const title = (_a = $('.bookface img').attr('alt')) !== null && _a !== void 0 ? _a : '';
-        const image = (_b = $('.bookface img').attr('src')) !== null && _b !== void 0 ? _b : 'https://paperback.moe/icons/logo-alt.svg';
-        let desc = (_c = $('.bookintro p').text().trim().replace('Summary:', '')) !== null && _c !== void 0 ? _c : '';
+        // FIX: Lazy Loading
+        let image = (_b = $('.bookface img').attr('src')) !== null && _b !== void 0 ? _b : '';
+        if (!image || image.includes('logo-alt')) {
+            image = (_c = $('.bookface img').attr('data-src')) !== null && _c !== void 0 ? _c : 'https://paperback.moe/icons/logo-alt.svg';
+        }
+        let desc = (_d = $('.bookintro p').text().trim().replace('Summary:', '')) !== null && _d !== void 0 ? _d : '';
         if (desc == '')
             desc = `No Decscription provided by the source(${source.baseUrl})`;
         let author = '';
@@ -743,8 +747,8 @@ class Parser {
             switch (item) {
                 case source.genreTag:
                     for (const e of $('a', obj).toArray()) {
-                        const id = (_e = (_d = $(e).attr('href')) === null || _d === void 0 ? void 0 : _d.replace('/category/', '').replace('.html', '')) !== null && _e !== void 0 ? _e : '';
-                        const label = (_f = $(e).text().trim()) !== null && _f !== void 0 ? _f : '';
+                        const id = (_f = (_e = $(e).attr('href')) === null || _e === void 0 ? void 0 : _e.replace('/category/', '').replace('.html', '')) !== null && _f !== void 0 ? _f : '';
+                        const label = (_g = $(e).text().trim()) !== null && _g !== void 0 ? _g : '';
                         if (['ADULT', 'SMUT', 'MATURE'].includes(id.toUpperCase()))
                             hentai = true;
                         if (!id || !label)
@@ -820,13 +824,15 @@ class Parser {
         });
     }
     parseSearchResults($, source) {
-        var _a, _b, _c, _d, _e;
+        var _a, _b, _c, _d, _e, _f;
         const results = [];
         for (const obj of $('.direlist .bookinfo').toArray()) {
             const id = (_b = (_a = $('.bookname', obj).attr('href')) === null || _a === void 0 ? void 0 : _a.replace(`${source.baseUrl}/manga/`, '').replace('.html', '')) !== null && _b !== void 0 ? _b : '';
             const title = (_c = $('.bookname', obj).text().trim()) !== null && _c !== void 0 ? _c : '';
             const subTitle = (_d = $('.chaptername', obj).text().trim().replace(title, '').trim()) !== null && _d !== void 0 ? _d : '';
-            const image = (_e = $('dt img', obj).attr('src')) !== null && _e !== void 0 ? _e : '';
+            let image = (_e = $('dt img', obj).attr('src')) !== null && _e !== void 0 ? _e : '';
+            if (!image)
+                image = (_f = $('dt img', obj).attr('data-src')) !== null && _f !== void 0 ? _f : '';
             results.push(App.createPartialSourceManga({
                 image,
                 title: title,
@@ -849,7 +855,7 @@ class Parser {
         return [App.createTagSection({ id: '0', label: 'genres', tags: genres })];
     }
     async parseHomeSections($, $$, sectionCallback, source) {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w;
         const section1 = App.createHomeSection({
             id: '1',
             title: 'Latest Manga',
@@ -886,7 +892,9 @@ class Parser {
             const id = (_b = (_a = $$('.bookname', obj).attr('href')) === null || _a === void 0 ? void 0 : _a.replace(`${source.baseUrl}/manga/`, '').replace('.html', '')) !== null && _b !== void 0 ? _b : '';
             const title = (_c = $$('.bookname', obj).text().trim()) !== null && _c !== void 0 ? _c : '';
             const subTitle = (_d = $$('.chaptername', obj).text().trim().toUpperCase().replace(title.toUpperCase(), '').trim()) !== null && _d !== void 0 ? _d : '';
-            const image = (_e = $$('dt img', obj).attr('src')) !== null && _e !== void 0 ? _e : '';
+            let image = (_e = $$('dt img', obj).attr('src')) !== null && _e !== void 0 ? _e : '';
+            if (!image)
+                image = (_f = $$('dt img', obj).attr('data-src')) !== null && _f !== void 0 ? _f : '';
             latest.push(App.createPartialSourceManga({
                 image,
                 title: title,
@@ -897,9 +905,11 @@ class Parser {
         section1.items = latest;
         sectionCallback(section1);
         for (const obj of arrPopular) {
-            const id = (_g = (_f = $('a', obj).attr('href')) === null || _f === void 0 ? void 0 : _f.replace(`${source.baseUrl}/manga/`, '').replace('.html', '')) !== null && _g !== void 0 ? _g : '';
-            const title = (_h = $('a', obj).attr('title')) !== null && _h !== void 0 ? _h : '';
-            const image = (_j = $('img', obj).attr('src')) !== null && _j !== void 0 ? _j : '';
+            const id = (_h = (_g = $('a', obj).attr('href')) === null || _g === void 0 ? void 0 : _g.replace(`${source.baseUrl}/manga/`, '').replace('.html', '')) !== null && _h !== void 0 ? _h : '';
+            const title = (_j = $('a', obj).attr('title')) !== null && _j !== void 0 ? _j : '';
+            let image = (_k = $('img', obj).attr('src')) !== null && _k !== void 0 ? _k : '';
+            if (!image)
+                image = (_l = $('img', obj).attr('data-src')) !== null && _l !== void 0 ? _l : '';
             popular.push(App.createPartialSourceManga({
                 image,
                 title: title,
@@ -910,9 +920,11 @@ class Parser {
         section2.items = popular;
         sectionCallback(section2);
         for (const obj of arrHot) {
-            const id = (_l = (_k = $('a', obj).attr('href')) === null || _k === void 0 ? void 0 : _k.replace(`${source.baseUrl}/manga/`, '').replace('.html', '')) !== null && _l !== void 0 ? _l : '';
-            const title = (_m = $('img', obj).attr('alt')) !== null && _m !== void 0 ? _m : '';
-            const image = (_o = $('img', obj).attr('src')) !== null && _o !== void 0 ? _o : '';
+            const id = (_o = (_m = $('a', obj).attr('href')) === null || _m === void 0 ? void 0 : _m.replace(`${source.baseUrl}/manga/`, '').replace('.html', '')) !== null && _o !== void 0 ? _o : '';
+            const title = (_p = $('img', obj).attr('alt')) !== null && _p !== void 0 ? _p : '';
+            let image = (_q = $('img', obj).attr('src')) !== null && _q !== void 0 ? _q : '';
+            if (!image)
+                image = (_r = $('img', obj).attr('data-src')) !== null && _r !== void 0 ? _r : '';
             hot.push(App.createPartialSourceManga({
                 image,
                 title: title,
@@ -923,9 +935,11 @@ class Parser {
         section3.items = hot;
         sectionCallback(section3);
         for (const obj of arrNew) {
-            const id = (_q = (_p = $('a', obj).attr('href')) === null || _p === void 0 ? void 0 : _p.replace(`${source.baseUrl}/manga/`, '').replace('.html', '')) !== null && _q !== void 0 ? _q : '';
-            const title = (_r = $('img', obj).attr('alt')) !== null && _r !== void 0 ? _r : '';
-            const image = (_s = $('img', obj).attr('src')) !== null && _s !== void 0 ? _s : '';
+            const id = (_t = (_s = $('a', obj).attr('href')) === null || _s === void 0 ? void 0 : _s.replace(`${source.baseUrl}/manga/`, '').replace('.html', '')) !== null && _t !== void 0 ? _t : '';
+            const title = (_u = $('img', obj).attr('alt')) !== null && _u !== void 0 ? _u : '';
+            let image = (_v = $('img', obj).attr('src')) !== null && _v !== void 0 ? _v : '';
+            if (!image)
+                image = (_w = $('img', obj).attr('data-src')) !== null && _w !== void 0 ? _w : '';
             newManga.push(App.createPartialSourceManga({
                 image,
                 title: title,
