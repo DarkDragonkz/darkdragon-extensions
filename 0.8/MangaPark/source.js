@@ -733,7 +733,6 @@ var _Sources = (() => {
   var import_types = __toESM(require_lib());
   var MP_DOMAIN = "https://mangapark.net";
   var MangaParkParser = class {
-    // Helper per correggere URL immagini
     fixImageUrl(url) {
       if (!url) return "https://paperback.moe/icons/logo-alt.svg";
       if (url.startsWith("//")) return `https:${url}`;
@@ -743,12 +742,12 @@ var _Sources = (() => {
     parseMangaDetails($, mangaId) {
       let title = $("h3 a.link-hover").first().text().trim();
       if (!title) title = $(".comic-detail h3").first().text().trim();
-      if (!title) title = $("title").text().split("-")[0]?.trim() ?? "Unknown";
+      if (!title) title = $("title").text().split("-")[0]?.trim() ?? "Unknown Title";
       let image = $(".w-24 img").attr("src") || $(".w-52 img").attr("src") || $("div.relative img").attr("src");
       image = this.fixImageUrl(image);
       let desc = $(".limit-html-p").text().trim();
       if (!desc) desc = $(".limit-html").text().trim();
-      if (!desc) desc = "No description available";
+      if (!desc) desc = $('meta[name="description"]').attr("content") ?? "No description available";
       const authors = [];
       $('a[href*="/search?word="]').each((_, el) => {
         const parentText = $(el).parent().text();
@@ -782,28 +781,37 @@ var _Sources = (() => {
     }
     parseChapters($, mangaId) {
       const chapters = [];
-      const chapterLinks = $('a.link-hover.link-primary[href*="/title/"]').toArray();
-      for (const el of chapterLinks) {
+      const container = $('div[data-name="chapter-list"]');
+      const links = container.find("a.link-hover").toArray();
+      for (const el of links) {
         const link = $(el);
         const href = link.attr("href");
-        if (!href || !href.match(/\/\d+-.*-ch-/)) continue;
-        const chapterId = href.split("/").pop();
-        if (!chapterId) continue;
+        if (!href) continue;
+        const parts = href.split("/");
+        const chapterNodeId = parts.pop();
+        if (!chapterNodeId || chapterNodeId.length < 3 || !href.includes("/title/")) continue;
         const titleRaw = link.text().trim();
-        const row = link.closest("div.border-b");
-        const timeStr = row.find("time").text().trim();
+        if (!titleRaw) continue;
+        let timeStr = "";
+        let parent = link.parent();
+        for (let i = 0; i < 3; i++) {
+          const timeTag = parent.find("time");
+          if (timeTag.length > 0) {
+            timeStr = timeTag.text().trim();
+            break;
+          }
+          parent = parent.parent();
+        }
         const chapNumMatch = titleRaw.match(/Ch\.(\d+(\.\d+)?)/i);
         const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0;
         const volMatch = titleRaw.match(/Vol\.(\d+)/i);
         const volNum = volMatch ? parseFloat(volMatch[1]) : void 0;
         let name = titleRaw;
-        const extraSpan = link.next("span.opacity-80");
-        if (extraSpan.length > 0) {
-          const extraText = extraSpan.text().replace(/^:\s*/, "").trim();
-          if (extraText) name += ` - ${extraText}`;
-        }
+        const extraInfo = link.next("span").text().trim().replace(/^:\s*/, "");
+        if (extraInfo) name += ` - ${extraInfo}`;
         chapters.push(App.createChapter({
-          id: chapterId,
+          id: chapterNodeId,
+          // Usiamo l'ID univoco finale
           name,
           chapNum,
           volume: volNum,
@@ -846,49 +854,33 @@ var _Sources = (() => {
       const popularItems = [];
       const latestItems = [];
       const seenIds = /* @__PURE__ */ new Set();
-      const popularGrid = $('b:contains("Popular Updates")').closest("div.space-y-5").find("div.grid div.relative.w-full.group").toArray();
-      for (const item of popularGrid) {
+      const gridItems = $("div.grid > div.relative.w-full.group").toArray();
+      for (let i = 0; i < gridItems.length; i++) {
+        const item = gridItems[i];
         const link = $("a", item).first();
         const href = link.attr("href");
         const idMatch = href?.match(/\/title\/(\d+)-/);
         const id = idMatch ? idMatch[1] : null;
-        if (id && !seenIds.has(id)) {
-          seenIds.add(id);
-          let image = $("img", item).attr("src");
-          image = this.fixImageUrl(image);
-          let title = $("img", item).attr("title") || $("img", item).attr("alt");
-          if (!title) title = $(item).find("a.link-hover").text().trim();
-          popularItems.push(App.createPartialSourceManga({
-            mangaId: id,
-            image,
-            title: title || "Unknown",
-            subtitle: "Popular"
-          }));
-        }
+        if (!id || seenIds.has(id)) continue;
+        seenIds.add(id);
+        let image = $("img", item).attr("src");
+        image = this.fixImageUrl(image);
+        let title = $("img", item).attr("title") || $("img", item).attr("alt");
+        if (!title) title = $(item).find("a.link-hover").text().trim();
+        if (!title) title = $(item).closest(".flex").find("h3 a").text().trim();
+        if (!title) title = "Unknown";
+        const manga = App.createPartialSourceManga({
+          mangaId: id,
+          image,
+          title,
+          subtitle: void 0
+        });
+        if (i < 12) popularItems.push(manga);
+        else latestItems.push(manga);
       }
       popularSection.items = popularItems;
-      sectionCallback(popularSection);
-      const latestList = $('b:contains("Latest Releases")').closest("div.space-y-5").find("div.flex.border-b").toArray();
-      for (const item of latestList) {
-        const link = $("h3 a", item).first();
-        const href = link.attr("href");
-        const idMatch = href?.match(/\/title\/(\d+)-/);
-        const id = idMatch ? idMatch[1] : null;
-        if (id && !seenIds.has(id)) {
-          seenIds.add(id);
-          let image = $("img", item).attr("src");
-          image = this.fixImageUrl(image);
-          const title = link.text().trim();
-          const subtitle = $("div.flex.justify-between a", item).first().text().trim();
-          latestItems.push(App.createPartialSourceManga({
-            mangaId: id,
-            image,
-            title: title || "Unknown",
-            subtitle
-          }));
-        }
-      }
       latestSection.items = latestItems;
+      sectionCallback(popularSection);
       sectionCallback(latestSection);
     }
     convertTime(timeAgo) {
