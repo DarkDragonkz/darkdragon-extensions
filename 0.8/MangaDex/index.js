@@ -465,7 +465,7 @@ const types_1 = require("@paperback/types");
 const MD_API = 'https://api.mangadex.org';
 const MD_UPLOADS = 'https://uploads.mangadex.org';
 exports.MangaDexInfo = {
-    version: '2.1.0',
+    version: '2.1.1',
     name: 'MangaDex (EN)',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
@@ -623,16 +623,32 @@ class MangaDex {
         });
     }
     async getSearchResults(query, metadata) {
-        var _a, _b;
+        var _a, _b, _c, _d;
         const limit = 20;
         const offset = (_a = metadata === null || metadata === void 0 ? void 0 : metadata.offset) !== null && _a !== void 0 ? _a : 0;
-        const title = query.title ? encodeURIComponent(query.title) : '';
-        // IMPORTANTE: Includiamo tutti i content ratings per trovare tutto
-        let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&title=${title}&includes[]=cover_art&order[relevance]=desc`;
-        url += '&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic';
-        const request = App.createRequest({ url, method: 'GET' });
+        // Pulizia del titolo: trim degli spazi e codifica URI
+        const searchTitle = (_c = (_b = query.title) === null || _b === void 0 ? void 0 : _b.trim()) !== null && _c !== void 0 ? _c : '';
+        const encodedTitle = encodeURIComponent(searchTitle);
+        // Costruiamo l'URL base
+        // Nota: Usiamo %5B%5D invece di [] per massima compatibilità con l'encoder di Paperback
+        let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&includes%5B%5D=cover_art`;
+        // Aggiungiamo il titolo solo se presente
+        if (encodedTitle.length > 0) {
+            url += `&title=${encodedTitle}&order%5Brelevance%5D=desc`;
+        }
+        else {
+            // Se non c'è titolo, ordiniamo per popolarità o rating
+            url += `&order%5BfollowedCount%5D=desc`;
+        }
+        // Aggiungiamo i Content Rating (Safe, Suggestive, Erotica, Pornographic)
+        // È fondamentale ripeterli per vederli tutti
+        url += '&contentRating%5B%5D=safe&contentRating%5B%5D=suggestive&contentRating%5B%5D=erotica&contentRating%5B%5D=pornographic';
+        const request = App.createRequest({
+            url: url,
+            method: 'GET',
+        });
         const response = await this.requestManager.schedule(request, 1);
-        const json = JSON.parse((_b = response.data) !== null && _b !== void 0 ? _b : '{}');
+        const json = JSON.parse((_d = response.data) !== null && _d !== void 0 ? _d : '{}');
         const results = [];
         if (json.data) {
             for (const item of json.data) {
