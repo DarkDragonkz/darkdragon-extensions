@@ -886,7 +886,7 @@ var _Sources = (() => {
       }
       return [App.createTagSection({ id: "0", label: "genres", tags: genres })];
     }
-    async parseHomeSections($, $$, sectionCallback, source) {
+    async parseHomeSections($, $$2, sectionCallback, source) {
       const sectionAggiornamenti = App.createHomeSection({ id: "top_update", title: "In Evidenza", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
       const sectionPopolari = App.createHomeSection({ id: "popular", title: "Popolari", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
       const sectionNuovi = App.createHomeSection({ id: "new", title: "Nuove Aggiunte", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
@@ -907,7 +907,7 @@ var _Sources = (() => {
             image,
             title,
             mangaId: id,
-            subtitle: "Aggiornato"
+            subtitle: "In Evidenza"
           }));
         }
       }
@@ -1019,9 +1019,7 @@ var _Sources = (() => {
   var NineManga = class {
     constructor(cheerio) {
       this.cheerio = cheerio;
-      // FIX: Forziamo un User-Agent DESKTOP.
-      // Se usiamo quello mobile (default di Paperback), il sito nasconde la colonna ".rightbox" 
-      // e le sezioni Popolari/Nuovi diventano vuote.
+      // FIX: User-Agent Desktop fisso per vedere le colonne laterali (Hot/New)
       this.userAgentDesktop = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 3,
@@ -1104,7 +1102,7 @@ var _Sources = (() => {
       let response = await this.requestManager.schedule(request, this.RETRIES);
       this.checkResponseError(response);
       const $ = this.cheerio.load(response.data);
-      await this.parser.parseHomeSections($, $, sectionCallback, this);
+      await this.parser.parseHomeSections($, $$, sectionCallback, this);
     }
     async getViewMoreItems(_, __) {
       return App.createPagedResults({ results: [], metadata: { page: -1 } });
@@ -1169,7 +1167,6 @@ var _Sources = (() => {
         method: "GET",
         headers: {
           "user-agent": this.userAgentDesktop,
-          // Importante: deve combaciare
           referer: `${this.baseUrl}/`
         }
       });
