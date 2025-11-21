@@ -23,7 +23,7 @@ const MD_API = 'https://api.mangadex.org'
 const MD_UPLOADS = 'https://uploads.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '2.1.0',
+    version: '2.1.1',
     name: 'MangaDex (EN)',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
@@ -199,16 +199,35 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         })
     }
 
-    async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
+async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         const limit = 20
         const offset = metadata?.offset ?? 0
-        const title = query.title ? encodeURIComponent(query.title) : ''
         
-        // IMPORTANTE: Includiamo tutti i content ratings per trovare tutto
-        let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&title=${title}&includes[]=cover_art&order[relevance]=desc`
-        url += '&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic'
+        // Pulizia del titolo: trim degli spazi e codifica URI
+        const searchTitle = query.title?.trim() ?? ''
+        const encodedTitle = encodeURIComponent(searchTitle)
 
-        const request = App.createRequest({ url, method: 'GET' })
+        // Costruiamo l'URL base
+        // Nota: Usiamo %5B%5D invece di [] per massima compatibilità con l'encoder di Paperback
+        let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&includes%5B%5D=cover_art`
+
+        // Aggiungiamo il titolo solo se presente
+        if (encodedTitle.length > 0) {
+            url += `&title=${encodedTitle}&order%5Brelevance%5D=desc`
+        } else {
+            // Se non c'è titolo, ordiniamo per popolarità o rating
+            url += `&order%5BfollowedCount%5D=desc`
+        }
+
+        // Aggiungiamo i Content Rating (Safe, Suggestive, Erotica, Pornographic)
+        // È fondamentale ripeterli per vederli tutti
+        url += '&contentRating%5B%5D=safe&contentRating%5B%5D=suggestive&contentRating%5B%5D=erotica&contentRating%5B%5D=pornographic'
+
+        const request = App.createRequest({
+            url: url,
+            method: 'GET',
+        })
+
         const response = await this.requestManager.schedule(request, 1)
         const json = JSON.parse(response.data ?? '{}')
         
