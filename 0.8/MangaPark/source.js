@@ -732,7 +732,6 @@ var _Sources = (() => {
   // src/MangaPark/MangaParkParser.ts
   var import_types = __toESM(require_lib());
   var MangaParkParser = class {
-    // Helper per estrarre il JSON gigante di Qwik
     getQwikData($) {
       try {
         const jsonScript = $('script[type="qwik/json"]').html();
@@ -749,7 +748,18 @@ var _Sources = (() => {
       const mangaObj = objs.find(
         (obj) => obj && typeof obj === "object" && obj.name && obj.urlPath && obj.urlPath.includes(mangaId) && (obj.authors || obj.genres)
       );
-      if (!mangaObj) throw new Error("Failed to find manga details in Qwik data");
+      if (!mangaObj) {
+        const title2 = $("h3 a.link").first().text().trim();
+        const image2 = $('img[alt="' + title2 + '"]').attr("src") ?? "";
+        return App.createSourceManga({
+          id: mangaId,
+          mangaInfo: App.createMangaInfo({
+            titles: [title2 || "Unknown"],
+            image: image2,
+            status: "Unknown"
+          })
+        });
+      }
       const title = mangaObj.name;
       const image = mangaObj.urlCover600 || mangaObj.urlCoverOri || "https://paperback.moe/icons/logo-alt.svg";
       const author = mangaObj.authors ? Array.isArray(mangaObj.authors) ? mangaObj.authors.join(", ") : mangaObj.authors : "Unknown";
@@ -787,7 +797,6 @@ var _Sources = (() => {
           const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0;
           chapters.push(App.createChapter({
             id: chapterId,
-            // Salviamo l'ID univoco o l'intero path
             name: obj.dname + (obj.title ? ` - ${obj.title}` : ""),
             chapNum,
             time: new Date(obj.dateCreate),
@@ -810,7 +819,6 @@ var _Sources = (() => {
             seenIds.add(id);
             results.push(App.createPartialSourceManga({
               mangaId: id,
-              // Importante: Usiamo solo l'ID numerico
               image: obj.urlCover600,
               title: obj.name,
               subtitle: obj.authors ? String(obj.authors) : void 0
@@ -820,32 +828,38 @@ var _Sources = (() => {
       }
       return results;
     }
+    // FIX: Parsing HTML invece di JSON per la Home Page
     parseHomeSections($, sectionCallback, baseUrl) {
       const popularSection = App.createHomeSection({ id: "popular", title: "Popular Updates", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
       const latestSection = App.createHomeSection({ id: "latest", title: "Latest Releases", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
-      const objs = this.getQwikData($);
       const popularItems = [];
       const latestItems = [];
       const seenIds = /* @__PURE__ */ new Set();
-      for (const obj of objs) {
-        if (!obj || typeof obj !== "object") continue;
-        if (obj.name && obj.urlPath && obj.urlPath.startsWith("/title/") && (obj.urlCover600 || obj.urlCoverOri)) {
-          const idMatch = obj.urlPath.match(/\/title\/(\d+)-/);
-          const id = idMatch ? idMatch[1] : null;
-          if (id && !seenIds.has(id)) {
-            seenIds.add(id);
-            const item = App.createPartialSourceManga({
-              mangaId: id,
-              image: obj.urlCover600 || obj.urlCoverOri,
-              title: obj.name,
-              subtitle: void 0
-            });
-            if (popularItems.length < 10) {
-              popularItems.push(item);
-            } else if (latestItems.length < 20) {
-              latestItems.push(item);
-            }
-          }
+      const mangaLinks = $('div.grid a[href^="/title/"]').toArray();
+      for (const element of mangaLinks) {
+        const href = $(element).attr("href");
+        const idMatch = href?.match(/\/title\/(\d+)-/);
+        const id = idMatch ? idMatch[1] : null;
+        if (!id || seenIds.has(id)) continue;
+        seenIds.add(id);
+        let image = $(element).find("img").attr("src");
+        if (!image) continue;
+        let title = $(element).find("img").attr("title") || $(element).find("img").attr("alt");
+        if (!title) {
+          const parent = $(element).parent().parent();
+          title = parent.find("a.font-bold").text().trim();
+        }
+        if (!title) title = "Unknown Title";
+        const item = App.createPartialSourceManga({
+          mangaId: id,
+          image,
+          title,
+          subtitle: void 0
+        });
+        if (popularItems.length < 12) {
+          popularItems.push(item);
+        } else if (latestItems.length < 20) {
+          latestItems.push(item);
         }
       }
       popularSection.items = popularItems;
@@ -858,11 +872,11 @@ var _Sources = (() => {
   // src/MangaPark/MangaPark.ts
   var MP_DOMAIN = "https://mangapark.net";
   var MangaParkInfo = {
-    version: "1.0.1",
+    version: "1.0.2",
     name: "MangaPark",
     icon: "icon.png",
     author: "DarkDragonkzz",
-    description: "Extension for MangaPark (Qwik API)",
+    description: "Extension for MangaPark",
     contentRating: import_types2.ContentRating.MATURE,
     websiteBaseURL: MP_DOMAIN,
     sourceTags: [
@@ -884,8 +898,6 @@ var _Sources = (() => {
             req.headers = {
               ...req.headers ?? {},
               "referer": `${MP_DOMAIN}/`,
-              // Usiamo un UA generico ma moderno per evitare blocchi, 
-              // ma se noti problemi con Cloudflare, rimuovilo per usare quello di default.
               "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             };
             return req;
@@ -940,17 +952,13 @@ var _Sources = (() => {
           const firstItem = item[0];
           if (typeof firstItem === "string" && firstItem.startsWith("http")) {
             const isImageArray = item.every((x) => typeof x === "string" && x.startsWith("http"));
-            if (isImageArray) {
-              if (item.length > pages.length) {
-                pages = item;
-              }
+            if (isImageArray && item.length > pages.length) {
+              pages = item;
             }
           }
         }
       }
-      if (pages.length === 0) {
-        throw new Error("No pages found in chapter data");
-      }
+      if (pages.length === 0) throw new Error("No pages found");
       return App.createChapterDetails({
         id: chapterId,
         mangaId,
@@ -979,6 +987,17 @@ var _Sources = (() => {
       const response = await this.requestManager.schedule(request, 1);
       const $ = this.cheerio.load(response.data);
       this.parser.parseHomeSections($, sectionCallback, MP_DOMAIN);
+    }
+    // FIX: Metodo obbligatorio per Cloudflare Bypass
+    async getCloudflareBypassRequest() {
+      return App.createRequest({
+        url: MP_DOMAIN,
+        method: "GET",
+        headers: {
+          "referer": `${MP_DOMAIN}/`,
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+      });
     }
   };
   return __toCommonJS(MangaPark_exports);
