@@ -30,9 +30,9 @@
     "nodemon": "^2.0.22",
     "ts-node": "^10.9.1"
   },
-  "baseURL": "https://darkdragonkz.github.io/extensions-foreign",
+  "baseURL": "https://darkdragonkz.github.io/extensions-foreign/0.8",
   "repository": {
     "type": "git",
-    "url": "https://github.com/DarkDragonkz/extensions-foreign/0.8"
+    "url": "https://github.com/DarkDragonkz/extensions-foreign"
   }
 }
