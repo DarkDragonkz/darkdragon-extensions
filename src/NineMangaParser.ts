@@ -12,7 +12,13 @@ import {
 export class Parser {
     parseMangaDetails($: any, mangaId: string, source: any): SourceManga {
         const title = $('.bookface img').attr('alt') ?? ''
-        const image = $('.bookface img').attr('src') ?? 'https://paperback.moe/icons/logo-alt.svg'
+        
+        // FIX: Lazy Loading
+        let image = $('.bookface img').attr('src') ?? ''
+        if (!image || image.includes('logo-alt')) {
+            image = $('.bookface img').attr('data-src') ?? 'https://paperback.moe/icons/logo-alt.svg'
+        }
+        
         let desc = $('.bookintro p').text().trim().replace('Summary:', '') ?? ''
         if (desc == '') desc = `No Decscription provided by the source(${source.baseUrl})`
         let author = ''
@@ -105,7 +111,10 @@ export class Parser {
             const id = $('.bookname', obj).attr('href')?.replace(`${source.baseUrl}/manga/`, '').replace('.html', '') ?? ''
             const title = $('.bookname', obj).text().trim() ?? ''
             const subTitle = $('.chaptername', obj).text().trim().replace(title, '').trim() ?? ''
-            const image = $('dt img', obj).attr('src') ?? ''
+            
+            let image = $('dt img', obj).attr('src') ?? ''
+            if (!image) image = $('dt img', obj).attr('data-src') ?? ''
+
             results.push(
                 App.createPartialSourceManga({
                     image,
@@ -169,7 +178,10 @@ export class Parser {
             const id = $$('.bookname', obj).attr('href')?.replace(`${source.baseUrl}/manga/`, '').replace('.html', '') ?? ''
             const title = $$('.bookname', obj).text().trim() ?? ''
             const subTitle = $$('.chaptername', obj).text().trim().toUpperCase().replace(title.toUpperCase(), '').trim() ?? ''
-            const image = $$('dt img', obj).attr('src') ?? ''
+            
+            let image = $$('dt img', obj).attr('src') ?? ''
+            if (!image) image = $$('dt img', obj).attr('data-src') ?? ''
+            
             latest.push(
                 App.createPartialSourceManga({
                     image,
@@ -185,7 +197,9 @@ export class Parser {
         for (const obj of arrPopular) {
             const id = $('a', obj).attr('href')?.replace(`${source.baseUrl}/manga/`, '').replace('.html', '') ?? ''
             const title = $('a', obj).attr('title') ?? ''
-            const image = $('img', obj).attr('src') ?? ''
+            let image = $('img', obj).attr('src') ?? ''
+             if (!image) image = $('img', obj).attr('data-src') ?? ''
+             
             popular.push(
                 App.createPartialSourceManga({
                     image,
@@ -201,7 +215,9 @@ export class Parser {
         for (const obj of arrHot) {
             const id = $('a', obj).attr('href')?.replace(`${source.baseUrl}/manga/`, '').replace('.html', '') ?? ''
             const title = $('img', obj).attr('alt') ?? ''
-            const image = $('img', obj).attr('src') ?? ''
+            let image = $('img', obj).attr('src') ?? ''
+            if (!image) image = $('img', obj).attr('data-src') ?? ''
+
             hot.push(
                 App.createPartialSourceManga({
                     image,
@@ -217,7 +233,9 @@ export class Parser {
         for (const obj of arrNew) {
             const id = $('a', obj).attr('href')?.replace(`${source.baseUrl}/manga/`, '').replace('.html', '') ?? ''
             const title = $('img', obj).attr('alt') ?? ''
-            const image = $('img', obj).attr('src') ?? ''
+            let image = $('img', obj).attr('src') ?? ''
+            if (!image) image = $('img', obj).attr('data-src') ?? ''
+
             newManga.push(
                 App.createPartialSourceManga({
                     image,

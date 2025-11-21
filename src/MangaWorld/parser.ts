@@ -12,7 +12,13 @@ import {
 export class Parser {
     parseMangaDetails($: any, mangaId: string): SourceManga {
         const title = $('.name.bigger').text().trim() ?? ''
-        const image = $('.thumb.mb-3.text-center img').attr('src') ?? ''
+        
+        // FIX: Supporto Lazy Loading (data-src)
+        let image = $('.thumb.mb-3.text-center img').attr('src') ?? ''
+        if (image.includes('loading') || !image) {
+            image = $('.thumb.mb-3.text-center img').attr('data-src') ?? ''
+        }
+        
         const desc = $('#noidungm').text().trim() ?? ''
         let hentai = false
         let author = ''
@@ -27,7 +33,7 @@ export class Parser {
                         .find('a')
                         .each((_: any, e: any) => {
                             label_arr.push($(e).text())
-                            id_arr.push($(e).attr('href')?.replace('https://www.mangaworld.in/archive?genre=', '') ?? '')
+                            id_arr.push($(e).attr('href')?.replace('https://www.mangaworld.mx/archive?genre=', '') ?? '')
                         })
                     break
                 case 2:
@@ -127,7 +133,12 @@ export class Parser {
             const id = (($('a', item).attr('href') ?? '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ['null'])[0] ?? ''
 
             const title = $('a', item).attr('title') ?? ''
-            const image = $('a img', item).attr('src') ?? ''
+            
+            // FIX: Supporto Lazy Loading anche nella ricerca
+            let image = $('a img', item).attr('src') ?? ''
+            if (image.includes('loading') || !image) {
+                image = $('a img', item).attr('data-src') ?? ''
+            }
             
             results.push(
                 App.createPartialSourceManga({
@@ -172,7 +183,10 @@ export class Parser {
         for (const obj of arrLatest) {
             const id = (($('a', obj).attr('href') ?? '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ['null'])[0] ?? ''
             const title = $('a', obj).attr('title') ?? ''
-            const image = $('a img', obj).attr('src') ?? ''
+            
+            let image = $('a img', obj).attr('src') ?? ''
+            if (image.includes('loading') || !image) image = $('a img', obj).attr('data-src') ?? ''
+
             const sub = $('.d-flex.flex-wrap.flex-row a', obj).first().attr('title') ?? ''
             latestManga.push(
                 App.createPartialSourceManga({
@@ -189,7 +203,9 @@ export class Parser {
         let i = 0
         for (const obj of arrHotTitle) {
             const id = (($('a', obj).attr('href') ?? '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ['null'])[0] ?? ''
-            const image = $('.img-fluid', obj).attr('src') ?? ''
+            let image = $('.img-fluid', obj).attr('src') ?? ''
+            if (image.includes('loading') || !image) image = $('.img-fluid', obj).attr('data-src') ?? ''
+
             const title = $('.name', obj).text().trim()
             if (i == 10) break
             i++
@@ -207,7 +223,9 @@ export class Parser {
         sectionCallback(section2)
         for (const obj of arrTrending) {
             const id = (($('a', obj).attr('href') ?? '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ['null'])[0] ?? ''
-            const image = $('a img', obj).attr('src') ?? ''
+            let image = $('a img', obj).attr('src') ?? ''
+            if (image.includes('loading') || !image) image = $('a img', obj).attr('data-src') ?? ''
+
             const title = $('.manga-title', obj).text().trim()
             trending.push(
                 App.createPartialSourceManga({
@@ -229,7 +247,9 @@ export class Parser {
             const id = (($('a', obj).attr('href') ?? '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ['null'])[0] ?? ''
 
             const title = $('a', obj).attr('title') ?? ''
-            const image = $('a img', obj).attr('src') ?? ''
+            let image = $('a img', obj).attr('src') ?? ''
+            if (image.includes('loading') || !image) image = $('a img', obj).attr('data-src') ?? ''
+
             const sub = $('.d-flex.flex-wrap.flex-row a', obj).first().attr('title') ?? ''
 
             more.push(
