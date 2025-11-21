@@ -16,7 +16,6 @@ import {
 
 import { URLBuilder } from './helper'
 import { Parser } from './NineMangaParser'
-
 const BASE_VERSION = '3.0.0'
 
 export const getExportVersion = (EXTENSION_VERSION: string): string => {
@@ -30,6 +29,7 @@ export abstract class NineManga implements SearchResultsProviding, MangaProvidin
     
     userAgentRandomizer = `Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:77.0) Gecko/20100101 Firefox/78.0${Math.floor(Math.random() * 100000)}`
     
+    // FIX: Aggiunto Interceptor per le immagini in Library
     requestManager = App.createRequestManager({
         requestsPerSecond: 3,
         interceptor: {

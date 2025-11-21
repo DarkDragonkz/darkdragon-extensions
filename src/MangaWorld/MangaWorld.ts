@@ -23,7 +23,7 @@ import { URLBuilder } from '../helper'
 const MW_DOMAIN = 'https://www.mangaworld.mx'
 
 export const MangaWorldInfo: SourceInfo = {
-    version: '3.0.6', // Bump version
+    version: '3.0.7', // Bump version
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld (0.8).',
     author: 'NmN',
@@ -49,7 +49,7 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
     RETRIES = 10
     parser = new Parser()
 
-    // FIX: Aggiunto Interceptor per gestire Referer e User-Agent automaticamente
+    // FIX: Aggiunto Interceptor per le immagini in Library
     requestManager = App.createRequestManager({
         requestsPerSecond: 8,
         requestTimeout: 20000,
