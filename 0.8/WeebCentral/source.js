@@ -466,7 +466,7 @@ const WeebCentralParser_1 = require("./WeebCentralParser");
 const helper_1 = require("../helper");
 const DOMAIN = 'https://weebcentral.com';
 exports.WeebCentralInfo = {
-    version: '1.0.14',
+    version: '1.0.15',
     name: 'WeebCentral',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
@@ -495,7 +495,7 @@ class WeebCentral {
                     var _a;
                     request.headers = Object.assign(Object.assign({}, ((_a = request.headers) !== null && _a !== void 0 ? _a : {})), {
                         'referer': `${this.baseUrl}/`,
-                        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        // RIMOSSO User-Agent forzato
                     });
                     return request;
                 },
@@ -557,12 +557,8 @@ class WeebCentral {
         const response = await this.requestManager.schedule(request, 1);
         const $ = this.cheerio.load(response.data);
         const manga = this.parser.parseSearchResults($);
-        // FIX: Definiamo esplicitamente il tipo 'any' per evitare errori TypeScript
         let nextMetadata = undefined;
-        if (this.parser.isLastPage($)) {
-            nextMetadata = undefined;
-        }
-        else {
+        if (!this.parser.isLastPage($)) {
             nextMetadata = { offset: offset + limit };
         }
         return App.createPagedResults({
@@ -612,20 +608,6 @@ class WeebCentral {
                 'referer': `${this.baseUrl}/`,
                 'user-agent': await this.requestManager.getDefaultUserAgent()
             }
-        });
-    }
-    constructSearchRequest(query) {
-        var _a;
-        const queryText = (_a = query === null || query === void 0 ? void 0 : query.title) !== null && _a !== void 0 ? _a : '';
-        const url = new helper_1.URLBuilder(this.baseUrl)
-            .addPathComponent('search')
-            .addPathComponent('data')
-            .addQueryParameter('text', queryText)
-            .addQueryParameter('display_mode', 'Full Display')
-            .addQueryParameter('official', 'Any');
-        return App.createRequest({
-            url: url.buildUrl(),
-            method: 'GET',
         });
     }
 }

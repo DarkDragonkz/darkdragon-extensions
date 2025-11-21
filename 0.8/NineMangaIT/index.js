@@ -473,8 +473,7 @@ exports.getExportVersion = getExportVersion;
 class NineManga {
     constructor(cheerio) {
         this.cheerio = cheerio;
-        this.userAgentRandomizer = `Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:77.0) Gecko/20100101 Firefox/78.0${Math.floor(Math.random() * 100000)}`;
-        // FIX: Aggiunto Interceptor per le immagini in Library
+        // FIX: Rimosso UserAgentRandomizer per stabilità Cloudflare
         this.requestManager = App.createRequestManager({
             requestsPerSecond: 3,
             interceptor: {
@@ -482,7 +481,7 @@ class NineManga {
                     var _a;
                     request.headers = Object.assign(Object.assign({}, ((_a = request.headers) !== null && _a !== void 0 ? _a : {})), {
                         'referer': `${this.baseUrl}/`,
-                        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        // Usa UA di default di Paperback
                     });
                     return request;
                 },
@@ -624,9 +623,6 @@ class NineManga {
     }
     constructHeaders(headers, refererPath) {
         headers = headers !== null && headers !== void 0 ? headers : {};
-        if (this.userAgentRandomizer !== '') {
-            headers['user-agent'] = this.userAgentRandomizer;
-        }
         headers['accept-language'] = 'es-ES,es;q=0.9,en;q=0.8,gl;q=0.7';
         return headers;
     }

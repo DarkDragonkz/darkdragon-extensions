@@ -466,7 +466,7 @@ const parser_1 = require("./parser");
 const helper_1 = require("../helper");
 const MW_DOMAIN = 'https://www.mangaworld.mx';
 exports.MangaWorldInfo = {
-    version: '3.0.7',
+    version: '3.0.8',
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld (0.8).',
     author: 'NmN',
@@ -487,18 +487,17 @@ class MangaWorld {
     constructor(cheerio) {
         this.cheerio = cheerio;
         this.baseUrl = MW_DOMAIN;
-        this.RETRIES = 10;
+        this.RETRIES = 5; // Ridotto leggermente, 10 è eccessivo
         this.parser = new parser_1.Parser();
-        // FIX: Aggiunto Interceptor per le immagini in Library
         this.requestManager = App.createRequestManager({
-            requestsPerSecond: 8,
+            requestsPerSecond: 6,
             requestTimeout: 20000,
             interceptor: {
                 interceptRequest: async (request) => {
                     var _a;
                     request.headers = Object.assign(Object.assign({}, ((_a = request.headers) !== null && _a !== void 0 ? _a : {})), {
                         'referer': `${this.baseUrl}/`,
-                        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        // RIMOSSO User-Agent hardcodato per evitare conflitti Cloudflare
                     });
                     return request;
                 },
@@ -588,28 +587,6 @@ class MangaWorld {
             metadata: { page: page + 1 },
         });
     }
-    convertTime(timeAgo) {
-        var _a;
-        let time;
-        let trimmed = Number(((_a = /\d*/.exec(timeAgo)) !== null && _a !== void 0 ? _a : [])[0]);
-        trimmed = trimmed == 0 && timeAgo.includes('a') ? 1 : trimmed;
-        if (timeAgo.includes('mins') || timeAgo.includes('minutes') || timeAgo.includes('minute')) {
-            time = new Date(Date.now() - trimmed * 60000);
-        }
-        else if (timeAgo.includes('hours') || timeAgo.includes('hour')) {
-            time = new Date(Date.now() - trimmed * 3600000);
-        }
-        else if (timeAgo.includes('days') || timeAgo.includes('day')) {
-            time = new Date(Date.now() - trimmed * 86400000);
-        }
-        else if (timeAgo.includes('year') || timeAgo.includes('years')) {
-            time = new Date(Date.now() - trimmed * 31556952000);
-        }
-        else {
-            time = new Date(timeAgo);
-        }
-        return time;
-    }
     async getCloudflareBypassRequestAsync() {
         return App.createRequest({
             url: this.baseUrl,
@@ -617,6 +594,7 @@ class MangaWorld {
             headers: {
                 'referer': `${this.baseUrl}/`,
                 'origin': `${this.baseUrl}/`,
+                // Qui usiamo l'UA corretto del dispositivo
                 'user-agent': await this.requestManager.getDefaultUserAgent()
             }
         });
