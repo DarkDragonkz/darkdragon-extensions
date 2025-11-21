@@ -284,8 +284,42 @@ async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResult
     }
     
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
-        // Non implementato per semplicità ora, ritorna vuoto
-        return App.createPagedResults({ results: [] })
+        const offset = metadata?.offset ?? 0
+        const limit = 20 // Carichiamo 20 item per volta quando si scorre
+        let url = ''
+        
+        // Parametri comuni: Cover, Lingua EN, Rating (Safe/Suggestive/Erotica), Limite e Offset
+        const commonParams = `&includes[]=cover_art&availableTranslatedLanguage[]=en&limit=${limit}&offset=${offset}&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica`
+
+        if (homepageSectionId === 'popular') {
+            url = `${MD_API}/manga?order[followedCount]=desc${commonParams}`
+        } else if (homepageSectionId === 'latest') {
+            url = `${MD_API}/manga?order[latestUploadedChapter]=desc${commonParams}`
+        } else {
+            return App.createPagedResults({ results: [] })
+        }
+
+        const request = App.createRequest({ url, method: 'GET' })
+        const response = await this.requestManager.schedule(request, 1)
+        const json = JSON.parse(response.data ?? '{}')
+        
+        const results: PartialSourceManga[] = []
+        if (json.data) {
+            for (const item of json.data) {
+                results.push(this.parsePartialManga(item))
+            }
+        }
+
+        // Se abbiamo ricevuto risultati, prepariamo l'offset per la pagina successiva
+        let nextMetadata: any = undefined
+        if (results.length >= limit) {
+            nextMetadata = { offset: offset + limit }
+        }
+
+        return App.createPagedResults({
+            results: results,
+            metadata: nextMetadata
+        })
     }
 
     // Helper per parserizzare i risultati parziali (Home e Search)
