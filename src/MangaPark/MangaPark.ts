@@ -12,15 +12,14 @@ import {
     SourceIntents,
     SourceManga,
     TagSection,
-    Request,
-    Response
+    Request
 } from '@paperback/types'
 import { MangaParkParser } from './MangaParkParser'
 
 const MP_DOMAIN = 'https://mangapark.net'
 
 export const MangaParkInfo: SourceInfo = {
-    version: '1.0.2',
+    version: '1.0.4', // Bump version per forzare aggiornamento
     name: 'MangaPark',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
@@ -78,41 +77,35 @@ export class MangaPark extends Source {
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // chapterId qui è lo slug completo (es. "9939308-vol-0-ch-78")
         const request = App.createRequest({
             url: `${MP_DOMAIN}/title/${mangaId}/${chapterId}`,
             method: 'GET'
         })
 
         const response = await this.requestManager.schedule(request, 1)
-        
-        // 1. Estraiamo il blocco dati JSON di Qwik
         const $ = this.cheerio.load(response.data)
+
+        // Metodo Ibrido:
+        // 1. Proviamo a estrarre il JSON di Qwik per i link
         const jsonScript = $('script[type="qwik/json"]').html()
-        if (!jsonScript) throw new Error('Failed to extract Qwik JSON data')
-
-        let jsonData: any
-        try {
-            jsonData = JSON.parse(jsonScript)
-        } catch (e) {
-            throw new Error('Failed to parse Qwik JSON')
-        }
-
-        const objs = jsonData.objs || []
         let pages: string[] = []
 
-        // 2. Ricerca delle Immagini nel JSON
-        // Cerchiamo l'array più lungo che contiene stringhe URL HTTP
-        for (const item of objs) {
-            if (Array.isArray(item) && item.length > 0) {
-                const firstItem = item[0]
-                if (typeof firstItem === 'string' && firstItem.startsWith('http')) {
-                    const isImageArray = item.every(x => typeof x === 'string' && x.startsWith('http'))
-                    if (isImageArray && item.length > pages.length) {
-                        pages = item
+        if (jsonScript) {
+            try {
+                const jsonData = JSON.parse(jsonScript)
+                const objs = jsonData.objs || []
+                // Cerca array di stringhe HTTP
+                for (const item of objs) {
+                    if (Array.isArray(item) && item.length > 0) {
+                        if (typeof item[0] === 'string' && item[0].startsWith('http')) {
+                            // Verifica se è un array di immagini (contiene http)
+                             if (item.every((x:any) => typeof x === 'string' && x.startsWith('http'))) {
+                                 if (item.length > pages.length) pages = item
+                             }
+                        }
                     }
                 }
-            }
+            } catch (e) { console.log('JSON parse failed, trying fallback') }
         }
 
         if (pages.length === 0) throw new Error('No pages found')
@@ -150,7 +143,6 @@ export class MangaPark extends Source {
         this.parser.parseHomeSections($, sectionCallback, MP_DOMAIN)
     }
 
-    // FIX: Metodo obbligatorio per Cloudflare Bypass
     async getCloudflareBypassRequest(): Promise<Request> {
         return App.createRequest({
             url: MP_DOMAIN,
