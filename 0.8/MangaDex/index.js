@@ -465,7 +465,7 @@ const types_1 = require("@paperback/types");
 const MD_API = 'https://api.mangadex.org';
 const MD_UPLOADS = 'https://uploads.mangadex.org';
 exports.MangaDexInfo = {
-    version: '1.0.4',
+    version: '1.0.6',
     name: 'MangaDex',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
@@ -475,7 +475,7 @@ exports.MangaDexInfo = {
     websiteBaseURL: 'https://mangadex.org',
     sourceTags: [
         {
-            text: 'MULTI-LANG',
+            text: 'ENGLISH',
             type: types_1.BadgeColor.BLUE,
         },
     ],
@@ -533,9 +533,9 @@ class MangaDex {
     }
     async getChapters(mangaId) {
         var _a;
-        const languages = ['it', 'en']; // Lingue desiderate
-        const ratings = ['safe', 'suggestive', 'erotica', 'pornographic']; // Content ratings necessari per vedere tutto
-        // Costruzione manuale dell'URL per gestire correttamente gli array di parametri
+        // Solo Inglese
+        const languages = ['en'];
+        const ratings = ['safe', 'suggestive', 'erotica', 'pornographic'];
         let url = `${MD_API}/manga/${mangaId}/feed?limit=500&order[chapter]=desc`;
         for (const lang of languages) {
             url += `&translatedLanguage[]=${lang}`;
@@ -543,7 +543,6 @@ class MangaDex {
         for (const rating of ratings) {
             url += `&contentRating[]=${rating}`;
         }
-        // Escludi link esterni
         url += '&includeFutureUpdates=0';
         const request = App.createRequest({
             url: url,
@@ -552,27 +551,19 @@ class MangaDex {
         const response = await this.requestManager.schedule(request, 1);
         const data = JSON.parse((_a = response.data) !== null && _a !== void 0 ? _a : '{}');
         const chapters = [];
-        // Se non ci sono dati o c'è un errore, ritorna array vuoto
         if (!data.data)
             return [];
         for (const chapter of data.data) {
             const attr = chapter.attributes;
-            // Salta capitoli esterni (es. MangaPlus)
             if (attr.externalUrl)
                 continue;
             const lang = attr.translatedLanguage;
             const chapNum = parseFloat(attr.chapter) || 0;
             const title = attr.title ? `${attr.title}` : (attr.chapter ? `Chapter ${attr.chapter}` : 'Oneshot');
-            let flag = '';
-            if (lang === 'it')
-                flag = '🇮🇹 ';
-            else if (lang === 'en')
-                flag = '🇬🇧 ';
-            else
-                flag = `[${lang}] `;
+            // Nessuna bandierina necessaria dato che è solo inglese
             chapters.push(App.createChapter({
                 id: chapter.id,
-                name: flag + title,
+                name: title,
                 chapNum: chapNum,
                 volume: parseFloat(attr.volume) || 0,
                 time: new Date(attr.publishAt),
@@ -611,6 +602,8 @@ class MangaDex {
         for (const rating of ratings) {
             url += `&contentRating[]=${rating}`;
         }
+        // Nella ricerca generale non filtriamo per lingua perché MangaDex restituisce i manga, 
+        // che contengono capitoli in varie lingue. Il filtro si applica quando si aprono i capitoli.
         const request = App.createRequest({
             url: url,
             method: 'GET',
