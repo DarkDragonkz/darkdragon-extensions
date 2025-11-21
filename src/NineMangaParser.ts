@@ -138,10 +138,13 @@ export class Parser {
     }
 
     async parseHomeSections($: any, $$: any, sectionCallback: (section: HomeSection) => void, source: any): Promise<void> {
-        // Definizione Sezioni
+        // 1. IN EVIDENZA (Top Slider)
         const sectionAggiornamenti = App.createHomeSection({ id: 'top_update', title: 'In Evidenza', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
+        // 2. POPOLARI (Colonna destra)
         const sectionPopolari = App.createHomeSection({ id: 'popular', title: 'Popolari', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
+        // 3. NUOVE AGGIUNTE (Colonna destra)
         const sectionNuovi = App.createHomeSection({ id: 'new', title: 'Nuove Aggiunte', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
+        // 4. ULTIMI CARICAMENTI (Lista centrale)
         const sectionRecenti = App.createHomeSection({ id: 'recent', title: 'Ultimi Caricamenti', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
 
         const aggiornamenti: PartialSourceManga[] = []
@@ -149,7 +152,7 @@ export class Parser {
         const nuovi: PartialSourceManga[] = []
         const recenti: PartialSourceManga[] = []
 
-        // 1. PARSING "AGGIORNARE" (Top Slider - .pop_update)
+        // --- PARSING "AGGIORNARE" (Slider in alto) ---
         const arrAggiornamenti = $('.pop_update li').toArray()
         for (const obj of arrAggiornamenti) {
             const href = $('.bookname', obj).attr('href')
@@ -165,18 +168,18 @@ export class Parser {
                     image,
                     title: title,
                     mangaId: id,
-                    subtitle: 'Aggiornato'
+                    subtitle: 'In Evidenza'
                 }))
             }
         }
         sectionAggiornamenti.items = aggiornamenti
         sectionCallback(sectionAggiornamenti)
 
-        // FIX CRITICO: Selettori per Popolari e Nuovi basati sulla struttura fissa .rightbox
-        // La struttura è: .rightbox -> ul (Popolari) -> ul (Nuovi)
+        // --- PARSING COLONNA DESTRA (Rightbox) ---
+        // Se la richiesta usa l'UserAgent Desktop, questa colonna ESISTE.
         const rightBoxLists = $('.rightbox ul')
         
-        // 2. PARSING "POPOLARE" (Prima lista UL nella rightbox)
+        // Lista 1: Popolari
         if (rightBoxLists.length > 0) {
             const popularList = rightBoxLists.eq(0).find('li').toArray()
             for (const obj of popularList) {
@@ -200,7 +203,7 @@ export class Parser {
         sectionPopolari.items = popolari
         sectionCallback(sectionPopolari)
 
-        // 3. PARSING "NUOVO" (Seconda lista UL nella rightbox)
+        // Lista 2: Nuovi
         if (rightBoxLists.length > 1) {
             const newList = rightBoxLists.eq(1).find('li').toArray()
             for (const obj of newList) {
@@ -224,7 +227,7 @@ export class Parser {
         sectionNuovi.items = nuovi
         sectionCallback(sectionNuovi)
 
-        // 4. PARSING "ULTIMI AGGIORNAMENTI" (Lista Centrale - .homeupdate)
+        // --- PARSING "ULTIMI AGGIORNAMENTI" (Centrale) ---
         const arrRecenti = $('.homeupdate li').toArray()
         for (const obj of arrRecenti) {
             const link = $('h1.bookopen a', obj)
@@ -233,7 +236,7 @@ export class Parser {
             const title = link.text().trim()
             const latestChap = $('dl dt a', obj).text().trim()
 
-            // Fallback icona
+            // Fallback icona obbligatorio
             const image = 'https://paperback.moe/icons/logo-alt.svg' 
 
             if (id && title) {
@@ -257,7 +260,9 @@ export class Parser {
             const id = $('a', obj).attr('href')?.replace(`${source.baseUrl}/manga/`, '').replace('.html', '') ?? ''
             let mangaTime: Date
             const timeSelector = $('dd', obj).text().trim() ?? ''
+            // eslint-disable-next-line prefer-const
             mangaTime = source.convertTime(timeSelector ?? '')
+            // Check if the date is valid, if it isn't we should skip it
             if (!mangaTime.getTime()) continue
             passedReferenceTimeCurrent = mangaTime <= time
             if (!passedReferenceTimeCurrent || !passedReferenceTimePrior) {

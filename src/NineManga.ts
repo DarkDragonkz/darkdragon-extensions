@@ -27,9 +27,7 @@ export const getExportVersion = (EXTENSION_VERSION: string): string => {
 export abstract class NineManga implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding {
     constructor(private cheerio: any) {}
     
-    // FIX: Forziamo un User-Agent DESKTOP.
-    // Se usiamo quello mobile (default di Paperback), il sito nasconde la colonna ".rightbox" 
-    // e le sezioni Popolari/Nuovi diventano vuote.
+    // FIX: User-Agent Desktop fisso per vedere le colonne laterali (Hot/New)
     readonly userAgentDesktop = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
     requestManager = App.createRequestManager({
@@ -127,11 +125,7 @@ export abstract class NineManga implements SearchResultsProviding, MangaProvidin
         let response = await this.requestManager.schedule(request, this.RETRIES)
         this.checkResponseError(response)
         const $ = this.cheerio.load(response.data as string)
-        
-        // Non serve fare una seconda chiamata a /list/New-Update/ perché i dati
-        // sono già nella homepage desktop che abbiamo appena scaricato.
-        
-        await this.parser.parseHomeSections($, $, sectionCallback, this)
+        await this.parser.parseHomeSections($, $$, sectionCallback, this)
     }
 
     async getViewMoreItems(_: string, __: any): Promise<PagedResults> {
@@ -201,7 +195,7 @@ export abstract class NineManga implements SearchResultsProviding, MangaProvidin
 
     constructHeaders(headers?: any, refererPath?: string): any {
         headers = headers ?? {}
-        // Forziamo User-Agent anche qui per sicurezza
+        // Importante: User agent deve essere coerente
         headers['user-agent'] = this.userAgentDesktop
         headers['accept-language'] = 'es-ES,es;q=0.9,en;q=0.8,gl;q=0.7'
         return headers
@@ -212,7 +206,7 @@ export abstract class NineManga implements SearchResultsProviding, MangaProvidin
             url: this.baseUrl,
             method: 'GET',
             headers: {
-                'user-agent': this.userAgentDesktop, // Importante: deve combaciare
+                'user-agent': this.userAgentDesktop,
                 referer: `${this.baseUrl}/`,
             },
         })
