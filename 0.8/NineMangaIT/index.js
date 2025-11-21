@@ -654,7 +654,6 @@ exports.NineManga = NineManga;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.NineMangaIT = exports.NineMangaITInfo = void 0;
 const types_1 = require("@paperback/types");
-// FIX: Percorsi corretti ../ invece di ./
 const NineManga_1 = require("../NineManga");
 const IT_DOMAIN = 'https://it.ninemanga.com';
 exports.NineMangaITInfo = {
@@ -684,7 +683,6 @@ class NineMangaIT extends NineManga_1.NineManga {
         this.authorTag = 'Author(s)';
         this.statusTag = 'Stato';
     }
-    // Ora che parseStatus è definito in NineManga, override è valido
     parseStatus(str) {
         let status = 'Unknown';
         switch (str.toLowerCase()) {
