@@ -645,14 +645,23 @@ exports.Parser = void 0;
 const types_1 = require("@paperback/types");
 class Parser {
     parseMangaDetails($, mangaId) {
-        var _a, _b, _c, _d, _e, _f;
+        var _a, _b, _c, _d, _e, _f, _g;
         const title = (_a = $('.name.bigger').text().trim()) !== null && _a !== void 0 ? _a : '';
-        // FIX: Supporto Lazy Loading (data-src)
-        let image = (_b = $('.thumb.mb-3.text-center img').attr('src')) !== null && _b !== void 0 ? _b : '';
-        if (image.includes('loading') || !image) {
-            image = (_c = $('.thumb.mb-3.text-center img').attr('data-src')) !== null && _c !== void 0 ? _c : '';
+        // FIX: Logica avanzata per le immagini (Lazy Loading + URL Relativi)
+        const imgElement = $('.thumb.mb-3.text-center img');
+        let image = (_b = imgElement.attr('src')) !== null && _b !== void 0 ? _b : '';
+        // Se l'src è un placeholder, vuoto o base64, cerca negli attributi data-*
+        if (!image || image.includes('loading') || image.startsWith('data:')) {
+            image = (_d = (_c = imgElement.attr('data-src')) !== null && _c !== void 0 ? _c : imgElement.attr('data-original')) !== null && _d !== void 0 ? _d : '';
         }
-        const desc = (_d = $('#noidungm').text().trim()) !== null && _d !== void 0 ? _d : '';
+        // Se l'URL è relativo (es. /uploads/...), aggiungi il dominio
+        if (image && image.startsWith('/')) {
+            image = 'https://www.mangaworld.mx' + image;
+        }
+        // Fallback icona se non trova nulla
+        if (!image)
+            image = 'https://paperback.moe/icons/logo-alt.svg';
+        const desc = (_e = $('#noidungm').text().trim()) !== null && _e !== void 0 ? _e : '';
         let hentai = false;
         let author = '';
         let artist = '';
@@ -682,15 +691,15 @@ class Parser {
         const status = 'Ongoing';
         const arrayTags = [];
         for (const j in label_arr) {
-            const id = (_e = id_arr[j]) !== null && _e !== void 0 ? _e : '';
-            const label = (_f = label_arr[j]) !== null && _f !== void 0 ? _f : '';
+            const id = (_f = id_arr[j]) !== null && _f !== void 0 ? _f : '';
+            const label = (_g = label_arr[j]) !== null && _g !== void 0 ? _g : '';
             if (['ADULTI', 'SMUT', 'MATURO', 'HENTAI'].includes(id.toUpperCase()))
                 hentai = true;
             if (!id || !label)
                 continue;
             arrayTags.push({ id: id, label: label });
         }
-        const tagSections = [App.createTagSection({ id: '0', label: 'genres', tags: arrayTags.map((x) => App.createTag(x)) })];
+        const tagSections = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags.map((x) => App.createTag(x)) })];
         return App.createSourceManga({
             id: mangaId,
             mangaInfo: App.createMangaInfo({
@@ -725,11 +734,19 @@ class Parser {
         return chapters;
     }
     parseChapterDetails($, mangaId, id) {
+        var _a;
         const pages = [];
         for (const item of $('.col-12.text-center.position-relative img').toArray()) {
-            const imageUrl = $(item).attr('src');
+            let imageUrl = $(item).attr('src');
+            // Gestione lazy loading anche nel reader
+            if (!imageUrl || imageUrl.includes('loading')) {
+                imageUrl = (_a = $(item).attr('data-src')) !== null && _a !== void 0 ? _a : $(item).attr('data-original');
+            }
             if (!imageUrl)
                 continue;
+            if (imageUrl.startsWith('/')) {
+                imageUrl = 'https://www.mangaworld.mx' + imageUrl;
+            }
             pages.push(imageUrl.trim());
         }
         return App.createChapterDetails({
@@ -756,15 +773,18 @@ class Parser {
         return [App.createTagSection({ id: '0', label: 'Generi', tags: genres })];
     }
     parseSearchResults($) {
-        var _a, _b, _c, _d, _e, _f;
+        var _a, _b, _c, _d, _e, _f, _g;
         const results = [];
         for (const item of $('.comics-grid .entry').toArray()) {
             const id = (_c = ((_b = ((_a = $('a', item).attr('href')) !== null && _a !== void 0 ? _a : '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i)) !== null && _b !== void 0 ? _b : ['null'])[0]) !== null && _c !== void 0 ? _c : '';
             const title = (_d = $('a', item).attr('title')) !== null && _d !== void 0 ? _d : '';
-            // FIX: Supporto Lazy Loading anche nella ricerca
-            let image = (_e = $('a img', item).attr('src')) !== null && _e !== void 0 ? _e : '';
-            if (image.includes('loading') || !image) {
-                image = (_f = $('a img', item).attr('data-src')) !== null && _f !== void 0 ? _f : '';
+            const imgElement = $('a img', item);
+            let image = (_e = imgElement.attr('src')) !== null && _e !== void 0 ? _e : '';
+            if (image.includes('loading') || !image || image.startsWith('data:')) {
+                image = (_g = (_f = imgElement.attr('data-src')) !== null && _f !== void 0 ? _f : imgElement.attr('data-original')) !== null && _g !== void 0 ? _g : '';
+            }
+            if (image && image.startsWith('/')) {
+                image = 'https://www.mangaworld.mx' + image;
             }
             results.push(App.createPartialSourceManga({
                 image,
@@ -776,7 +796,7 @@ class Parser {
         return results;
     }
     parseHomeSections($, sectionCallback) {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v;
         const section1 = App.createHomeSection({
             id: '1',
             title: 'Ultimi capitoli aggiunti',
@@ -804,10 +824,15 @@ class Parser {
         for (const obj of arrLatest) {
             const id = (_c = ((_b = ((_a = $('a', obj).attr('href')) !== null && _a !== void 0 ? _a : '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i)) !== null && _b !== void 0 ? _b : ['null'])[0]) !== null && _c !== void 0 ? _c : '';
             const title = (_d = $('a', obj).attr('title')) !== null && _d !== void 0 ? _d : '';
-            let image = (_e = $('a img', obj).attr('src')) !== null && _e !== void 0 ? _e : '';
-            if (image.includes('loading') || !image)
-                image = (_f = $('a img', obj).attr('data-src')) !== null && _f !== void 0 ? _f : '';
-            const sub = (_g = $('.d-flex.flex-wrap.flex-row a', obj).first().attr('title')) !== null && _g !== void 0 ? _g : '';
+            const imgElement = $('a img', obj);
+            let image = (_e = imgElement.attr('src')) !== null && _e !== void 0 ? _e : '';
+            if (image.includes('loading') || !image || image.startsWith('data:')) {
+                image = (_g = (_f = imgElement.attr('data-src')) !== null && _f !== void 0 ? _f : imgElement.attr('data-original')) !== null && _g !== void 0 ? _g : '';
+            }
+            if (image && image.startsWith('/')) {
+                image = 'https://www.mangaworld.mx' + image;
+            }
+            const sub = (_h = $('.d-flex.flex-wrap.flex-row a', obj).first().attr('title')) !== null && _h !== void 0 ? _h : '';
             latestManga.push(App.createPartialSourceManga({
                 image,
                 title: title,
@@ -819,10 +844,15 @@ class Parser {
         sectionCallback(section1);
         let i = 0;
         for (const obj of arrHotTitle) {
-            const id = (_k = ((_j = ((_h = $('a', obj).attr('href')) !== null && _h !== void 0 ? _h : '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i)) !== null && _j !== void 0 ? _j : ['null'])[0]) !== null && _k !== void 0 ? _k : '';
-            let image = (_l = $('.img-fluid', obj).attr('src')) !== null && _l !== void 0 ? _l : '';
-            if (image.includes('loading') || !image)
-                image = (_m = $('.img-fluid', obj).attr('data-src')) !== null && _m !== void 0 ? _m : '';
+            const id = (_l = ((_k = ((_j = $('a', obj).attr('href')) !== null && _j !== void 0 ? _j : '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i)) !== null && _k !== void 0 ? _k : ['null'])[0]) !== null && _l !== void 0 ? _l : '';
+            const imgElement = $('.img-fluid', obj);
+            let image = (_m = imgElement.attr('src')) !== null && _m !== void 0 ? _m : '';
+            if (image.includes('loading') || !image || image.startsWith('data:')) {
+                image = (_p = (_o = imgElement.attr('data-src')) !== null && _o !== void 0 ? _o : imgElement.attr('data-original')) !== null && _p !== void 0 ? _p : '';
+            }
+            if (image && image.startsWith('/')) {
+                image = 'https://www.mangaworld.mx' + image;
+            }
             const title = $('.name', obj).text().trim();
             if (i == 10)
                 break;
@@ -837,10 +867,15 @@ class Parser {
         section2.items = hotTitles;
         sectionCallback(section2);
         for (const obj of arrTrending) {
-            const id = (_q = ((_p = ((_o = $('a', obj).attr('href')) !== null && _o !== void 0 ? _o : '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i)) !== null && _p !== void 0 ? _p : ['null'])[0]) !== null && _q !== void 0 ? _q : '';
-            let image = (_r = $('a img', obj).attr('src')) !== null && _r !== void 0 ? _r : '';
-            if (image.includes('loading') || !image)
-                image = (_s = $('a img', obj).attr('data-src')) !== null && _s !== void 0 ? _s : '';
+            const id = (_s = ((_r = ((_q = $('a', obj).attr('href')) !== null && _q !== void 0 ? _q : '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i)) !== null && _r !== void 0 ? _r : ['null'])[0]) !== null && _s !== void 0 ? _s : '';
+            const imgElement = $('a img', obj);
+            let image = (_t = imgElement.attr('src')) !== null && _t !== void 0 ? _t : '';
+            if (image.includes('loading') || !image || image.startsWith('data:')) {
+                image = (_v = (_u = imgElement.attr('data-src')) !== null && _u !== void 0 ? _u : imgElement.attr('data-original')) !== null && _v !== void 0 ? _v : '';
+            }
+            if (image && image.startsWith('/')) {
+                image = 'https://www.mangaworld.mx' + image;
+            }
             const title = $('.manga-title', obj).text().trim();
             trending.push(App.createPartialSourceManga({
                 image,
@@ -853,16 +888,21 @@ class Parser {
         sectionCallback(section3);
     }
     parseViewMore($) {
-        var _a, _b, _c, _d, _e, _f, _g;
+        var _a, _b, _c, _d, _e, _f, _g, _h;
         const more = [];
         const arrLatest = $('.col-sm-12.col-md-8.col-xl-9 .comics-grid .entry').toArray();
         for (const obj of arrLatest) {
             const id = (_c = ((_b = ((_a = $('a', obj).attr('href')) !== null && _a !== void 0 ? _a : '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i)) !== null && _b !== void 0 ? _b : ['null'])[0]) !== null && _c !== void 0 ? _c : '';
             const title = (_d = $('a', obj).attr('title')) !== null && _d !== void 0 ? _d : '';
-            let image = (_e = $('a img', obj).attr('src')) !== null && _e !== void 0 ? _e : '';
-            if (image.includes('loading') || !image)
-                image = (_f = $('a img', obj).attr('data-src')) !== null && _f !== void 0 ? _f : '';
-            const sub = (_g = $('.d-flex.flex-wrap.flex-row a', obj).first().attr('title')) !== null && _g !== void 0 ? _g : '';
+            const imgElement = $('a img', obj);
+            let image = (_e = imgElement.attr('src')) !== null && _e !== void 0 ? _e : '';
+            if (image.includes('loading') || !image || image.startsWith('data:')) {
+                image = (_g = (_f = imgElement.attr('data-src')) !== null && _f !== void 0 ? _f : imgElement.attr('data-original')) !== null && _g !== void 0 ? _g : '';
+            }
+            if (image && image.startsWith('/')) {
+                image = 'https://www.mangaworld.mx' + image;
+            }
+            const sub = (_h = $('.d-flex.flex-wrap.flex-row a', obj).first().attr('title')) !== null && _h !== void 0 ? _h : '';
             more.push(App.createPartialSourceManga({
                 image,
                 title: title,
