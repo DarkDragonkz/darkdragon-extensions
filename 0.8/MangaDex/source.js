@@ -465,13 +465,13 @@ const types_1 = require("@paperback/types");
 const MD_API = 'https://api.mangadex.org';
 const MD_UPLOADS = 'https://uploads.mangadex.org';
 exports.MangaDexInfo = {
-    version: '1.0.6',
-    name: 'MangaDex',
+    version: '2.0.0',
+    name: 'MangaDex (EN)',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
     authorWebsite: 'https://github.com/DarkDragonkz',
-    description: 'Extension for MangaDex (API v5)',
-    contentRating: types_1.ContentRating.EVERYONE,
+    description: 'MangaDex source (English Only)',
+    contentRating: types_1.ContentRating.MATURE,
     websiteBaseURL: 'https://mangadex.org',
     sourceTags: [
         {
@@ -533,17 +533,8 @@ class MangaDex {
     }
     async getChapters(mangaId) {
         var _a;
-        // Solo Inglese
-        const languages = ['en'];
-        const ratings = ['safe', 'suggestive', 'erotica', 'pornographic'];
-        let url = `${MD_API}/manga/${mangaId}/feed?limit=500&order[chapter]=desc`;
-        for (const lang of languages) {
-            url += `&translatedLanguage[]=${lang}`;
-        }
-        for (const rating of ratings) {
-            url += `&contentRating[]=${rating}`;
-        }
-        url += '&includeFutureUpdates=0';
+        // URL pulito: Solo inglese, ordinato per capitolo decrescente, limite 500
+        const url = `${MD_API}/manga/${mangaId}/feed?limit=500&translatedLanguage[]=en&order[chapter]=desc&includeFutureUpdates=0`;
         const request = App.createRequest({
             url: url,
             method: 'GET',
@@ -555,19 +546,28 @@ class MangaDex {
             return [];
         for (const chapter of data.data) {
             const attr = chapter.attributes;
+            // Saltiamo i capitoli che sono solo link esterni (es. MangaPlus)
             if (attr.externalUrl)
                 continue;
-            const lang = attr.translatedLanguage;
             const chapNum = parseFloat(attr.chapter) || 0;
-            const title = attr.title ? `${attr.title}` : (attr.chapter ? `Chapter ${attr.chapter}` : 'Oneshot');
-            // Nessuna bandierina necessaria dato che è solo inglese
+            // Titolo pulito: Se c'è un titolo specifico lo usa, altrimenti "Chapter X"
+            let title = '';
+            if (attr.title) {
+                title = attr.title;
+            }
+            else if (attr.chapter) {
+                title = `Chapter ${attr.chapter}`;
+            }
+            else {
+                title = 'Oneshot';
+            }
             chapters.push(App.createChapter({
                 id: chapter.id,
                 name: title,
                 chapNum: chapNum,
                 volume: parseFloat(attr.volume) || 0,
                 time: new Date(attr.publishAt),
-                langCode: lang
+                langCode: 'en'
             }));
         }
         return chapters;
@@ -597,13 +597,9 @@ class MangaDex {
         var _a, _b, _c, _d, _e, _f;
         const limit = 20;
         const offset = (_a = metadata === null || metadata === void 0 ? void 0 : metadata.offset) !== null && _a !== void 0 ? _a : 0;
-        const ratings = ['safe', 'suggestive', 'erotica', 'pornographic'];
-        let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&title=${encodeURIComponent((_b = query.title) !== null && _b !== void 0 ? _b : '')}&includes[]=cover_art&order[relevance]=desc`;
-        for (const rating of ratings) {
-            url += `&contentRating[]=${rating}`;
-        }
-        // Nella ricerca generale non filtriamo per lingua perché MangaDex restituisce i manga, 
-        // che contengono capitoli in varie lingue. Il filtro si applica quando si aprono i capitoli.
+        // Cerca titoli che contengono il testo, includendo copertine, ordinati per rilevanza.
+        // Includiamo TUTTI i content rating per essere sicuri di trovare il manga.
+        const url = `${MD_API}/manga?limit=${limit}&offset=${offset}&title=${encodeURIComponent((_b = query.title) !== null && _b !== void 0 ? _b : '')}&includes[]=cover_art&order[relevance]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`;
         const request = App.createRequest({
             url: url,
             method: 'GET',
@@ -614,6 +610,7 @@ class MangaDex {
         if (data.data) {
             for (const manga of data.data) {
                 const attr = manga.attributes;
+                // Fallback titolo intelligente
                 const title = (_e = (_d = attr.title.en) !== null && _d !== void 0 ? _d : Object.values(attr.title)[0]) !== null && _e !== void 0 ? _e : 'Unknown';
                 const coverRel = manga.relationships.find((r) => r.type === 'cover_art');
                 const fileName = (_f = coverRel === null || coverRel === void 0 ? void 0 : coverRel.attributes) === null || _f === void 0 ? void 0 : _f.fileName;
@@ -633,23 +630,25 @@ class MangaDex {
     }
     async getHomePageSections(sectionCallback) {
         var _a, _b, _c, _d, _e, _f, _g, _h;
+        // Sezione Popolari
         const section1 = App.createHomeSection({
             id: 'popular',
-            title: 'Popular on MangaDex',
+            title: 'Popular (English Available)',
             containsMoreItems: false,
             type: types_1.HomeSectionType.singleRowNormal
         });
         sectionCallback(section1);
+        // Sezione Ultime Aggiunte
         const section2 = App.createHomeSection({
             id: 'latest',
-            title: 'Latest Updates',
+            title: 'Latest English Updates',
             containsMoreItems: false,
             type: types_1.HomeSectionType.singleRowNormal
         });
         sectionCallback(section2);
         const ratings = '&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica';
-        // Popolari
-        const popularUrl = `${MD_API}/manga?limit=10&order[followedCount]=desc&includes[]=cover_art${ratings}`;
+        // Richiesta Popolari (Include lingua inglese disponibile)
+        const popularUrl = `${MD_API}/manga?limit=10&order[followedCount]=desc&includes[]=cover_art&availableTranslatedLanguage[]=en${ratings}`;
         const popularRequest = App.createRequest({ url: popularUrl, method: 'GET' });
         const popularResponse = await this.requestManager.schedule(popularRequest, 1);
         const popularData = JSON.parse((_a = popularResponse.data) !== null && _a !== void 0 ? _a : '{}');
@@ -668,8 +667,8 @@ class MangaDex {
         }
         section1.items = popularItems;
         sectionCallback(section1);
-        // Ultime Aggiunte
-        const latestUrl = `${MD_API}/manga?limit=10&order[createdAt]=desc&includes[]=cover_art${ratings}`;
+        // Richiesta Recenti (Filtra per lingua inglese)
+        const latestUrl = `${MD_API}/manga?limit=10&order[createdAt]=desc&includes[]=cover_art&availableTranslatedLanguage[]=en${ratings}`;
         const latestRequest = App.createRequest({ url: latestUrl, method: 'GET' });
         const latestResponse = await this.requestManager.schedule(latestRequest, 1);
         const latestData = JSON.parse((_e = latestResponse.data) !== null && _e !== void 0 ? _e : '{}');
