@@ -13,59 +13,54 @@ const MP_DOMAIN = 'https://mangapark.net'
 
 export class MangaParkParser {
 
-    // Helper robusto per le immagini
-    private getImageSrc(element: any, selector: string = 'img'): string {
-        let img = element.find(selector).first()
-        let src = img.attr('src') || img.attr('data-src') || img.attr('srcset')
-        
-        if (!src || src.includes('data:image')) {
-            return 'https://paperback.moe/icons/logo-alt.svg'
-        }
-
-        if (src.startsWith('//')) src = `https:${src}`
-        else if (src.startsWith('/')) src = `${MP_DOMAIN}${src}`
-        
-        return src
+    // Helper per correggere URL immagini
+    private fixImageUrl(url: string | undefined): string {
+        if (!url) return 'https://paperback.moe/icons/logo-alt.svg'
+        if (url.startsWith('//')) return `https:${url}`
+        if (url.startsWith('/')) return `${MP_DOMAIN}${url}`
+        return url
     }
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
-        // 1. Titolo: Proviamo vari selettori
+        // FIX: Rimosso l'uso di helper errati che causavano il crash "element.find"
+        
+        // 1. Titolo
         let title = $('h3 a.link-hover').first().text().trim()
         if (!title) title = $('.comic-detail h3').first().text().trim()
-        if (!title) title = $('title').text().split('-')[0]?.trim() ?? 'Unknown Title'
+        if (!title) title = $('title').text().split('-')[0]?.trim() ?? 'Unknown'
 
-        // 2. Immagine
-        // Cerca l'immagine principale nel dettaglio
-        let image = this.getImageSrc($, '.w-24 img, .w-32 img, .w-52 img, div.relative img')
+        // 2. Immagine (Selettore specifico per la pagina dettagli)
+        // Cerca l'immagine nella colonna di sinistra (w-24 mobile, w-52 desktop)
+        let image = $('.w-24 img').attr('src') || $('.w-52 img').attr('src') || $('div.relative img').attr('src')
+        image = this.fixImageUrl(image)
 
         // 3. Descrizione
         let desc = $('.limit-html-p').text().trim()
         if (!desc) desc = $('.limit-html').text().trim()
-        if (!desc) desc = $('meta[name="description"]').attr('content') ?? 'No description available'
+        if (!desc) desc = 'No description available'
 
         // 4. Autore
         const authors: string[] = []
         $('a[href*="/search?word="]').each((_: any, el: any) => {
-            const text = $(el).text().trim()
-            // Escludiamo link che sembrano tag o generi
-            if (text && !text.includes('All') && $(el).parent().text().includes('Story')) {
-                authors.push(text)
+            // Cerca link che sono dentro un nodo di testo che indica l'autore
+            const parentText = $(el).parent().text()
+            if (parentText.includes('Story') || parentText.includes('Art')) {
+                authors.push($(el).text().trim())
             }
         })
-        let author = authors.length > 0 ? authors.join(', ') : 'Unknown'
+        let author = authors.length > 0 ? [...new Set(authors)].join(', ') : 'Unknown'
 
         // 5. Status
         let status = 'Ongoing'
-        const statusText = $('span.font-bold.uppercase.text-success, span.font-bold.uppercase.text-info').text().trim().toLowerCase()
+        const statusText = $('span.font-bold.uppercase').text().trim().toLowerCase()
         if (statusText.includes('completed')) status = 'Completed'
         if (statusText.includes('hiatus')) status = 'Hiatus'
 
         // 6. Generi
         const arrayTags: Tag[] = []
-        // Cerchiamo i link dei generi
         $('a[href^="/search?genres="]').each((_: any, el: any) => {
-            const id = $(el).text().trim()
-            if (id) arrayTags.push({ id: id.toLowerCase(), label: id })
+            const tagText = $(el).text().trim()
+            if (tagText) arrayTags.push({ id: tagText.toLowerCase(), label: tagText })
         })
         
         const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
@@ -87,23 +82,29 @@ export class MangaParkParser {
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
         
-        // Cerca tutti i blocchi che sembrano capitoli
-        // Nel tuo HTML: div con classi border-b e bg-accent/5
-        const chapterNodes = $('div.group.flex.flex-col > div.border-b').toArray()
+        // Cerca i blocchi capitolo. Solitamente sono in una lista verticale.
+        // Usiamo un selettore che cerca i link che puntano a un capitolo specifico
+        const chapterLinks = $('a.link-hover.link-primary[href*="/title/"]').toArray()
 
-        for (const node of chapterNodes) {
-            const linkElement = $('a.link-hover.link-primary', node).first()
-            const href = linkElement.attr('href')
+        for (const el of chapterLinks) {
+            const link = $(el)
+            const href = link.attr('href')
             
-            if (!href) continue
+            // Filtra link che non sono capitoli (devono avere un ID numerico alla fine)
+            // Es: /title/12345-name/9939308-vol-0-ch-78
+            if (!href || !href.match(/\/\d+-.*-ch-/)) continue
 
-            // ID dall'URL
+            // Estrai ID
             const chapterId = href.split('/').pop()
             if (!chapterId) continue
 
-            const titleRaw = linkElement.text().trim() // Es: "Vol.0 Ch.78"
-            const timeStr = $('time', node).text().trim()
+            const titleRaw = link.text().trim()
             
+            // Cerca la data nel parent o vicino
+            // Risaliamo al contenitore riga (div border-b)
+            const row = link.closest('div.border-b')
+            const timeStr = row.find('time').text().trim()
+
             // Parsing numeri
             const chapNumMatch = titleRaw.match(/Ch\.(\d+(\.\d+)?)/i)
             const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0
@@ -111,11 +112,11 @@ export class MangaParkParser {
             const volMatch = titleRaw.match(/Vol\.(\d+)/i)
             const volNum = volMatch ? parseFloat(volMatch[1]) : undefined
 
+            // Titolo extra
             let name = titleRaw
-            // Cerca titolo extra nello span adiacente
-            const extraSpan = linkElement.next('span')
+            const extraSpan = link.next('span.opacity-80')
             if (extraSpan.length > 0) {
-                const extraText = extraSpan.text().trim().replace(/^:\s*/, '')
+                const extraText = extraSpan.text().replace(/^:\s*/, '').trim()
                 if (extraText) name += ` - ${extraText}`
             }
 
@@ -136,26 +137,28 @@ export class MangaParkParser {
         const results: PartialSourceManga[] = []
         const seenIds = new Set<string>()
 
-        // Selettore per le card nella griglia di ricerca
+        // Nella ricerca usano una griglia di "group relative"
         const items = $('div.group.relative').toArray()
 
         for (const item of items) {
             const link = $('a', item).first()
             const href = link.attr('href')
-            // Cerca ID numerico nell'URL (es /title/123456-name)
             const idMatch = href?.match(/\/title\/(\d+)-/)
             const id = idMatch ? idMatch[1] : null
             
             if (!id || seenIds.has(id)) continue
             seenIds.add(id)
 
-            const image = this.getImageSrc($(item))
+            let image = $('img', item).attr('src')
+            image = this.fixImageUrl(image)
+
+            let title = $('img', item).attr('title') || $('img', item).attr('alt')
+            // Fallback ricerca titolo fuori dall'immagine
+            if (!title) {
+                title = $(item).closest('div.flex').find('h3 a').text().trim()
+            }
             
-            // Il titolo è spesso nascosto nel box nero in hover o nell'attributo title dell'immagine
-            let title = $('img', item).attr('title') 
-            if (!title) title = $('img', item).attr('alt')
-            if (!title) title = $(item).find('.bg-black\\/60 a').first().text().trim()
-            if (!title) title = 'Unknown Title'
+            if (!title) title = 'Unknown'
 
             results.push(App.createPartialSourceManga({
                 mangaId: id,
@@ -175,45 +178,67 @@ export class MangaParkParser {
         const latestItems: PartialSourceManga[] = []
         const seenIds = new Set<string>()
 
-        // Nella home, le card sono dentro div.grid > div.relative.w-full.group
-        const gridItems = $('div.grid > div.relative.w-full.group').toArray()
-
-        for (let i = 0; i < gridItems.length; i++) {
-            const item = gridItems[i]
+        // --- SEZIONE POPULAR ---
+        // Cerca la sezione "Popular Updates" e prende la griglia successiva
+        // La griglia popolare usa elementi "div.relative.w-full.group"
+        const popularGrid = $('b:contains("Popular Updates")').closest('div.space-y-5').find('div.grid div.relative.w-full.group').toArray()
+        
+        for (const item of popularGrid) {
             const link = $('a', item).first()
             const href = link.attr('href')
-            
             const idMatch = href?.match(/\/title\/(\d+)-/)
             const id = idMatch ? idMatch[1] : null
 
-            if (!id || seenIds.has(id)) continue
-            seenIds.add(id)
+            if (id && !seenIds.has(id)) {
+                seenIds.add(id)
+                let image = $('img', item).attr('src')
+                image = this.fixImageUrl(image)
+                
+                let title = $('img', item).attr('title') || $('img', item).attr('alt')
+                if (!title) title = $(item).find('a.link-hover').text().trim()
 
-            const image = this.getImageSrc($(item))
-            
-            let title = $('img', item).attr('title') || $('img', item).attr('alt')
-            if (!title) title = $(item).find('.bg-black\\/60 a').first().text().trim()
-            if (!title) title = 'Unknown'
-
-            const manga = App.createPartialSourceManga({
-                mangaId: id,
-                image: image,
-                title: title,
-                subtitle: undefined
-            })
-
-            // Mettiamo i primi 12 in popular, il resto in latest
-            if (popularItems.length < 12) {
-                popularItems.push(manga)
-            } else {
-                latestItems.push(manga)
+                popularItems.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image,
+                    title: title || 'Unknown',
+                    subtitle: 'Popular'
+                }))
             }
         }
-
         popularSection.items = popularItems
-        latestSection.items = latestItems
-        
         sectionCallback(popularSection)
+
+        // --- SEZIONE LATEST ---
+        // La sezione Latest usa un layout a LISTA, non a griglia.
+        // Cerca "Latest Releases" e poi i container "div.flex.border-b"
+        const latestList = $('b:contains("Latest Releases")').closest('div.space-y-5').find('div.flex.border-b').toArray()
+
+        for (const item of latestList) {
+            const link = $('h3 a', item).first() // Il titolo è dentro un h3
+            const href = link.attr('href')
+            const idMatch = href?.match(/\/title\/(\d+)-/)
+            const id = idMatch ? idMatch[1] : null
+            
+            // Evitiamo duplicati se un manga è sia in popular che latest
+            if (id && !seenIds.has(id)) {
+                seenIds.add(id)
+                
+                // L'immagine è nel div precedente
+                let image = $('img', item).attr('src')
+                image = this.fixImageUrl(image)
+                
+                const title = link.text().trim()
+                const subtitle = $('div.flex.justify-between a', item).first().text().trim() // Ultimo capitolo
+
+                latestItems.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image,
+                    title: title || 'Unknown',
+                    subtitle: subtitle
+                }))
+            }
+        }
+        latestSection.items = latestItems
         sectionCallback(latestSection)
     }
 
@@ -233,6 +258,7 @@ export class MangaParkParser {
         } else {
             time = new Date(timeAgo)
         }
+        
         if (isNaN(time.getTime())) return new Date()
         return time
     }
