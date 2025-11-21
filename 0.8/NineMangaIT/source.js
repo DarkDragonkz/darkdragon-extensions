@@ -1019,7 +1019,10 @@ var _Sources = (() => {
   var NineManga = class {
     constructor(cheerio) {
       this.cheerio = cheerio;
-      // FIX: Rimosso UserAgentRandomizer per stabilità Cloudflare
+      // FIX: Forziamo un User-Agent DESKTOP.
+      // Se usiamo quello mobile (default di Paperback), il sito nasconde la colonna ".rightbox" 
+      // e le sezioni Popolari/Nuovi diventano vuote.
+      this.userAgentDesktop = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 3,
         interceptor: {
@@ -1027,8 +1030,9 @@ var _Sources = (() => {
             request.headers = {
               ...request.headers ?? {},
               ...{
-                "referer": `${this.baseUrl}/`
-                // Usa UA di default di Paperback
+                "referer": `${this.baseUrl}/`,
+                "user-agent": this.userAgentDesktop
+                // Forziamo Desktop
               }
             };
             return request;
@@ -1100,11 +1104,7 @@ var _Sources = (() => {
       let response = await this.requestManager.schedule(request, this.RETRIES);
       this.checkResponseError(response);
       const $ = this.cheerio.load(response.data);
-      request = this.createRequest(`${this.baseUrl}/list/New-Update/`);
-      response = await this.requestManager.schedule(request, this.RETRIES);
-      this.checkResponseError(response);
-      const $$ = this.cheerio.load(response.data);
-      await this.parser.parseHomeSections($, $$, sectionCallback, this);
+      await this.parser.parseHomeSections($, $, sectionCallback, this);
     }
     async getViewMoreItems(_, __) {
       return App.createPagedResults({ results: [], metadata: { page: -1 } });
@@ -1159,6 +1159,7 @@ var _Sources = (() => {
     }
     constructHeaders(headers, refererPath) {
       headers = headers ?? {};
+      headers["user-agent"] = this.userAgentDesktop;
       headers["accept-language"] = "es-ES,es;q=0.9,en;q=0.8,gl;q=0.7";
       return headers;
     }
@@ -1167,7 +1168,8 @@ var _Sources = (() => {
         url: this.baseUrl,
         method: "GET",
         headers: {
-          "user-agent": await this.requestManager.getDefaultUserAgent(),
+          "user-agent": this.userAgentDesktop,
+          // Importante: deve combaciare
           referer: `${this.baseUrl}/`
         }
       });
