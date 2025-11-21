@@ -12,14 +12,15 @@ import {
     SourceIntents,
     SourceManga,
     TagSection,
-    Request
+    Request,
+    Response
 } from '@paperback/types'
 import { MangaParkParser } from './MangaParkParser'
 
 const MP_DOMAIN = 'https://mangapark.net'
 
 export const MangaParkInfo: SourceInfo = {
-    version: '1.0.4', // Bump version per forzare aggiornamento
+    version: '1.0.5', // Bump version
     name: 'MangaPark',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
@@ -85,30 +86,29 @@ export class MangaPark extends Source {
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
 
-        // Metodo Ibrido:
-        // 1. Proviamo a estrarre il JSON di Qwik per i link
-        const jsonScript = $('script[type="qwik/json"]').html()
-        let pages: string[] = []
+        const pages: string[] = []
 
-        if (jsonScript) {
-            try {
-                const jsonData = JSON.parse(jsonScript)
-                const objs = jsonData.objs || []
-                // Cerca array di stringhe HTTP
-                for (const item of objs) {
-                    if (Array.isArray(item) && item.length > 0) {
-                        if (typeof item[0] === 'string' && item[0].startsWith('http')) {
-                            // Verifica se è un array di immagini (contiene http)
-                             if (item.every((x:any) => typeof x === 'string' && x.startsWith('http'))) {
-                                 if (item.length > pages.length) pages = item
-                             }
-                        }
-                    }
-                }
-            } catch (e) { console.log('JSON parse failed, trying fallback') }
+        // METODO DIRETTO HTML (Molto più robusto)
+        // Cerchiamo i div che contengono le immagini del capitolo
+        // Selettore basato sul tuo HTML: div[data-name="image-item"] -> img
+        $('div[data-name="image-item"] img').each((_: any, el: any) => {
+            const img = $(el)
+            let src = img.attr('src')
+            
+            // A volte l'src è un placeholder base64 o un'icona di caricamento.
+            // In quel caso, cerchiamo data-src o altri attributi.
+            if (!src || src.startsWith('data:') || src.includes('loading')) {
+                src = img.attr('data-src') || img.attr('srcset')
+            }
+
+            if (src && src.startsWith('http')) {
+                pages.push(src)
+            }
+        })
+
+        if (pages.length === 0) {
+            throw new Error(`No pages found for chapter ${chapterId}`)
         }
-
-        if (pages.length === 0) throw new Error('No pages found')
 
         return App.createChapterDetails({
             id: chapterId,
