@@ -13,7 +13,6 @@ import {
     MangaProviding,
     ChapterProviding,
     HomePageSectionsProviding,
-    TagSection,
     PartialSourceManga,
 } from '@paperback/types'
 
@@ -23,7 +22,7 @@ import { URLBuilder } from '../helper'
 const DOMAIN = 'https://weebcentral.com'
 
 export const WeebCentralInfo: SourceInfo = {
-    version: '1.0.14',
+    version: '1.0.15',
     name: 'WeebCentral',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
@@ -55,7 +54,7 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
                     ...(request.headers ?? {}),
                     ...{
                         'referer': `${this.baseUrl}/`,
-                        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        // RIMOSSO User-Agent forzato
                     }
                 }
                 return request
@@ -127,11 +126,8 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($)
         
-        // FIX: Definiamo esplicitamente il tipo 'any' per evitare errori TypeScript
         let nextMetadata: any = undefined
-        if (this.parser.isLastPage($)) {
-             nextMetadata = undefined
-        } else {
+        if (!this.parser.isLastPage($)) {
              nextMetadata = { offset: offset + limit }
         }
 
@@ -189,21 +185,6 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
                 'referer': `${this.baseUrl}/`,
                 'user-agent': await this.requestManager.getDefaultUserAgent()
             }
-        })
-    }
-
-    constructSearchRequest(query: SearchRequest): any {
-        const queryText = query?.title ?? ''
-        const url = new URLBuilder(this.baseUrl)
-            .addPathComponent('search')
-            .addPathComponent('data')
-            .addQueryParameter('text', queryText)
-            .addQueryParameter('display_mode', 'Full Display')
-            .addQueryParameter('official', 'Any')
-            
-        return App.createRequest({
-            url: url.buildUrl(),
-            method: 'GET',
         })
     }
 }

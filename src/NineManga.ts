@@ -27,9 +27,8 @@ export const getExportVersion = (EXTENSION_VERSION: string): string => {
 export abstract class NineManga implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding {
     constructor(private cheerio: any) {}
     
-    userAgentRandomizer = `Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:77.0) Gecko/20100101 Firefox/78.0${Math.floor(Math.random() * 100000)}`
+    // FIX: Rimosso UserAgentRandomizer per stabilità Cloudflare
     
-    // FIX: Aggiunto Interceptor per le immagini in Library
     requestManager = App.createRequestManager({
         requestsPerSecond: 3,
         interceptor: {
@@ -38,7 +37,7 @@ export abstract class NineManga implements SearchResultsProviding, MangaProvidin
                     ...(request.headers ?? {}),
                     ...{
                         'referer': `${this.baseUrl}/`,
-                        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        // Usa UA di default di Paperback
                     }
                 }
                 return request
@@ -199,9 +198,6 @@ export abstract class NineManga implements SearchResultsProviding, MangaProvidin
 
     constructHeaders(headers?: any, refererPath?: string): any {
         headers = headers ?? {}
-        if (this.userAgentRandomizer !== '') {
-            headers['user-agent'] = this.userAgentRandomizer
-        }
         headers['accept-language'] = 'es-ES,es;q=0.9,en;q=0.8,gl;q=0.7'
         return headers
     }

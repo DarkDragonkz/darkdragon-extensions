@@ -23,7 +23,7 @@ import { URLBuilder } from '../helper'
 const MW_DOMAIN = 'https://www.mangaworld.mx'
 
 export const MangaWorldInfo: SourceInfo = {
-    version: '3.0.7', // Bump version
+    version: '3.0.8', // Bump version
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld (0.8).',
     author: 'NmN',
@@ -46,12 +46,11 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
     
     constructor(private cheerio: any) {}
     
-    RETRIES = 10
+    RETRIES = 5 // Ridotto leggermente, 10 è eccessivo
     parser = new Parser()
 
-    // FIX: Aggiunto Interceptor per le immagini in Library
     requestManager = App.createRequestManager({
-        requestsPerSecond: 8,
+        requestsPerSecond: 6, // Più conservativo per evitare ban IP
         requestTimeout: 20000,
         interceptor: {
             interceptRequest: async (request: any) => {
@@ -59,7 +58,7 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
                     ...(request.headers ?? {}),
                     ...{
                         'referer': `${this.baseUrl}/`,
-                        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        // RIMOSSO User-Agent hardcodato per evitare conflitti Cloudflare
                     }
                 }
                 return request
@@ -154,25 +153,6 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
         })
     }
 
-
-    protected convertTime(timeAgo: string): Date {
-        let time: Date
-        let trimmed = Number((/\d*/.exec(timeAgo) ?? [])[0])
-        trimmed = trimmed == 0 && timeAgo.includes('a') ? 1 : trimmed
-        if (timeAgo.includes('mins') || timeAgo.includes('minutes') || timeAgo.includes('minute')) {
-            time = new Date(Date.now() - trimmed * 60000)
-        } else if (timeAgo.includes('hours') || timeAgo.includes('hour')) {
-            time = new Date(Date.now() - trimmed * 3600000)
-        } else if (timeAgo.includes('days') || timeAgo.includes('day')) {
-            time = new Date(Date.now() - trimmed * 86400000)
-        } else if (timeAgo.includes('year') || timeAgo.includes('years')) {
-            time = new Date(Date.now() - trimmed * 31556952000)
-        } else {
-            time = new Date(timeAgo)
-        }
-        return time
-    }
-
     async getCloudflareBypassRequestAsync() {
         return App.createRequest({
             url: this.baseUrl,
@@ -180,6 +160,7 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
             headers: {
                 'referer': `${this.baseUrl}/`,
                 'origin': `${this.baseUrl}/`,
+                // Qui usiamo l'UA corretto del dispositivo
                 'user-agent': await this.requestManager.getDefaultUserAgent()
             }
         })
