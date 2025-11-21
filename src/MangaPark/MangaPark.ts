@@ -11,18 +11,20 @@ import {
     BadgeColor,
     SourceIntents,
     SourceManga,
-    TagSection
+    TagSection,
+    Request,
+    Response
 } from '@paperback/types'
 import { MangaParkParser } from './MangaParkParser'
 
 const MP_DOMAIN = 'https://mangapark.net'
 
 export const MangaParkInfo: SourceInfo = {
-    version: '1.0.1',
+    version: '1.0.2',
     name: 'MangaPark',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
-    description: 'Extension for MangaPark (Qwik API)',
+    description: 'Extension for MangaPark',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: MP_DOMAIN,
     sourceTags: [
@@ -43,8 +45,6 @@ export class MangaPark extends Source {
                 req.headers = {
                     ...(req.headers ?? {}),
                     'referer': `${MP_DOMAIN}/`,
-                    // Usiamo un UA generico ma moderno per evitare blocchi, 
-                    // ma se noti problemi con Cloudflare, rimuovilo per usare quello di default.
                     'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 }
                 return req
@@ -78,7 +78,6 @@ export class MangaPark extends Source {
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // Costruiamo l'URL del capitolo.
         // chapterId qui è lo slug completo (es. "9939308-vol-0-ch-78")
         const request = App.createRequest({
             url: `${MP_DOMAIN}/title/${mangaId}/${chapterId}`,
@@ -86,9 +85,9 @@ export class MangaPark extends Source {
         })
 
         const response = await this.requestManager.schedule(request, 1)
-        const $ = this.cheerio.load(response.data)
-
+        
         // 1. Estraiamo il blocco dati JSON di Qwik
+        const $ = this.cheerio.load(response.data)
         const jsonScript = $('script[type="qwik/json"]').html()
         if (!jsonScript) throw new Error('Failed to extract Qwik JSON data')
 
@@ -102,34 +101,21 @@ export class MangaPark extends Source {
         const objs = jsonData.objs || []
         let pages: string[] = []
 
-        // 2. Ricerca Euristica delle Immagini:
-        // Cerchiamo l'array più lungo all'interno di "objs" che contenga solo stringhe URL (http...)
-        // Questo è un metodo molto robusto per MangaPark/Qwik.
-        
+        // 2. Ricerca delle Immagini nel JSON
+        // Cerchiamo l'array più lungo che contiene stringhe URL HTTP
         for (const item of objs) {
             if (Array.isArray(item) && item.length > 0) {
-                // Controlliamo il primo elemento per vedere se è una stringa URL
                 const firstItem = item[0]
                 if (typeof firstItem === 'string' && firstItem.startsWith('http')) {
-                    
-                    // Verifica veloce: sembra un array di immagini?
-                    // (Controlliamo che tutti siano stringhe e inizino con http)
                     const isImageArray = item.every(x => typeof x === 'string' && x.startsWith('http'))
-                    
-                    if (isImageArray) {
-                        // Se troviamo più array di immagini, prendiamo quello più lungo 
-                        // (spesso ci sono array di thumbnail o icone più corti)
-                        if (item.length > pages.length) {
-                            pages = item
-                        }
+                    if (isImageArray && item.length > pages.length) {
+                        pages = item
                     }
                 }
             }
         }
 
-        if (pages.length === 0) {
-            throw new Error('No pages found in chapter data')
-        }
+        if (pages.length === 0) throw new Error('No pages found')
 
         return App.createChapterDetails({
             id: chapterId,
@@ -162,5 +148,17 @@ export class MangaPark extends Source {
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         this.parser.parseHomeSections($, sectionCallback, MP_DOMAIN)
+    }
+
+    // FIX: Metodo obbligatorio per Cloudflare Bypass
+    async getCloudflareBypassRequest(): Promise<Request> {
+        return App.createRequest({
+            url: MP_DOMAIN,
+            method: 'GET',
+            headers: {
+                'referer': `${MP_DOMAIN}/`,
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        })
     }
 }
