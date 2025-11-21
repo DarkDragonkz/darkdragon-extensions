@@ -873,18 +873,19 @@ var _Sources = (() => {
       }
       return [App.createTagSection({ id: "0", label: "Generi", tags: genres })];
     }
-    parseHomeSections($, sectionCallback, baseUrl) {
+    // FIX: Ora accettiamo anche $updates per la quarta sezione
+    parseHomeSections($home, $updates, sectionCallback, baseUrl) {
       const secFeatured = App.createHomeSection({ id: "featured", title: "In Evidenza", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
       const secPopular = App.createHomeSection({ id: "popular", title: "Popolari", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
       const secNew = App.createHomeSection({ id: "new", title: "Nuove Aggiunte", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
-      const secUpdates = App.createHomeSection({ id: "updates", title: "Ultimi Aggiornamenti", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
+      const secUpdates = App.createHomeSection({ id: "recent", title: "Ultimi Aggiornamenti", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
       const featuredItems = [];
-      $(".pop_update li").each((_, obj) => {
-        const link = $(".bookname", obj);
+      $home(".pop_update li").each((_, obj) => {
+        const link = $home(".bookname", obj);
         const id = link.attr("href")?.replace(`${baseUrl}/manga/`, "").replace(".html", "");
-        let title = $(".bookface", obj).attr("title");
+        let title = $home(".bookface", obj).attr("title");
         if (!title) title = link.text().trim();
-        const image = $(".bookface img", obj).attr("src");
+        const image = $home(".bookface img", obj).attr("src");
         if (id && title) {
           featuredItems.push(App.createPartialSourceManga({
             mangaId: id,
@@ -896,15 +897,15 @@ var _Sources = (() => {
       });
       secFeatured.items = featuredItems;
       sectionCallback(secFeatured);
+      const rightBoxLists = $home(".rightbox ul");
       const popularItems = [];
-      const rightBoxLists = $(".rightbox ul");
       if (rightBoxLists.length > 0) {
         rightBoxLists.eq(0).find("li").each((_, obj) => {
-          const link = $("dt a", obj);
+          const link = $home("dt a", obj);
           const id = link.attr("href")?.replace(`${baseUrl}/manga/`, "").replace(".html", "");
-          const image = $("img", link).attr("src");
-          let title = $("img", link).attr("alt");
-          if (!title) title = $("dd a.show_book_desc b", obj).text().trim();
+          const image = $home("img", link).attr("src");
+          let title = $home("img", link).attr("alt");
+          if (!title) title = $home("dd a.show_book_desc b", obj).text().trim();
           if (id && title) {
             popularItems.push(App.createPartialSourceManga({
               mangaId: id,
@@ -920,11 +921,11 @@ var _Sources = (() => {
       const newItems = [];
       if (rightBoxLists.length > 1) {
         rightBoxLists.eq(1).find("li").each((_, obj) => {
-          const link = $("dt a", obj);
+          const link = $home("dt a", obj);
           const id = link.attr("href")?.replace(`${baseUrl}/manga/`, "").replace(".html", "");
-          const image = $("img", link).attr("src");
-          let title = $("img", link).attr("alt");
-          if (!title) title = $("dd a.show_book_desc b", obj).text().trim();
+          const image = $home("img", link).attr("src");
+          let title = $home("img", link).attr("alt");
+          if (!title) title = $home("dd a.show_book_desc b", obj).text().trim();
           if (id && title) {
             newItems.push(App.createPartialSourceManga({
               mangaId: id,
@@ -938,18 +939,19 @@ var _Sources = (() => {
       secNew.items = newItems;
       sectionCallback(secNew);
       const updateItems = [];
-      $(".homeupdate li").each((_, obj) => {
-        const link = $("h1.bookopen a", obj);
+      $updates(".direlist .bookinfo").each((_, obj) => {
+        const link = $updates(".bookname", obj);
         const id = link.attr("href")?.replace(`${baseUrl}/manga/`, "").replace(".html", "");
         const title = link.text().trim();
-        const latestChap = $("dl dt a", obj).first().text().trim();
+        const subTitle = $updates(".chaptername", obj).text().trim();
+        let image = $updates("dt img", obj).attr("src");
+        if (!image) image = $updates("dt img", obj).attr("data-src");
         if (id && title) {
           updateItems.push(App.createPartialSourceManga({
-            mangaId: id,
-            image: "https://paperback.moe/icons/logo-alt.svg",
-            // Fallback icona
+            image: image ?? "",
             title,
-            subtitle: latestChap
+            mangaId: id,
+            subtitle: subTitle
           }));
         }
       });
@@ -1013,7 +1015,8 @@ var _Sources = (() => {
   // src/NineMangaIT/NineMangaIT.ts
   var IT_DOMAIN = "https://it.ninemanga.com";
   var NineMangaITInfo = {
-    version: "1.0.0",
+    version: "1.0.2",
+    // Bump version per forzare l'aggiornamento
     name: "NineMangaIT",
     description: "Extension that pulls manga from it.ninemanga.com",
     author: "NmN",
@@ -1036,7 +1039,6 @@ var _Sources = (() => {
       this.baseUrl = IT_DOMAIN;
       this.parser = new NineMangaITParser();
       // HARDCODED DESKTOP USER AGENT
-      // Questo è il trucco per far funzionare le sezioni Hot/New
       this.userAgentDesktop = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 3,
@@ -1111,18 +1113,20 @@ var _Sources = (() => {
       });
     }
     async getHomePageSections(sectionCallback) {
-      const request = App.createRequest({
-        url: this.baseUrl,
-        method: "GET"
-      });
-      const response = await this.requestManager.schedule(request, 1);
-      const $ = this.cheerio.load(response.data);
-      this.parser.parseHomeSections($, sectionCallback, this.baseUrl);
+      const requestHome = App.createRequest({ url: this.baseUrl, method: "GET" });
+      const requestUpdates = App.createRequest({ url: `${this.baseUrl}/list/New-Update/`, method: "GET" });
+      const [responseHome, responseUpdates] = await Promise.all([
+        this.requestManager.schedule(requestHome, 1),
+        this.requestManager.schedule(requestUpdates, 1)
+      ]);
+      const $home = this.cheerio.load(responseHome.data);
+      const $updates = this.cheerio.load(responseUpdates.data);
+      this.parser.parseHomeSections($home, $updates, sectionCallback, this.baseUrl);
     }
     async getViewMoreItems(homepageSectionId, metadata) {
       let page = metadata?.page ?? 1;
       let url = "";
-      if (homepageSectionId === "updates") {
+      if (homepageSectionId === "updates" || homepageSectionId === "recent") {
         url = `${this.baseUrl}/list/New-Update/?page=${page}`;
       } else if (homepageSectionId === "popular") {
         url = `${this.baseUrl}/list/Hot-Book/?page=${page}`;
