@@ -15,19 +15,16 @@ import {
     ChapterProviding,
     HomePageSectionsProviding,
     TagSection,
-    PartialSourceManga,
-    SourceStateManager,
-    ConfigurableSource
+    PartialSourceManga
 } from '@paperback/types'
 
 import { URLBuilder } from '../helper'
-import { MangaDexSettings, DEFAULT_LANGUAGES } from './MangaDexSettings'
 
 const MD_API = 'https://api.mangadex.org'
 const MD_UPLOADS = 'https://uploads.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '1.0.0',
+    version: '1.0.3',
     name: 'MangaDex',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
@@ -41,14 +38,11 @@ export const MangaDexInfo: SourceInfo = {
             type: BadgeColor.BLUE,
         },
     ],
-    intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.SETTINGS_UI,
+    intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS,
 }
 
-export class MangaDex implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding, ConfigurableSource {
+export class MangaDex implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding {
     
-    // State Manager per salvare le impostazioni delle lingue
-    stateManager = App.createSourceStateManager()
-
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
@@ -56,17 +50,11 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         requestTimeout: 20000
     })
 
-    // Implementazione Menu Impostazioni
-    async getSourceMenu(): Promise<any> {
-        return new MangaDexSettings(this)
-    }
-
     getMangaShareUrl(mangaId: string): string {
         return `https://mangadex.org/title/${mangaId}`
     }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
-        // Richiediamo anche autore, artista e cover art in una sola chiamata
         const request = App.createRequest({
             url: `${MD_API}/manga/${mangaId}?includes[]=author&includes[]=artist&includes[]=cover_art`,
             method: 'GET',
@@ -77,28 +65,21 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const attributes = data.data.attributes
         const relationships = data.data.relationships
 
-        // Titolo (preferisci inglese, altrimenti il primo disponibile)
         const title = attributes.title.en ?? Object.values(attributes.title)[0] ?? 'Unknown Title'
-        
-        // Descrizione
         const desc = attributes.description.en ?? Object.values(attributes.description)[0] ?? ''
 
-        // Autore e Artista
         const authors = relationships.filter((r: any) => r.type === 'author').map((r: any) => r.attributes?.name).filter((n: any) => n)
         const artists = relationships.filter((r: any) => r.type === 'artist').map((r: any) => r.attributes?.name).filter((n: any) => n)
         
-        // Copertina
         const coverRel = relationships.find((r: any) => r.type === 'cover_art')
         const fileName = coverRel?.attributes?.fileName
         const image = fileName ? `${MD_UPLOADS}/covers/${mangaId}/${fileName}` : 'https://paperback.moe/icons/logo-alt.svg'
 
-        // Status
         let status = 'Ongoing'
         if (attributes.status === 'completed') status = 'Completed'
         if (attributes.status === 'hiatus') status = 'Hiatus'
         if (attributes.status === 'cancelled') status = 'Cancelled'
 
-        // Tags
         const tags: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: [] })]
         tags[0]!.tags = attributes.tags.map((tag: any) => App.createTag({ id: tag.id, label: tag.attributes.name.en }))
 
@@ -117,19 +98,19 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        // Recupera le lingue salvate nelle impostazioni
-        let languages = await this.stateManager.retrieve('languages') as string[]
-        if (!languages || languages.length === 0) languages = DEFAULT_LANGUAGES
+        // Lingue di default: Italiano e Inglese
+        const languages = ['it', 'en']
 
-        // Costruisci i parametri per la query
         const url = new URLBuilder(MD_API)
             .addPathComponent('manga')
             .addPathComponent(mangaId)
             .addPathComponent('feed')
             .addQueryParameter('limit', '500')
             .addQueryParameter('order[chapter]', 'desc')
-            .addQueryParameter('translatedLanguage[]', languages)
-            // .addQueryParameter('contentRating[]', ['safe', 'suggestive', 'erotica', 'pornographic']) // Opzionale: mostra tutto
+            
+        for (const lang of languages) {
+            url.addQueryParameter('translatedLanguage[]', lang)
+        }
             
         const request = App.createRequest({
             url: url.buildUrl(),
@@ -143,15 +124,12 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         
         for (const chapter of data.data) {
             const attr = chapter.attributes
-            
-            // Salta capitoli esterni (es. MangaPlus link)
             if (attr.externalUrl) continue
 
             const lang = attr.translatedLanguage
             const chapNum = parseFloat(attr.chapter) || 0
             const title = attr.title ? `${attr.title}` : (attr.chapter ? `Chapter ${attr.chapter}` : 'Oneshot')
             
-            // Aggiungiamo bandiera al titolo per chiarezza se ci sono più lingue
             let flag = ''
             if (lang === 'it') flag = '🇮🇹 '
             else if (lang === 'en') flag = '🇬🇧 '
@@ -163,8 +141,7 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
                 chapNum: chapNum,
                 volume: parseFloat(attr.volume) || 0,
                 time: new Date(attr.publishAt),
-                langCode: lang,
-                group: '' // MangaDex ha i gruppi nelle relationships, si potrebbe estrarre ma rallenta
+                langCode: lang
             }))
         }
 
@@ -172,7 +149,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // 1. Chiedi al server "At-Home" dove trovare le immagini
         const request = App.createRequest({
             url: `${MD_API}/at-home/server/${chapterId}`,
             method: 'GET',
@@ -183,7 +159,7 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         
         const baseUrl = data.baseUrl
         const hash = data.chapter.hash
-        const fileNames = data.chapter.data // Usa 'data' per alta qualità, 'dataSaver' per risparmio dati
+        const fileNames = data.chapter.data 
 
         const pages: string[] = []
         for (const file of fileNames) {
@@ -206,8 +182,8 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
             .addQueryParameter('limit', limit.toString())
             .addQueryParameter('offset', offset.toString())
             .addQueryParameter('title', query.title ?? '')
-            .addQueryParameter('includes[]', 'cover_art') // Per avere la copertina subito
-            .addQueryParameter('order[relevance]', 'desc') // Ordina per rilevanza
+            .addQueryParameter('includes[]', 'cover_art')
+            .addQueryParameter('order[relevance]', 'desc')
 
         const request = App.createRequest({
             url: url.buildUrl(),
@@ -223,7 +199,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
             const attr = manga.attributes
             const title = attr.title.en ?? Object.values(attr.title)[0] ?? 'Unknown'
             
-            // Trova la copertina nelle relationships
             const coverRel = manga.relationships.find((r: any) => r.type === 'cover_art')
             const fileName = coverRel?.attributes?.fileName
             const image = fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : 'https://paperback.moe/icons/logo-alt.svg'
@@ -243,7 +218,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        // Sezione 1: Popolari (Titoli con più Follows)
         const section1 = App.createHomeSection({
             id: 'popular',
             title: 'Popular on MangaDex',
@@ -252,16 +226,14 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         })
         sectionCallback(section1)
 
-        // Sezione 2: Ultime Aggiunte (per le lingue selezionate)
         const section2 = App.createHomeSection({
             id: 'latest',
-            title: 'Latest Updates (Filtered)',
+            title: 'Latest Updates',
             containsMoreItems: false,
             type: HomeSectionType.singleRowNormal
         })
         sectionCallback(section2)
 
-        // Recupera Popolari
         const popularUrl = new URLBuilder(MD_API)
             .addPathComponent('manga')
             .addQueryParameter('limit', '10')
@@ -287,12 +259,10 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         section1.items = popularItems
         sectionCallback(section1)
 
-        // Recupera Recenti (Qui servirebbe una logica complessa per prendere i manga dai capitoli, 
-        // ma per semplicità prendiamo i manga creati di recente o aggiornati)
         const latestUrl = new URLBuilder(MD_API)
             .addPathComponent('manga')
             .addQueryParameter('limit', '10')
-            .addQueryParameter('order[createdAt]', 'desc') // Manga creati di recente
+            .addQueryParameter('order[createdAt]', 'desc')
             .addQueryParameter('includes[]', 'cover_art')
             .buildUrl()
 
