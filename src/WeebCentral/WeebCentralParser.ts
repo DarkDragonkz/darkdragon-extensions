@@ -53,34 +53,26 @@ export class WeebCentralParser {
             const href = $(element).attr('href')
             const id = href?.split('/chapters/')[1]
             
-            // FIX SPAZIATURA: Cerchiamo il titolo in modo più specifico
-            // WeebCentral di solito mette il titolo in uno span con classe .grow o .font-bold
+            // Cerchiamo il titolo nello span specifico
             let name = $(element).find('.grow span, span.font-bold').first().text().trim()
             
-            // Se non lo troviamo, prendiamo tutto il testo ma rimuoviamo la data (spesso in <time>)
+            // Fallback se non trova lo span specifico
             if (!name) {
                 const clone = $(element).clone()
-                clone.find('time').remove() // Rimuoviamo la data
+                clone.find('time').remove()
                 name = clone.text().trim()
             }
 
-            // PULIZIA AGGRESSIVA:
-            // 1. Rimuove i ritorni a capo (\n) che creano lo spazio vuoto enorme
-            // 2. Riduce spazi multipli in uno solo
+            // PULIZIA SOLO SPAZI (Cruciale per evitare il bug grafico)
+            // Rimuove i ritorni a capo (\n) e riduce gli spazi multipli
             name = name.replace(/(\r\n|\n|\r)/gm, " ").replace(/\s+/g, " ").trim()
 
             // Parsing del numero
             const numMatch = name.match(/(\d+(\.\d+)?)/g)
             const chapNum = numMatch ? parseFloat(numMatch[numMatch.length - 1] ?? '0') : 0
 
-            // FIX RIDONDANZA:
-            // Se il nome è solo "Chapter 51" o "Episode 51", lo svuotiamo.
-            // Paperback visualizzerà automaticamente "Ch. 51", quindi evitamiamo "Ch. 51 - Chapter 51".
-            // Se invece è "Chapter 51 - The Battle", manteniamo "The Battle".
-            const lowerName = name.toLowerCase()
-            if (lowerName === `chapter ${chapNum}` || lowerName === `episode ${chapNum}` || lowerName === `ch. ${chapNum}`) {
-                name = '' // Lasciamo che Paperback gestisca la visualizzazione standard
-            }
+            // NOTA: Ho rimosso il blocco che cancellava "Chapter X". 
+            // Ora il titolo sarà esattamente quello del sito (es. "Chapter 51").
 
             const timeStr = $(element).find('time').attr('datetime')
             const time = timeStr ? new Date(timeStr) : new Date()
@@ -88,7 +80,7 @@ export class WeebCentralParser {
             if (id) {
                 chapters.push(App.createChapter({
                     id: id,
-                    name: name, // Ora è pulito e senza spazi
+                    name: name, 
                     chapNum: chapNum,
                     langCode: 'en',
                     time: time
