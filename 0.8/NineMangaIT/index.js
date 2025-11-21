@@ -474,6 +474,7 @@ class NineManga {
     constructor(cheerio) {
         this.cheerio = cheerio;
         this.userAgentRandomizer = `Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:77.0) Gecko/20100101 Firefox/78.0${Math.floor(Math.random() * 100000)}`;
+        // FIX: Aggiunto Interceptor per le immagini in Library
         this.requestManager = App.createRequestManager({
             requestsPerSecond: 3,
             interceptor: {

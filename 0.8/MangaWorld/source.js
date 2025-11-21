@@ -466,7 +466,7 @@ const parser_1 = require("./parser");
 const helper_1 = require("../helper");
 const MW_DOMAIN = 'https://www.mangaworld.mx';
 exports.MangaWorldInfo = {
-    version: '3.0.6',
+    version: '3.0.7',
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld (0.8).',
     author: 'NmN',
@@ -489,7 +489,7 @@ class MangaWorld {
         this.baseUrl = MW_DOMAIN;
         this.RETRIES = 10;
         this.parser = new parser_1.Parser();
-        // FIX: Aggiunto Interceptor per gestire Referer e User-Agent automaticamente
+        // FIX: Aggiunto Interceptor per le immagini in Library
         this.requestManager = App.createRequestManager({
             requestsPerSecond: 8,
             requestTimeout: 20000,
