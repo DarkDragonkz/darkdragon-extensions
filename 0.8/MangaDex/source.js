@@ -731,7 +731,8 @@ var _Sources = (() => {
   var MD_API = "https://api.mangadex.org";
   var MD_UPLOADS = "https://uploads.mangadex.org";
   var MangaDexInfo = {
-    version: "2.0.4",
+    version: "2.0.5",
+    // Bump version
     name: "MangaDex (EN)",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -768,7 +769,13 @@ var _Sources = (() => {
       const attributes = data.data.attributes;
       const relationships = data.data.relationships;
       const title = attributes.title.en ?? Object.values(attributes.title)[0] ?? "Unknown Title";
-      const desc = attributes.description.en ?? Object.values(attributes.description)[0] ?? "";
+      let desc = attributes.description.en ?? Object.values(attributes.description)[0] ?? "";
+      const availableLanguages = attributes.availableTranslatedLanguages || [];
+      if (!availableLanguages.includes("en")) {
+        desc = `\u26A0\uFE0F [NO ENGLISH CHAPTERS AVAILABLE]
+
+${desc}`;
+      }
       const authors = relationships.filter((r) => r.type === "author").map((r) => r.attributes?.name).filter((n) => n);
       const artists = relationships.filter((r) => r.type === "artist").map((r) => r.attributes?.name).filter((n) => n);
       const coverRel = relationships.find((r) => r.type === "cover_art");
@@ -896,7 +903,6 @@ var _Sources = (() => {
       const baseParams = "limit=10&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&availableTranslatedLanguage[]=en";
       const urls = {
         popular: `${MD_API}/manga?${baseParams}&order[followedCount]=desc`,
-        // FIX: "latestUploadedChapter" è più affidabile per Latest Updates
         latest: `${MD_API}/manga?${baseParams}&order[latestUploadedChapter]=desc`,
         recently_added: `${MD_API}/manga?${baseParams}&order[createdAt]=desc`,
         recommended: `${MD_API}/manga?${baseParams}&order[rating]=desc`,
@@ -972,11 +978,16 @@ var _Sources = (() => {
       const coverRel = manga.relationships.find((r) => r.type === "cover_art");
       const fileName = coverRel?.attributes?.fileName;
       const image = fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : "https://paperback.moe/icons/logo-alt.svg";
+      let subtitle = attr.status;
+      const availableLanguages = attr.availableTranslatedLanguages || [];
+      if (!availableLanguages.includes("en")) {
+        subtitle = "\u{1F6AB} No EN Ch.";
+      }
       targetArray.push(App.createPartialSourceManga({
         mangaId: manga.id,
         image,
         title,
-        subtitle: attr.status
+        subtitle
       }));
     }
   };
