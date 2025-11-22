@@ -20,7 +20,7 @@ import { MangaParkParser } from './MangaParkParser'
 const MP_DOMAIN = 'https://mangapark.net'
 
 export const MangaParkInfo: SourceInfo = {
-    version: '1.0.5', // Bump version
+    version: '1.0.6', // Bump version
     name: 'MangaPark',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
