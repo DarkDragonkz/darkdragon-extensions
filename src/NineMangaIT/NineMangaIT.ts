@@ -24,7 +24,7 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '1.0.7',
+    version: '1.0.8', // Bump version
     name: 'NineMangaIT',
     description: 'Extension that pulls manga from it.ninemanga.com',
     author: 'DarkDragonkzz',
@@ -45,14 +45,14 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     baseUrl = IT_DOMAIN
     parser = new NineMangaITParser()
 
-    // CAMBIO STRATEGIA: Usiamo Firefox su Windows. 
-    // Spesso Cloudflare è meno aggressivo con questo UA.
-    readonly userAgentDesktop = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0'
+    // FIX: Usiamo un User-Agent MOBILE (iPhone) per evitare il blocco "You have been blocked".
+    // Cloudflare rileva se fingi di essere un PC ma sei su un telefono.
+    readonly userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1'
 
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 2, 
+        requestsPerSecond: 2,
         requestTimeout: 25000,
         interceptor: {
             interceptRequest: async (request: any) => {
@@ -60,10 +60,10 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
                     ...(request.headers ?? {}),
                     ...{
                         'Referer': `${this.baseUrl}/`,
-                        'User-Agent': this.userAgentDesktop,
-                        // Headers semplificati per sembrare più "umani"
-                        'Accept-Language': 'it-IT,it;q=0.8,en-US;q=0.5,en;q=0.3',
-                        'Upgrade-Insecure-Requests': '1'
+                        'User-Agent': this.userAgent,
+                        // Headers standard minimi per sembrare un browser mobile reale
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                        'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7'
                     }
                 }
                 return request
@@ -80,7 +80,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
         const request = App.createRequest({
-            url: `${this.baseUrl}/manga/${mangaId}?waring=1`,
+            url: `${this.baseUrl}/manga/${mangaId}`,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
@@ -91,7 +91,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
         const request = App.createRequest({
-            url: `${this.baseUrl}/manga/${mangaId}?waring=1`,
+            url: `${this.baseUrl}/manga/${mangaId}`,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
@@ -115,6 +115,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         
         const response = await this.requestManager.schedule(request, 1)
         this.checkResponseError(response)
+        // Passiamo il requestManager e baseUrl per gestire eventuali pagine aggiuntive
         return this.parser.parseChapterDetails($, mangaId, chapterId, this.requestManager, this.baseUrl, this.cheerio)
     }
 
@@ -148,29 +149,24 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        // Home request
+        // Richiediamo solo la Home. Il parser gestirà la visualizzazione mobile.
         const requestHome = App.createRequest({ url: this.baseUrl, method: 'GET' })
-        const requestUpdates = App.createRequest({ url: `${this.baseUrl}/list/New-Update/`, method: 'GET' })
-
-        const [responseHome, responseUpdates] = await Promise.all([
-            this.requestManager.schedule(requestHome, 1),
-            this.requestManager.schedule(requestUpdates, 1)
-        ])
-
+        const responseHome = await this.requestManager.schedule(requestHome, 1)
+        
         this.checkResponseError(responseHome)
-        this.checkResponseError(responseUpdates)
-
         const $home = this.cheerio.load(responseHome.data)
-        const $updates = this.cheerio.load(responseUpdates.data)
-
-        this.parser.parseHomeSections($home, $updates, sectionCallback, this.baseUrl)
+        
+        // Passiamo $home due volte perché non facciamo più la chiamata separata per gli update
+        // (per ridurre il rischio di blocco)
+        this.parser.parseHomeSections($home, $home, sectionCallback, this.baseUrl)
     }
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
         let page = metadata?.page ?? 1
         let url = ''
         
-        if (homepageSectionId === 'recent') {
+        // URL ottimizzati per evitare redirect strani
+        if (homepageSectionId === 'recent' || homepageSectionId === 'updates') {
             url = `${this.baseUrl}/list/New-Update/?page=${page}`
         } else if (homepageSectionId === 'popular') {
             url = `${this.baseUrl}/list/Hot-Book/?page=${page}`
@@ -196,22 +192,23 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         return App.createPagedResults({ results: [] })
     }
 
+    // Cloudflare Bypass Request deve matchare gli header dell'interceptor
     async getCloudflareBypassRequest(): Promise<Request> {
         return App.createRequest({
             url: this.baseUrl,
             method: 'GET',
             headers: {
-                'User-Agent': this.userAgentDesktop,
+                'User-Agent': this.userAgent,
                 'Referer': `${this.baseUrl}/`,
-                'Accept-Language': 'it-IT,it;q=0.8,en-US;q=0.5,en;q=0.3',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7'
             }
         })
     }
 
     checkResponseError(response: Response): void {
-        // Se riceviamo 403 o 503, Cloudflare ci ha bloccato
         if (response.status === 403 || response.status === 503) {
-            throw new Error(`Cloudflare Bypass Required. Go to Settings > Sources > NineMangaIT > Cloud Icon to solve the captcha.`)
+            throw new Error(`Cloudflare Bypass Required. Go to Settings > Sources > NineMangaIT > Cloud Icon.`)
         }
     }
 }
