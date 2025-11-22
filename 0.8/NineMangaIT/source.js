@@ -749,11 +749,12 @@ var _Sources = (() => {
       const statusText = $2(".red").text().toLowerCase();
       if (statusText.includes("completato") || statusText.includes("completed")) status = "Completed";
       const arrayTags = [];
-      $2('li[itemprop="genre"] a').each((_, el) => {
+      const tagLinks = $2('li[itemprop="genre"] a').toArray();
+      for (const el of tagLinks) {
         const id = $2(el).attr("href")?.split("/").pop()?.replace(".html", "") ?? "";
         const label = $2(el).text().trim();
         if (id && label) arrayTags.push({ id, label });
-      });
+      }
       const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })];
       return App.createSourceManga({
         id: mangaId,
@@ -783,7 +784,8 @@ var _Sources = (() => {
         const parts = href.split("/");
         const filePart = parts.pop() ?? "";
         const chapterId = filePart.split("?")[0].replace(".html", "");
-        if (seenIds.has(chapterId) || !href.includes("/chapter/")) continue;
+        if (seenIds.has(chapterId)) continue;
+        if (!href.includes("/chapter/")) continue;
         seenIds.add(chapterId);
         let titleRaw = $link.attr("title") || $link.text().trim();
         titleRaw = titleRaw.replace(new RegExp(`^${mangaId.replace(/-/g, " ")}\\s+`, "i"), "");
@@ -815,20 +817,34 @@ var _Sources = (() => {
     }
     parseChapterDetails($2, mangaId, chapterId, requestManager, baseUrl, cheerio) {
       const pages = [];
-      const scriptContent = $2('script:contains("p_urls")').html();
-      if (scriptContent) {
-        const matches = scriptContent.match(/(https?:\/\/[^"']+\.(?:jpg|png|webp|jpeg))/gi);
-        if (matches) {
-          for (const m of matches) {
-            pages.push(m);
+      let foundInScript = false;
+      const scripts = $2("script").toArray();
+      for (const script of scripts) {
+        const content = $2(script).html();
+        if (content && (content.includes("p_urls") || content.includes("img_url"))) {
+          const matches = content.match(/(https?:\/\/[^"']+\.(?:jpg|png|webp|jpeg))/gi);
+          if (matches && matches.length > 0) {
+            for (const m of matches) pages.push(m);
+            foundInScript = true;
+            break;
           }
         }
       }
-      if (pages.length === 0) {
-        $2("img.manga_pic").each((_, img) => {
+      if (!foundInScript) {
+        const imgElements = $2("img.manga_pic").toArray();
+        for (const img of imgElements) {
           const src = $2(img).attr("src");
           if (src) pages.push(src);
-        });
+        }
+        if (pages.length === 0) {
+          const centerImages = $2('div[align="center"] img').toArray();
+          for (const img of centerImages) {
+            const src = $2(img).attr("src");
+            if (src && src.startsWith("http") && !src.includes("logo") && !src.includes("icon")) {
+              pages.push(src);
+            }
+          }
+        }
       }
       return App.createChapterDetails({
         id: chapterId,
