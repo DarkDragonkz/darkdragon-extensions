@@ -22,7 +22,7 @@ const MD_API = 'https://api.mangadex.org'
 const MD_UPLOADS = 'https://uploads.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '2.0.6', // Bump version
+    version: '2.0.8', // Bump version
     name: 'MangaDex (EN)',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -44,8 +44,8 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 4, // Abbassato a 4 per stabilità
-        requestTimeout: 20000
+        requestsPerSecond: 5, // Aumentato leggermente per gestire il parallelo
+        requestTimeout: 25000
     })
 
     getMangaShareUrl(mangaId: string): string {
@@ -212,6 +212,7 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
+        // 1. Definisci e invia subito le sezioni (UI veloce)
         const sections = [
             App.createHomeSection({ id: 'popular', title: 'Popular', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
             App.createHomeSection({ id: 'latest', title: 'Latest Updates', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
@@ -221,14 +222,14 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
             App.createHomeSection({ id: 'self_published', title: 'Self-Published', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
         ]
 
-        // 1. Invia subito le sezioni vuote (UI immediata)
         for (const section of sections) {
             sectionCallback(section)
         }
 
+        // 2. Parametri ottimizzati (solo cover_art per la home, niente author/artist per risparmiare banda)
         const baseParams = 'limit=10&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&availableTranslatedLanguage[]=en'
 
-        const urls = {
+        const urls: Record<string, string> = {
             popular: `${MD_API}/manga?${baseParams}&order[followedCount]=desc`,
             latest: `${MD_API}/manga?${baseParams}&order[latestUploadedChapter]=desc`,
             recently_added: `${MD_API}/manga?${baseParams}&order[createdAt]=desc`,
@@ -237,13 +238,12 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
             self_published: `${MD_API}/manga?${baseParams}&originalLanguage[]=en&order[createdAt]=desc`
         }
 
-        // 2. FIX: Caricamento SEQUENZIALE per evitare Timeout
-        for (const sectionId of Object.keys(urls)) {
+        // 3. FIX: Torna a usare Promise.all per la velocità, ma il requestManager gestirà il throttling (5 req/s)
+        const promises = Object.keys(urls).map(async (sectionId) => {
             try {
-                const url = (urls as any)[sectionId]
-                const request = App.createRequest({ url: url, method: 'GET' })
-                
-                // Attendiamo ogni singola richiesta prima di procedere alla successiva
+                const url = urls[sectionId]
+                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+                const request = App.createRequest({ url: url!, method: 'GET' })
                 const response = await this.requestManager.schedule(request, 1)
                 const data = JSON.parse(response.data ?? '{}')
                 
@@ -261,9 +261,10 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
                 }
             } catch (e) {
                 console.error(`Error fetching section ${sectionId}: ${e}`)
-                // Continua con la prossima sezione anche se una fallisce
             }
-        }
+        })
+
+        await Promise.all(promises)
     }
     
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
