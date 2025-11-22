@@ -11,7 +11,6 @@ import {
 
 export class MangaParkITParser {
 
-    // Helper per convertire le date (Fallback per testo)
     protected convertTime(timeAgo: string): Date {
         let time: Date
         let trimmed = Number((/\d*/.exec(timeAgo) ?? [])[0])
@@ -32,30 +31,23 @@ export class MangaParkITParser {
     }
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
-        let title = $('h3.text-lg.font-bold a').first().text().trim()
-        if (!title) title = $('h3.text-2xl.font-bold a').first().text().trim()
-        if (!title) title = $('h1').first().text().trim() || 'Unknown'
+        const title = $('h3 a').first().text().trim() || $('h1').first().text().trim() || 'Unknown'
         
         let image = $('.w-24 img, .w-52 img').first().attr('src') || ''
         if (image.startsWith('/')) image = 'https://mangapark.io' + image
-        // Fallback icona se manca immagine
-        if (!image || image.includes('loading')) image = 'https://paperback.moe/icons/logo-alt.svg'
+        if (!image) image = 'https://paperback.moe/icons/logo-alt.svg'
 
         const author = $('a[href*="/search?word="]').first().text().trim() || 'Unknown'
-        
-        // Descrizione: Cerca nel blocco React o nel meta tag
-        let desc = $('.limit-html-p').text().trim()
-        if (!desc) desc = $('meta[name="description"]').attr('content') || ''
-        
+        const desc = $('.limit-html-p').text().trim() || $('meta[name="description"]').attr('content') || 'No description'
         const status = 'Ongoing' 
 
         const arrayTags: Tag[] = []
-        const tagElements = $('.opacity-70 span, .genres a').toArray()
-        for (const el of tagElements) {
+        $('.opacity-70 span, .genres a').each((_: any, el: any) => {
             const label = $(el).text().trim().replace(/,$/, '')
-            // Filtra tag troppo corti o spazzatura
-            if (label && label.length > 1) arrayTags.push(App.createTag({ id: label, label: label }))
-        }
+            if (label && label.length > 1) {
+                arrayTags.push(App.createTag({ id: label, label: label }))
+            }
+        })
         
         const tagSections: TagSection[] = [
             App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })
@@ -79,57 +71,41 @@ export class MangaParkITParser {
         const chapters: Chapter[] = []
         const seenIds = new Set<string>()
         
-        // Selettore specifico per la lista capitoli di MangaPark v5
-        // Cerca dentro il div con data-name="chapter-list"
-        const listContainer = $('div[data-name="chapter-list"]')
-        const linkElements = listContainer.find('a').toArray()
+        // FIX: Selettore corretto per MangaPark v5 (dentro div chapter-list)
+        // I link sono del tipo: /title/ID_MANGA/ID_CAPITOLO
+        const chapterNodes = $('div[data-name="chapter-list"] a[href*="/title/"]').toArray()
 
-        for (const link of linkElements) {
-            const $link = $(link)
+        for (const node of chapterNodes) {
+            const $link = $(node)
             const href = $link.attr('href')
             
-            // Validazione URL: deve essere un link a un titolo e contenere l'ID del manga corrente
-            if (!href || !href.startsWith('/title/') || !href.includes(mangaId)) continue
+            // Assicuriamoci che sia un link al capitolo e contenga l'ID del manga
+            if (!href || !href.includes(mangaId)) continue
 
-            // Estrazione ID Capitolo
-            // Es: /title/386006-it-usemono-yado/8314523-vol-3-ch-18  -->  8314523-vol-3-ch-18
+            // Estrazione ID Capitolo (ultima parte dell'URL)
+            // es: /title/386006-it-usemono-yado/8314523-vol-3-ch-18 -> 8314523-vol-3-ch-18
             const parts = href.split('/')
-            // Assicuriamoci che ci sia un pezzo dopo l'ID del manga
-            if (parts.length < 4) continue
-            const chapterId = parts[3] // L'ultimo pezzo è l'ID del capitolo
-
-            if (seenIds.has(chapterId)) continue
+            const chapterId = parts.pop()
+            
+            // Evita link duplicati o che non sono capitoli specifici
+            if (!chapterId || seenIds.has(chapterId)) continue
             seenIds.add(chapterId)
 
             const title = $link.text().trim()
-            if (!title) continue
+            
+            // Data
+            const timeNode = $link.closest('.flex').find('time')
+            const timeStr = timeNode.text().trim()
+            // Fallback timestamp se disponibile
+            const timeTs = timeNode.attr('data-time')
+            const time = timeTs ? new Date(Number(timeTs)) : this.convertTime(timeStr)
 
-            // Estrazione Data
-            // La data si trova spesso in un tag <time> fratello o genitore
-            const row = $link.closest('div.flex') // Risale alla riga del capitolo
-            const timeEl = row.find('time')
-            const timeTs = timeEl.attr('data-time') // Timestamp preciso (es. 1703353875915)
-            const timeText = timeEl.text().trim()
-
-            let time = new Date()
-            if (timeTs) {
-                time = new Date(Number(timeTs))
-            } else if (timeText) {
-                time = this.convertTime(timeText)
-            }
-
-            // Parsing Numero Capitolo
-            // Cerca pattern come "ch.18", "chapter 18", "c18"
-            const chapNumMatch = title.match(/(?:ch|chapter|episode|c)(?:\.|apters?|\s)*\s*(\d+(\.\d+)?)/i)
+            // Parsing numero capitolo
             let chapNum = 0
-            if (chapNumMatch && chapNumMatch[1]) {
-                chapNum = parseFloat(chapNumMatch[1])
-            } else {
-                // Fallback: cerca l'ultimo numero nel titolo (es "Vol.3 Ch.18" -> 18)
-                const simpleNums = title.match(/(\d+(\.\d+)?)/g)
-                if (simpleNums && simpleNums.length > 0) {
-                    chapNum = parseFloat(simpleNums[simpleNums.length - 1] ?? '0')
-                }
+            const chapNumMatch = title.match(/(\d+(\.\d+)?)/g)
+            if (chapNumMatch && chapNumMatch.length > 0) {
+                // Prende l'ultimo numero trovato nel titolo (es: Vol.3 Ch.18 -> 18)
+                chapNum = parseFloat(chapNumMatch[chapNumMatch.length - 1] ?? '0')
             }
 
             chapters.push(App.createChapter({
@@ -146,37 +122,36 @@ export class MangaParkITParser {
 
     parseChapterDetails($: any, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
-        let foundInScript = false
         
-        // 1. Metodo Script JSON (MangaPark v5 usa spesso "srcs" o "images" in un blocco script)
+        // Metodo 1: Estrazione da Script JSON (MangaPark V5)
         const scripts = $('script').toArray()
         for (const script of scripts) {
             const content = $(script).html()
             if (content && (content.includes('srcs') || content.includes('http'))) {
-                // Cerca array di stringhe URL immagine
+                // Regex per trovare URL di immagini all'interno di array JSON
                 const matches = content.match(/\"(https?:\/\/[^\"]+\.(?:jpg|jpeg|png|webp))\"/gi)
                 if (matches && matches.length > 0) {
                     for (const m of matches) {
-                         // Pulisci le virgolette e escape
+                         // Rimuovi le virgolette e escape
                          const url = m.replace(/"/g, '').replace(/\\/g, '')
                          pages.push(url)
                     }
-                    if (pages.length > 0) {
-                        foundInScript = true
-                        break
-                    }
+                    if (pages.length > 0) break
                 }
             }
         }
 
-        // 2. Fallback DOM (Lazy Loading images)
-        if (!foundInScript) {
+        // Metodo 2: Fallback DOM (Lazy Loading images)
+        if (pages.length == 0) {
              const imgs = $('img[loading="lazy"], .main img, #main img').toArray()
              for (const img of imgs) {
                  let src = $(img).attr('src') || $(img).attr('data-src')
                  if (src && src.startsWith('http')) pages.push(src)
              }
         }
+        
+        // Fallback estremo: se ancora 0, non crashare ma restituisci array vuoto
+        // (L'app mostrerà pagina bianca ma non si chiuderà)
 
         return App.createChapterDetails({
             id: chapterId,
@@ -188,21 +163,18 @@ export class MangaParkITParser {
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         
-        // Selettore per le righe dei risultati di ricerca
         const items = $('.flex.border-b.border-b-base-200').toArray()
         
         for (const item of items) {
             const $item = $(item)
-            const titleLink = $item.find('h3.font-bold a').first()
+            const titleLink = $item.find('h3 a').first()
             const title = titleLink.text().trim()
-            
-            // ID: /title/386006-it-usemono-yado -> 386006-it-usemono-yado
             const id = titleLink.attr('href')?.split('/').pop()
 
             let image = $item.find('img').first().attr('src') || ''
             if (image.startsWith('/')) image = 'https://mangapark.io' + image
+            if (!image) image = 'https://paperback.moe/icons/logo-alt.svg'
 
-            // Info aggiuntive come sottotitolo (es. ultimo capitolo)
             const subtitle = $item.find('.flex.justify-between a').first().text().trim()
 
             if (id && title) {
