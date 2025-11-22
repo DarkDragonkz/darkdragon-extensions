@@ -19,7 +19,6 @@ The credit for creating these sources goes to them; this repository handles appl
 
 ## ⚠️ Notes
 
-* **NineManga:** May occasionally require solving a Cloudflare CAPTCHA (cloud icon in settings) if chapters do not load.
 * This repository uses the Paperback `extensions-common` framework (v0.8).
 
 ---
