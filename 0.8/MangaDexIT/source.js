@@ -740,8 +740,8 @@ var _Sources = (() => {
     websiteBaseURL: "https://mangadex.org",
     sourceTags: [
       {
-        text: "Italian",
-        type: import_types.BadgeColor.GREY
+        text: "Italian \u{1F1EE}\u{1F1F9}",
+        type: import_types.BadgeColor.RED
       }
     ],
     intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS

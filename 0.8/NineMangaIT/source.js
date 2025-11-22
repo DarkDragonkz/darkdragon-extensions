@@ -988,8 +988,8 @@ var _Sources = (() => {
     websiteBaseURL: IT_DOMAIN,
     sourceTags: [
       {
-        text: "Italian",
-        type: import_types2.BadgeColor.GREY
+        text: "Italian \u{1F1EE}\u{1F1F9}",
+        type: import_types2.BadgeColor.RED
       }
     ],
     intents: import_types2.SourceIntents.MANGA_CHAPTERS | import_types2.SourceIntents.HOMEPAGE_SECTIONS | import_types2.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
