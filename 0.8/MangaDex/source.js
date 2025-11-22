@@ -731,8 +731,7 @@ var _Sources = (() => {
   var MD_API = "https://api.mangadex.org";
   var MD_UPLOADS = "https://uploads.mangadex.org";
   var MangaDexInfo = {
-    version: "2.0.3",
-    // Aggiorna versione
+    version: "2.0.4",
     name: "MangaDex (EN)",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -886,10 +885,10 @@ var _Sources = (() => {
       const sections = [
         App.createHomeSection({ id: "popular", title: "Popular", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
         App.createHomeSection({ id: "latest", title: "Latest Updates", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
-        App.createHomeSection({ id: "recommended", title: "Recommended (Top Rated)", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
         App.createHomeSection({ id: "recently_added", title: "Recently Added", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
+        App.createHomeSection({ id: "recommended", title: "Recommended (Top Rated)", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
         App.createHomeSection({ id: "featured", title: "Featured (Monthly)", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
-        App.createHomeSection({ id: "self_published", title: "Self-Published (Originals)", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal })
+        App.createHomeSection({ id: "self_published", title: "Self-Published", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal })
       ];
       for (const section of sections) {
         sectionCallback(section);
@@ -897,11 +896,11 @@ var _Sources = (() => {
       const baseParams = "limit=10&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&availableTranslatedLanguage[]=en";
       const urls = {
         popular: `${MD_API}/manga?${baseParams}&order[followedCount]=desc`,
-        latest: `${MD_API}/manga?${baseParams}&order[readableAt]=desc`,
-        recommended: `${MD_API}/manga?${baseParams}&order[rating]=desc`,
+        // FIX: "latestUploadedChapter" è più affidabile per Latest Updates
+        latest: `${MD_API}/manga?${baseParams}&order[latestUploadedChapter]=desc`,
         recently_added: `${MD_API}/manga?${baseParams}&order[createdAt]=desc`,
+        recommended: `${MD_API}/manga?${baseParams}&order[rating]=desc`,
         featured: `${MD_API}/manga?${baseParams}&order[followedCount]=desc&createdAtSince=${new Date(Date.now() - 2592e6).toISOString().slice(0, 19)}`,
-        // Ultimo mese
         self_published: `${MD_API}/manga?${baseParams}&originalLanguage[]=en&order[createdAt]=desc`
       };
       const promises = Object.entries(urls).map(async ([sectionId, url]) => {
@@ -936,13 +935,13 @@ var _Sources = (() => {
           url = `${MD_API}/manga?${baseParams}&order[followedCount]=desc`;
           break;
         case "latest":
-          url = `${MD_API}/manga?${baseParams}&order[readableAt]=desc`;
-          break;
-        case "recommended":
-          url = `${MD_API}/manga?${baseParams}&order[rating]=desc`;
+          url = `${MD_API}/manga?${baseParams}&order[latestUploadedChapter]=desc`;
           break;
         case "recently_added":
           url = `${MD_API}/manga?${baseParams}&order[createdAt]=desc`;
+          break;
+        case "recommended":
+          url = `${MD_API}/manga?${baseParams}&order[rating]=desc`;
           break;
         case "featured":
           url = `${MD_API}/manga?${baseParams}&order[followedCount]=desc&createdAtSince=${new Date(Date.now() - 2592e6).toISOString().slice(0, 19)}`;
@@ -967,7 +966,6 @@ var _Sources = (() => {
         metadata: { offset: offset + limit }
       });
     }
-    // Helper per processare i risultati JSON ed evitare ripetizioni codice
     processMangaResult(manga, targetArray) {
       const attr = manga.attributes;
       const title = attr.title.en ?? Object.values(attr.title)[0] ?? "Unknown";
