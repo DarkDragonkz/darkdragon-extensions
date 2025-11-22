@@ -733,18 +733,28 @@ var _Sources = (() => {
   var import_types = __toESM(require_lib());
   var NineMangaITParser = class {
     parseMangaDetails($2, mangaId) {
-      let title = $2(".book-title").text().trim();
+      let title = $2('h1[itemprop="name"]').first().text().trim();
+      if (!title) title = $2(".book-title").text().trim();
       if (!title) title = $2("h1").first().text().trim();
       title = title.replace(/ Manga$/, "").trim();
-      let image = $2(".book-cover img").attr("src") ?? "";
-      if (!image) image = $2(".manga-cover img").attr("src") ?? "";
-      if (!image) image = $2("div.book-intro img").attr("src") ?? "";
-      const author = $2('a[href*="/author/"]').first().text().trim() ?? "Unknown";
-      const artist = $2('a[href*="/artist/"]').first().text().trim() ?? "Unknown";
-      const desc = $2(".book-intro").text().trim() ?? "No description";
+      let image = $2('.bookintro img[itemprop="image"]').attr("src") ?? "";
+      if (!image) image = $2(".book-cover img").attr("src") ?? "";
+      if (!image) image = $2("div.bookintro img").attr("src") ?? "";
+      const author = $2('a[itemprop="author"]').first().text().trim() ?? "Unknown";
+      const artist = author;
+      let desc = $2('p[itemprop="description"]').text().trim();
+      if (!desc) desc = $2(".bookintro p").text().trim();
+      if (!desc) desc = "No description available";
       let status = "Ongoing";
       const statusText = $2(".red").text().toLowerCase();
       if (statusText.includes("completato") || statusText.includes("completed")) status = "Completed";
+      const arrayTags = [];
+      $2('li[itemprop="genre"] a').each((_, el) => {
+        const id = $2(el).attr("href")?.split("/").pop()?.replace(".html", "") ?? "";
+        const label = $2(el).text().trim();
+        if (id && label) arrayTags.push({ id, label });
+      });
+      const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })];
       return App.createSourceManga({
         id: mangaId,
         mangaInfo: App.createMangaInfo({
@@ -754,33 +764,32 @@ var _Sources = (() => {
           author,
           artist,
           desc,
-          tags: []
+          tags: tagSections
         })
       });
     }
     parseChapters($2, mangaId) {
       const chapters = [];
       const seenIds = /* @__PURE__ */ new Set();
-      const allLinks = $2("a").toArray();
-      for (const link of allLinks) {
+      const chapterLinks = $2("a.chapter_list_a").toArray();
+      for (const link of chapterLinks) {
         const $link = $2(link);
         const href = $link.attr("href");
-        if (!href || !href.includes("/chapter/")) continue;
+        if (!href) continue;
         const parts = href.split("/");
         const filePart = parts.pop() ?? "";
-        const chapterId = filePart.replace(".html", "");
-        if (seenIds.has(chapterId) || chapterId.length < 3 || href.includes("javascript:")) continue;
-        if (!filePart.includes(".html") && !filePart.match(/^\d+$/)) continue;
+        const chapterId = filePart.replace(".html", "").split("?")[0];
+        if (seenIds.has(chapterId) || !chapterId) continue;
         seenIds.add(chapterId);
-        const titleRaw = $link.text().trim();
-        if (!titleRaw) continue;
-        const dateText = $link.find(".date").text().trim() || $link.parent().find(".date").text().trim();
+        let titleRaw = $link.attr("title") || $link.text().trim();
+        titleRaw = titleRaw.replace(new RegExp(`^${mangaId.replace(/-/g, " ")}\\s+`, "i"), "");
+        const dateText = $link.parent().find("span").last().text().trim();
         let time = /* @__PURE__ */ new Date();
         if (dateText) {
           time = new Date(dateText);
           if (isNaN(time.getTime())) time = /* @__PURE__ */ new Date();
         }
-        const chapNumMatch = titleRaw.match(/(?:ch|chapter|episode|c)(?:\.|apters?|\s)*\s*(\d+(\.\d+)?)/i);
+        const chapNumMatch = titleRaw.match(/(?:ch|chapter|episode|c|one piece)\.?\s*(\d+(\.\d+)?)/i);
         let chapNum = 0;
         if (chapNumMatch) {
           chapNum = parseFloat(chapNumMatch[1] ?? "0");
@@ -802,21 +811,21 @@ var _Sources = (() => {
     }
     parseChapterDetails($2, mangaId, chapterId, requestManager, baseUrl, cheerio) {
       const pages = [];
-      $2("img.manga_pic").each((_, img) => {
-        const src = $2(img).attr("src");
-        if (src) pages.push(src);
-      });
-      if (pages.length === 0) {
-        const scripts = $2("script").toArray();
-        for (const script of scripts) {
-          const content = $2(script).html();
-          if (content && content.includes("p_urls")) {
-            const matches = content.match(/https?:\/\/[^"']+\.(jpg|png|webp|jpeg)/g);
-            if (matches) {
-              pages.push(...matches);
-            }
+      const scripts = $2("script").toArray();
+      for (const script of scripts) {
+        const content = $2(script).html();
+        if (content && content.includes("p_urls")) {
+          const matches = content.match(/https?:\/\/[^"']+\.(jpg|png|webp|jpeg)/g);
+          if (matches) {
+            pages.push(...matches);
           }
         }
+      }
+      if (pages.length === 0) {
+        $2("img.manga_pic").each((_, img) => {
+          const src = $2(img).attr("src");
+          if (src) pages.push(src);
+        });
       }
       if (pages.length === 0) {
         $2('div[align="center"] img').each((_, img) => {
@@ -863,7 +872,7 @@ var _Sources = (() => {
       const newItems = [];
       const latestItems = [];
       const cleanTitle = (t) => {
-        return t.replace(/(Vol\.\s*\d+)?\s*(Ch\.\s*\d+)?.*$/, "").replace(/\s+\d+(\.\d+)?$/, "").trim();
+        return t.replace(/(\s+(Vol\.|Ch\.|Chapter\.)?\s*\d+(\.\d+)?)+$/i, "").trim();
       };
       const popularList = $home("#tab_content_3 li").toArray();
       for (const item of popularList) {
@@ -871,8 +880,8 @@ var _Sources = (() => {
         const href = link.attr("href");
         const id = href?.split("/manga/")[1]?.replace(".html", "");
         const image = $home("img", item).attr("src") ?? "";
-        let title = link.attr("title") || $home("span", item).text().trim();
-        title = cleanTitle(title);
+        const rawTitle = link.attr("title") || $home("span", item).text().trim();
+        const title = cleanTitle(rawTitle);
         if (id) {
           popularItems.push(App.createPartialSourceManga({
             mangaId: id,
@@ -890,8 +899,8 @@ var _Sources = (() => {
         const href = link.attr("href");
         const id = href?.split("/manga/")[1]?.replace(".html", "");
         const image = $home("img", item).attr("src") ?? "";
-        let title = link.attr("title") || $home("span", item).text().trim();
-        title = cleanTitle(title);
+        const rawTitle = link.attr("title") || $home("span", item).text().trim();
+        const title = cleanTitle(rawTitle);
         if (id) {
           newItems.push(App.createPartialSourceManga({
             mangaId: id,
