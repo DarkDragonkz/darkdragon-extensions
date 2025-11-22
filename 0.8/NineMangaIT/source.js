@@ -739,6 +739,7 @@ var _Sources = (() => {
       title = title.replace(/ Manga$/, "").trim();
       let image = $2('.bookintro img[itemprop="image"]').attr("src") ?? "";
       if (!image) image = $2(".book-cover img").attr("src") ?? "";
+      if (!image) image = $2("div.bookintro img").attr("src") ?? "";
       const author = $2('a[itemprop="author"]').first().text().trim() ?? "Unknown";
       const artist = author;
       let desc = $2('.bookintro p[itemprop="description"]').text().trim();
@@ -782,12 +783,11 @@ var _Sources = (() => {
         const parts = href.split("/");
         const filePart = parts.pop() ?? "";
         const chapterId = filePart.split("?")[0].replace(".html", "");
-        if (seenIds.has(chapterId)) continue;
-        if (!href.includes("/chapter/")) continue;
+        if (seenIds.has(chapterId) || !href.includes("/chapter/")) continue;
         seenIds.add(chapterId);
         let titleRaw = $link.attr("title") || $link.text().trim();
         titleRaw = titleRaw.replace(new RegExp(`^${mangaId.replace(/-/g, " ")}\\s+`, "i"), "");
-        const dateText = $link.nextAll("span").last().text().trim();
+        const dateText = $link.parent().find("span").last().text().trim();
         let time = /* @__PURE__ */ new Date();
         if (dateText) {
           time = new Date(dateText);
@@ -805,7 +805,6 @@ var _Sources = (() => {
         }
         chapters.push(App.createChapter({
           id: chapterId,
-          // NON usiamo il titolo come ID
           name: titleRaw,
           chapNum,
           time,
@@ -816,26 +815,19 @@ var _Sources = (() => {
     }
     parseChapterDetails($2, mangaId, chapterId, requestManager, baseUrl, cheerio) {
       const pages = [];
-      $2("img.manga_pic").each((_, img) => {
-        const src = $2(img).attr("src");
-        if (src) pages.push(src);
-      });
-      if (pages.length === 0) {
-        const scripts = $2("script").toArray();
-        for (const script of scripts) {
-          const content = $2(script).html();
-          if (content && content.includes("p_urls")) {
-            const matches = content.match(/https?:\/\/[^"']+\.(jpg|png|webp|jpeg)/g);
-            if (matches) pages.push(...matches);
+      const scriptContent = $2('script:contains("p_urls")').html();
+      if (scriptContent) {
+        const matches = scriptContent.match(/(https?:\/\/[^"']+\.(?:jpg|png|webp|jpeg))/gi);
+        if (matches) {
+          for (const m of matches) {
+            pages.push(m);
           }
         }
       }
       if (pages.length === 0) {
-        $2('div[align="center"] img').each((_, img) => {
+        $2("img.manga_pic").each((_, img) => {
           const src = $2(img).attr("src");
-          if (src && src.startsWith("http") && !src.includes("logo") && !src.includes("icon")) {
-            pages.push(src);
-          }
+          if (src) pages.push(src);
         });
       }
       return App.createChapterDetails({
@@ -846,7 +838,7 @@ var _Sources = (() => {
     }
     parseSearchResults($2, baseUrl) {
       const results = [];
-      const items = $2(".book-list li, dl").toArray();
+      const items = $2(".book-list li, .comic-item, dd.book-list").toArray();
       for (const item of items) {
         const link = $2("a", item).first();
         const href = link.attr("href");
@@ -955,7 +947,8 @@ var _Sources = (() => {
   // src/NineMangaIT/NineMangaIT.ts
   var IT_DOMAIN = "https://it.ninemanga.com";
   var NineMangaITInfo = {
-    version: "1.0.9",
+    version: "1.1.0",
+    // Bump version
     name: "NineMangaIT",
     description: "Extension that pulls manga from it.ninemanga.com",
     author: "DarkDragonkzz",
@@ -976,10 +969,11 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.baseUrl = IT_DOMAIN;
       this.parser = new NineMangaITParser();
-      // User-Agent Android standard
+      // User-Agent Android
       this.userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
       this.requestManager = App.createRequestManager({
-        requestsPerSecond: 2,
+        requestsPerSecond: 3,
+        // AUMENTATO a 3 (era 2). Se ti blocca di nuovo, torna a 2.
         requestTimeout: 25e3,
         interceptor: {
           interceptRequest: async (request) => {
@@ -990,8 +984,9 @@ var _Sources = (() => {
                 "User-Agent": this.userAgent,
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
                 "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Connection": "keep-alive",
+                // Mantiene la connessione attiva per velocità
                 "Cookie": "is_warning=1; my_limit=1"
-                // Evita popup warning
               }
             };
             return request;
@@ -1005,7 +1000,6 @@ var _Sources = (() => {
     getMangaShareUrl(mangaId) {
       return `${this.baseUrl}/manga/${mangaId}.html`;
     }
-    // Helper per assicurarsi che l'ID del manga abbia .html alla fine nella richiesta
     getMangaUrl(mangaId) {
       const id = mangaId.endsWith(".html") ? mangaId : `${mangaId}.html`;
       return `${this.baseUrl}/manga/${id}`;
