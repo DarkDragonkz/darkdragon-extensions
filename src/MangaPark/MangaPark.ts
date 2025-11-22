@@ -28,8 +28,8 @@ export const MangaParkInfo: SourceInfo = {
     websiteBaseURL: MP_DOMAIN,
     sourceTags: [
         {
-            text: 'ENGLISH',
-            type: BadgeColor.BLUE,
+            text: 'English 🇬🇧', 
+            type: BadgeColor.GREEN
         },
     ],
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,

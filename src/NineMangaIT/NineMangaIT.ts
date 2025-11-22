@@ -34,8 +34,8 @@ export const NineMangaITInfo: SourceInfo = {
     websiteBaseURL: IT_DOMAIN,
     sourceTags: [
         {
-            text: 'Italian',
-            type: BadgeColor.GREY
+            text: 'Italian 🇮🇹',
+            type: BadgeColor.RED
         },
     ],
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,

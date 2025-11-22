@@ -34,8 +34,8 @@ export const MangaWorldInfo: SourceInfo = {
     websiteBaseURL: MW_DOMAIN,
     sourceTags: [
         {
-            text: 'ITALIAN',
-            type: BadgeColor.GREY,
+            text: 'Italian 🇮🇹',
+            type: BadgeColor.RED
         },
     ],
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,

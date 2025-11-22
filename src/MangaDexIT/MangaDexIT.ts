@@ -31,8 +31,8 @@ export const MangaDexITInfo: SourceInfo = {
     websiteBaseURL: 'https://mangadex.org',
     sourceTags: [
         {
-            text: 'Italian',
-            type: BadgeColor.GREY,
+            text: 'Italian 🇮🇹',
+            type: BadgeColor.RED
         },
     ],
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS,

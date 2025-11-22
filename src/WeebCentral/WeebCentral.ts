@@ -32,8 +32,8 @@ export const WeebCentralInfo: SourceInfo = {
     websiteBaseURL: DOMAIN,
     sourceTags: [
         {
-            text: 'ENGLISH',
-            type: BadgeColor.BLUE,
+            text: 'English 🇬🇧', 
+            type: BadgeColor.GREEN
         },
     ],
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,
