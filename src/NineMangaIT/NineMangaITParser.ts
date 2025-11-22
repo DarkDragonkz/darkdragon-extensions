@@ -11,15 +11,37 @@ import {
 
 export class NineMangaITParser {
 
+    // HELPER: Gestisce Lazy Loading e URL relativi per le immagini
+    private getImageSrc(element: any): string {
+        let img = element.find('img').first()
+        // Cerca l'immagine vera in vari attributi usati da NineManga
+        let src = img.attr('src') || img.attr('data-src') || img.attr('original') || img.attr('data-original')
+        
+        if (!src) return 'https://paperback.moe/icons/logo-alt.svg' // Fallback icona
+
+        // Se l'immagine è un placeholder di caricamento, cerca ancora
+        if (src.includes('loading') || src.includes('blank')) {
+             src = img.attr('data-src') || img.attr('original') || src
+        }
+
+        // Corregge URL relativi (es: /images/cover.jpg -> https://it.ninemanga.com/images/cover.jpg)
+        if (src.startsWith('//')) {
+            src = `https:${src}`
+        } else if (src.startsWith('/')) {
+            src = `https://it.ninemanga.com${src}`
+        }
+
+        return src
+    }
+
     parseMangaDetails($: any, mangaId: string): SourceManga {
         let title = $('h1[itemprop="name"]').first().text().trim()
         if (!title) title = $('.book-title').text().trim()
         if (!title) title = $('h1').first().text().trim()
         title = title.replace(/ Manga$/, '').trim()
         
-        let image = $('.bookintro img[itemprop="image"]').attr('src') ?? ''
-        if (!image) image = $('.book-cover img').attr('src') ?? ''
-        if (!image) image = $('div.bookintro img').attr('src') ?? ''
+        // Usa l'helper per l'immagine
+        let image = this.getImageSrc($('.bookintro, .book-cover, .manga-cover, div.bookintro'))
 
         const author = $('a[itemprop="author"]').first().text().trim() ?? 'Unknown'
         const artist = author 
@@ -32,13 +54,11 @@ export class NineMangaITParser {
         if (statusText.includes('completato') || statusText.includes('completed')) status = 'Completed'
 
         const arrayTags: Tag[] = []
-        const tagLinks = $('li[itemprop="genre"] a').toArray()
-        for (const el of tagLinks) {
-            const href = $(el).attr('href')
-            const id = href?.split('/').pop()?.replace('.html', '') ?? ''
+        $('li[itemprop="genre"] a').each((_: any, el: any) => {
+            const id = $(el).attr('href')?.split('/').pop()?.replace('.html', '') ?? ''
             const label = $(el).text().trim()
             if (id && label) arrayTags.push({ id, label })
-        }
+        })
         const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
 
         return App.createSourceManga({
@@ -156,10 +176,16 @@ export class NineMangaITParser {
 
     parseSearchResults($: any, baseUrl: string): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
-        const items = $('.book-list li, .comic-item, dd.book-list').toArray()
+        // FIX: Aggiunto selettore per dl (usato spesso nella ricerca mobile)
+        const items = $('.book-list li, .book-list dl, .comic-item, dd.book-list, div.bookinfo').toArray()
 
         for (const item of items) {
-            const link = $('a', item).first()
+            const $item = $(item)
+            let link = $item.find('a').first()
+            
+            // A volte il primo link è l'immagine, controlliamo
+            if (!link.attr('href')) link = $item.find('dt a').first()
+
             const href = link.attr('href')
             
             let id = ''
@@ -169,8 +195,12 @@ export class NineMangaITParser {
 
             if (!id) continue
 
-            const image = $('img', item).attr('src') ?? ''
-            const title = link.attr('title') || link.text().trim()
+            // FIX: Usa il nuovo helper per trovare l'immagine corretta
+            const image = this.getImageSrc($item)
+            
+            let title = link.attr('title') || link.text().trim()
+            if (!title) title = $item.find('dd.book-list b').text().trim() // Struttura dl > dd > b
+            if (!title) title = 'Unknown'
 
             results.push(App.createPartialSourceManga({
                 mangaId: id,
@@ -193,13 +223,18 @@ export class NineMangaITParser {
 
         const cleanTitle = (t: string) => t.replace(/(\s+(Vol\.|Ch\.|Chapter\.)?\s*\d+(\.\d+)?)+$/i, '').trim()
 
+        // POPOLARI
         const popularList = $home('#tab_content_3 li').toArray()
         for (const item of popularList) {
-            const link = $home('a', item).first()
+            const $item = $home(item)
+            const link = $item.find('a').first()
             const href = link.attr('href')
             const id = href?.split('/manga/')[1]?.replace('.html', '')
-            const image = $home('img', item).attr('src') ?? ''
-            let title = link.attr('title') || $home('span', item).text().trim()
+            
+            // FIX: Usa helper immagine
+            const image = this.getImageSrc($item)
+            
+            let title = link.attr('title') || $item.find('span').text().trim()
             title = cleanTitle(title)
 
             if (id) popularItems.push(App.createPartialSourceManga({ mangaId: id, image, title, subtitle: undefined }))
@@ -207,13 +242,15 @@ export class NineMangaITParser {
         popularSection.items = popularItems
         sectionCallback(popularSection)
 
+        // NUOVI
         const newList = $home('#tab_content_1 li').toArray()
         for (const item of newList) {
-            const link = $home('a', item).first()
+            const $item = $home(item)
+            const link = $item.find('a').first()
             const href = link.attr('href')
             const id = href?.split('/manga/')[1]?.replace('.html', '')
-            const image = $home('img', item).attr('src') ?? ''
-            let title = link.attr('title') || $home('span', item).text().trim()
+            const image = this.getImageSrc($item)
+            let title = link.attr('title') || $item.find('span').text().trim()
             title = cleanTitle(title)
 
             if (id) newItems.push(App.createPartialSourceManga({ mangaId: id, image, title, subtitle: undefined }))
@@ -221,13 +258,15 @@ export class NineMangaITParser {
         newSection.items = newItems
         sectionCallback(newSection)
 
+        // ULTIMI
         const latestList = $home('#tab_content_2 li').toArray()
         for (const item of latestList) {
-            const link = $home('a', item).first()
+            const $item = $home(item)
+            const link = $item.find('a').first()
             const href = link.attr('href')
             const id = href?.split('/manga/')[1]?.replace('.html', '')
-            const image = $home('img', item).attr('src') ?? ''
-            const rawTitle = link.attr('title') || $home('span', item).text().trim()
+            const image = this.getImageSrc($item)
+            const rawTitle = link.attr('title') || $item.find('span').text().trim()
             const title = cleanTitle(rawTitle)
             
             let subtitle = undefined
