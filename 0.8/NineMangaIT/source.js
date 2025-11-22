@@ -732,30 +732,25 @@ var _Sources = (() => {
   // src/NineMangaIT/NineMangaITParser.ts
   var import_types = __toESM(require_lib());
   var NineMangaITParser = class {
-    // HELPER AVANZATO PER IMMAGINI
+    // HELPER: Trova l'immagine migliore e corregge HTTPS
     getImageSrc(element) {
       let img = element.find("img").first();
       if (element.is("img")) img = element;
-      let src = img.attr("src") || img.attr("data-src") || img.attr("original") || img.attr("data-original") || img.attr("srcset");
-      if (!src) return "https://paperback.moe/icons/logo-alt.svg";
+      let src = img.attr("src") || img.attr("data-src") || img.attr("original") || img.attr("data-original");
+      if (!src || src.includes("logo-alt")) return "https://paperback.moe/icons/logo-alt.svg";
       src = src.trim();
-      if (src.startsWith("//")) {
-        src = `https:${src}`;
-      } else if (src.startsWith("/")) {
-        src = `https://it.ninemanga.com${src}`;
-      } else if (src.startsWith("http:")) {
-        src = src.replace("http:", "https:");
-      }
+      if (src.startsWith("//")) src = `https:${src}`;
+      else if (src.startsWith("/")) src = `https://it.ninemanga.com${src}`;
+      else if (src.startsWith("http:")) src = src.replace("http:", "https:");
       return src;
     }
     parseMangaDetails($, mangaId) {
-      let title = $('h1[itemprop="name"]').text().trim();
+      let title = $('h1[itemprop="name"]').first().text().trim();
       if (!title) title = $(".book-title").text().trim();
       if (!title) title = $("h1").first().text().trim();
       title = title.replace(/ Manga$/, "").trim();
       let imageElement = $('img[itemprop="image"]').first();
       if (imageElement.length === 0) imageElement = $(".bookintro img").first();
-      if (imageElement.length === 0) imageElement = $(".bookface img").first();
       if (imageElement.length === 0) imageElement = $(".manga-cover img").first();
       const image = this.getImageSrc(imageElement);
       const author = $('a[itemprop="author"]').first().text().trim() || "Unknown";
@@ -874,23 +869,23 @@ var _Sources = (() => {
         id: chapterId,
         mangaId,
         pages: [...new Set(pages)]
-        // Rimuovi duplicati
       });
     }
     parseSearchResults($, baseUrl) {
       const results = [];
-      const items = $(".book-list li, .comic-item, dl.book-list").toArray();
+      const items = $(".book-list li, .direlist .bookinfo, dl, .comic-item").toArray();
       for (const item of items) {
         const $item = $(item);
-        let link = $item.find("dd a").first();
-        if (link.length === 0) link = $item.find("a.bookname").first();
-        if (link.length === 0) link = $item.find("a").last();
+        const link = $item.find('a[href*="/manga/"]').first();
         const href = link.attr("href");
-        const id = href?.split("/manga/")[1]?.replace(".html", "");
+        if (!href) continue;
+        const id = href.split("/manga/")[1]?.replace(".html", "");
         if (!id) continue;
         const image = this.getImageSrc($item);
         let title = link.text().trim();
-        if (!title) title = link.attr("title") ?? "Unknown";
+        if (!title) title = link.attr("title") ?? "";
+        if (!title) title = $item.find("b, h3, dd.book-list").text().trim();
+        if (!title) title = "Unknown";
         results.push(App.createPartialSourceManga({
           mangaId: id,
           image,
