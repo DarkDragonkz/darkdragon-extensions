@@ -751,20 +751,18 @@ var _Sources = (() => {
       return time;
     }
     parseMangaDetails($, mangaId) {
-      let title = $("h3.text-lg.font-bold a").first().text().trim();
-      if (!title) title = $("h3.text-2xl.font-bold a").first().text().trim();
-      if (!title) title = $("h1").text().trim() || "Unknown";
-      let image = $(".w-24 img, .w-52 img").first().attr("src") || "";
+      const title = $("h3 a").first().text().trim() || $("h1").text().trim() || "Unknown";
+      let image = $("img").attr("src") || "";
       if (image.startsWith("/")) image = "https://mangapark.io" + image;
-      if (!image) image = "https://paperback.moe/icons/logo-alt.svg";
-      const author = $('a[href*="/search?word="]').first().text().trim() || "Unknown";
-      let desc = $(".limit-html-p").text().trim();
-      if (!desc) desc = $('meta[name="description"]').attr("content") || "";
+      const author = $(".opacity-80 a").first().text().trim() || "Unknown";
+      const desc = $(".limit-height-body").text().trim() || "No description available";
       const status = "Ongoing";
       const arrayTags = [];
       $(".opacity-70 span, .genres a").each((_, el) => {
         const label = $(el).text().trim().replace(/,$/, "");
-        if (label && label.length > 1) arrayTags.push(App.createTag({ id: label, label }));
+        if (label) {
+          arrayTags.push(App.createTag({ id: label, label }));
+        }
       });
       const tagSections = [
         App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })
@@ -784,29 +782,17 @@ var _Sources = (() => {
     }
     parseChapters($, mangaId) {
       const chapters = [];
-      const chapterList = $('div[data-name="chapter-list"] .flex.border-b');
-      chapterList.each((_, element) => {
-        const row = $(element);
-        const link = row.find("a").first();
+      $('a[href*="/chapter/"]').each((_, obj) => {
+        const link = $(obj);
         const href = link.attr("href");
-        if (!href) return;
-        const parts = href.split("/");
-        const chapterId = parts.pop();
-        if (!chapterId) return;
+        const id = href?.split("/").pop() || href;
+        if (!id) return;
         const title = link.text().trim();
-        const timeStr = row.find("time").text().trim();
-        const chapNumMatch = title.match(/(?:ch|chapter|episode|c)(?:\.|apters?|\s)*\s*(\d+(\.\d+)?)/i);
-        let chapNum = 0;
-        if (chapNumMatch) {
-          chapNum = parseFloat(chapNumMatch[1] ?? "0");
-        } else {
-          const simpleNums = title.match(/(\d+(\.\d+)?)/g);
-          if (simpleNums && simpleNums.length > 0) {
-            chapNum = parseFloat(simpleNums[simpleNums.length - 1] ?? "0");
-          }
-        }
+        const timeStr = link.find("time").text().trim();
+        const chapNumMatch = title.match(/(\d+(\.\d+)?)/);
+        const chapNum = chapNumMatch ? parseFloat(chapNumMatch[0]) : 0;
         chapters.push(App.createChapter({
-          id: chapterId,
+          id,
           name: title,
           chapNum,
           time: this.convertTime(timeStr),
@@ -817,22 +803,21 @@ var _Sources = (() => {
     }
     parseChapterDetails($, mangaId, chapterId) {
       const pages = [];
-      const scriptContent = $('script:contains("srcs")').html();
-      if (scriptContent) {
-        try {
-          const matches = scriptContent.match(/\"(https?:\/\/[^\"]+)\"/g);
-          if (matches) {
-            matches.forEach((m) => {
-              const url = m.replace(/"/g, "");
-              if (url.match(/\.(jpg|jpeg|png|webp)/i)) pages.push(url);
-            });
+      let foundInScript = false;
+      $("script").each((_, script) => {
+        if (foundInScript) return;
+        const content = $(script).html();
+        if (!content) return;
+        const matches = content.match(/"(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp))"/gi);
+        if (matches && matches.length > 0) {
+          for (const m of matches) {
+            pages.push(m.replace(/"/g, ""));
           }
-        } catch (e) {
-          console.error(e);
+          foundInScript = true;
         }
-      }
-      if (pages.length == 0) {
-        $('img.loading-lazy, img[loading="lazy"]').each((_, img) => {
+      });
+      if (pages.length === 0) {
+        $('img[loading="lazy"], img.w-full').each((_, img) => {
           let src = $(img).attr("src");
           if (src && src.startsWith("http")) pages.push(src);
         });
@@ -851,7 +836,7 @@ var _Sources = (() => {
         const id = titleLink.attr("href")?.split("/").pop();
         let image = $("img", item).attr("src") || "";
         if (image.startsWith("/")) image = "https://mangapark.io" + image;
-        const subtitle = $("div.flex.justify-between a", item).first().text().trim();
+        const subtitle = $("div.flex.flex-nowrap.justify-between a", item).first().text().trim();
         if (id && title) {
           results.push(App.createPartialSourceManga({
             mangaId: id,
@@ -913,11 +898,10 @@ var _Sources = (() => {
   // src/MangaParkIT/MangaParkIT.ts
   var MP_DOMAIN = "https://mangapark.io";
   var MangaParkITInfo = {
-    version: "1.0.1",
+    version: "1.0.2",
     name: "MangaPark IT",
     description: "Estensione per MangaPark (Solo Italiano)",
     author: "DarkDragonkz",
-    // <--- AGGIORNATO: Nome autore corretto
     authorWebsite: "http://github.com/DarkDragonkz",
     icon: "icon.png",
     contentRating: import_types2.ContentRating.EVERYONE,
@@ -987,7 +971,7 @@ var _Sources = (() => {
     }
     async getSearchResults(query, metadata) {
       const page = metadata?.page ?? 1;
-      const url = new URLBuilder(this.baseUrl).addPathComponent("search").addQueryParameter("lang", "it").addQueryParameter("page", page.toString()).addQueryParameter("q", query.title ?? "").buildUrl();
+      const url = new URLBuilder(this.baseUrl).addPathComponent("search").addQueryParameter("lang", "it").addQueryParameter("page", page.toString()).addQueryParameter("word", query.title ?? "").buildUrl();
       const request = App.createRequest({
         url,
         method: "GET"
