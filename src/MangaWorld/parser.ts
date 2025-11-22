@@ -10,25 +10,43 @@ import {
 } from '@paperback/types'
 
 export class Parser {
+
+    // HELPER: Corregge i titoli duplicati (es "One PieceOne Piece" -> "One Piece")
+    private cleanTitle(title: string): string {
+        if (!title) return 'Unknown'
+        title = title.trim()
+        // Se la stringa è pari e la prima metà è uguale alla seconda, è un duplicato
+        if (title.length > 0 && title.length % 2 === 0) {
+            const half = title.substring(0, title.length / 2)
+            if (half === title.substring(title.length / 2)) {
+                return half
+            }
+        }
+        return title
+    }
+
+    // HELPER: Gestione Immagini
+    private getImage(element: any, baseUrl: string): string {
+        let src = element.attr('src') || element.attr('data-src') || element.attr('data-original')
+        if (!src || src.includes('loading') || src.startsWith('data:')) {
+            return 'https://paperback.moe/icons/logo-alt.svg'
+        }
+        if (src.startsWith('/')) {
+            return baseUrl + src
+        }
+        return src
+    }
+
     parseMangaDetails($: any, mangaId: string): SourceManga {
-        // FIX: Usa attr('title') se possibile, altrimenti text().trim()
-        let title = $('.name.bigger').text().trim() ?? ''
+        // Titolo: Prova attr 'title', altrimenti testo con pulizia
+        let title = $('.name.bigger').text().trim()
         if (!title) title = $('h1').first().text().trim()
+        title = this.cleanTitle(title)
 
         const imgElement = $('.thumb.mb-3.text-center img')
-        let image = imgElement.attr('src') ?? ''
-        
-        if (!image || image.includes('loading') || image.startsWith('data:')) {
-            image = imgElement.attr('data-src') ?? imgElement.attr('data-original') ?? ''
-        }
-        
-        if (image && image.startsWith('/')) {
-            image = 'https://www.mangaworld.mx' + image
-        }
-        if (!image) image = 'https://paperback.moe/icons/logo-alt.svg'
+        const image = this.getImage(imgElement, 'https://www.mangaworld.mx')
 
         const desc = $('#noidungm').text().trim() ?? ''
-        let hentai = false
         let author = ''
         let artist = ''
         
@@ -68,23 +86,26 @@ export class Parser {
                 artist,
                 tags: tagSections,
                 desc,
-                hentai
             }),
         })
     }
 
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
+        // Selettore standard per MW
         const arrChapters = $('.chapter').toArray()
         
         for (const item of arrChapters) {
             const link = $('a', item).first()
             const href = link.attr('href')
-            const chapterId = href?.split('/').pop()
             
-            if (!chapterId) continue
+            // Importante: MW a volte richiede l'URL completo o relativo come ID
+            if (!href) continue
 
-            const title = link.attr('title') ?? link.text().trim()
+            let title = link.attr('title') ?? link.text().trim()
+            // Pulizia titolo capitolo se necessario
+            title = title.replace(mangaId, '').trim()
+            
             const dateText = $('.chapter-release-date i', item).text().trim()
             
             const chapNumMatch = title.match(/(\d+(\.\d+)?)/)
@@ -92,7 +113,7 @@ export class Parser {
             if (chapNumMatch && chapNumMatch[1]) chapNum = parseFloat(chapNumMatch[1])
 
             chapters.push(App.createChapter({
-                id: href, 
+                id: href, // Usa l'href come ID univoco
                 name: title,
                 chapNum: chapNum,
                 time: this.convertTime(dateText),
@@ -108,8 +129,9 @@ export class Parser {
         $('#page img').each((_: any, img: any) => {
              let src = $(img).attr('src') || $(img).attr('data-src')
              if (src && !src.includes('loading')) {
+                 src = src.trim()
                  if (src.startsWith('/')) src = 'https://www.mangaworld.mx' + src
-                 pages.push(src.trim())
+                 pages.push(src)
              }
         })
         
@@ -127,20 +149,23 @@ export class Parser {
         const hotItems: PartialSourceManga[] = []
         const latestItems: PartialSourceManga[] = []
 
-        // HOT
+        // HOT (Manga del mese)
         const hotArr = $('.owl-carousel .entry').toArray()
         for (const item of hotArr) {
             const link = $('a', item).first()
-            const id = link.attr('href')?.split('/').pop()
-            const image = $('img', item).attr('src') || $('img', item).attr('data-src') || ''
+            const href = link.attr('href')
+            const id = href?.split('/').pop()
+            const image = this.getImage($('img', item), baseUrl)
             
+            // Titolo con pulizia
             let title = link.attr('title')
             if (!title) title = $('.name', item).text().trim()
+            title = this.cleanTitle(title)
             
-            if (id && title) {
+            if (id) {
                 hotItems.push(App.createPartialSourceManga({
                     mangaId: id,
-                    image: image.startsWith('/') ? baseUrl + image : image,
+                    image: image,
                     title: title,
                     subtitle: undefined
                 }))
@@ -153,18 +178,20 @@ export class Parser {
         const latestArr = $('.comics-grid .entry').toArray()
         for (const item of latestArr) {
             const link = $('a.thumb', item)
-            const id = link.attr('href')?.split('/').pop()
-            const image = $('img', item).attr('src') || $('img', item).attr('data-src') || ''
+            const href = link.attr('href')
+            const id = href?.split('/').pop()
+            const image = this.getImage($('img', item), baseUrl)
             
             let title = link.attr('title') 
             if (!title) title = $('.name a', item).text().trim()
+            title = this.cleanTitle(title)
 
             const chapter = $('.chapter-number', item).first().text().trim()
 
-            if (id && title) {
+            if (id) {
                 latestItems.push(App.createPartialSourceManga({
                     mangaId: id,
-                    image: image.startsWith('/') ? baseUrl + image : image,
+                    image: image,
                     title: title,
                     subtitle: chapter
                 }))
@@ -180,16 +207,18 @@ export class Parser {
 
         for (const item of items) {
             const link = $('a.thumb', item)
-            const id = link.attr('href')?.split('/').pop()
-            const image = $('img', item).attr('src') || $('img', item).attr('data-src') || ''
+            const href = link.attr('href')
+            const id = href?.split('/').pop()
+            const image = this.getImage($('img', item), baseUrl)
             
             let title = link.attr('title')
             if (!title) title = $('.name a', item).text().trim()
+            title = this.cleanTitle(title)
 
-            if (id && title) {
+            if (id) {
                 results.push(App.createPartialSourceManga({
                     mangaId: id,
-                    image: image.startsWith('/') ? baseUrl + image : image,
+                    image: image,
                     title: title,
                     subtitle: undefined
                 }))
@@ -198,23 +227,24 @@ export class Parser {
         return results
     }
 
-    // FIX: Funzione aggiunta per risolvere il crash
     parseViewMore($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         const items = $('.comics-grid .entry').toArray()
 
         for (const item of items) {
             const link = $('a.thumb', item)
-            const id = link.attr('href')?.split('/').pop()
-            const image = $('img', item).attr('src') || $('img', item).attr('data-src') || ''
+            const href = link.attr('href')
+            const id = href?.split('/').pop()
+            const image = this.getImage($('img', item), 'https://www.mangaworld.mx')
             
             let title = link.attr('title')
             if (!title) title = $('.name a', item).text().trim()
+            title = this.cleanTitle(title)
 
-            if (id && title) {
+            if (id) {
                 results.push(App.createPartialSourceManga({
                     mangaId: id,
-                    image: image.startsWith('/') ? 'https://www.mangaworld.mx' + image : image,
+                    image: image,
                     title: title,
                     subtitle: undefined
                 }))
