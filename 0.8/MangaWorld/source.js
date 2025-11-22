@@ -733,7 +733,8 @@ var _Sources = (() => {
   var import_types = __toESM(require_lib());
   var Parser = class {
     parseMangaDetails($, mangaId) {
-      const title = $(".name.bigger").text().trim() ?? "";
+      let title = $(".name.bigger").text().trim() ?? "";
+      if (!title) title = $("h1").first().text().trim();
       const imgElement = $(".thumb.mb-3.text-center img");
       let image = imgElement.attr("src") ?? "";
       if (!image || image.includes("loading") || image.startsWith("data:")) {
@@ -747,249 +748,164 @@ var _Sources = (() => {
       let hentai = false;
       let author = "";
       let artist = "";
-      const id_arr = [];
-      const label_arr = [];
-      let i = 0;
-      for (const obj of $(".meta-data.row.px-1 .col-12").toArray()) {
-        switch (i) {
-          case 1:
-            $(obj).find("a").each((_, e) => {
-              label_arr.push($(e).text());
-              id_arr.push($(e).attr("href")?.replace("https://www.mangaworld.mx/archive?genre=", "") ?? "");
-            });
-            break;
-          case 2:
-            author = $(obj).text().trim().replace("Autore: ", "");
-            break;
-          case 3:
-            artist = $(obj).text().trim().replace("Artista: ", "");
-            break;
-        }
-        i++;
-      }
-      const status = "Ongoing";
+      $(".meta-data .row").each((_, row) => {
+        const label = $("label", row).text().toLowerCase();
+        const value = $("span, a", row).text().trim();
+        if (label.includes("autore")) author = value;
+        if (label.includes("artista")) artist = value;
+      });
       const arrayTags = [];
-      for (const j in label_arr) {
-        const id = id_arr[j] ?? "";
-        const label = label_arr[j] ?? "";
-        if (["ADULTI", "SMUT", "MATURO", "HENTAI"].includes(id.toUpperCase())) hentai = true;
-        if (!id || !label) continue;
-        arrayTags.push({ id, label });
-      }
-      const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags.map((x) => App.createTag(x)) })];
+      $(".meta-data .row").each((_, row) => {
+        const label = $("label", row).text().toLowerCase();
+        if (label.includes("generi")) {
+          $("a", row).each((__, tag) => {
+            const id = $(tag).attr("href")?.split("/").pop() ?? "";
+            const tagName = $(tag).text().trim();
+            if (id && tagName) arrayTags.push({ id, label: tagName });
+          });
+        }
+      });
+      const tagSections = [App.createTagSection({ id: "0", label: "Generi", tags: arrayTags })];
+      let status = "Ongoing";
+      const statusText = $(".meta-data").text().toLowerCase();
+      if (statusText.includes("finito") || statusText.includes("completato")) status = "Completed";
+      if (statusText.includes("droppato")) status = "Unknown";
       return App.createSourceManga({
         id: mangaId,
         mangaInfo: App.createMangaInfo({
           titles: [title],
           image,
           status,
-          artist,
-          rating: 0,
           author,
+          artist,
           tags: tagSections,
           desc,
           hentai
         })
       });
     }
-    parseChapters($, mangaId, source) {
+    parseChapters($, mangaId) {
       const chapters = [];
-      const arrChapters = $(".chapter").toArray().reverse();
+      const arrChapters = $(".chapter").toArray();
       for (const item of arrChapters) {
-        const id = $("a", item).attr("href")?.replace(`${source.baseUrl}/manga/${mangaId}/read/`, "") ?? "";
-        const name = $("a", item).attr("title") ?? "";
-        const chapNum = Number($(".d-inline-block", item).text().split(" ")[1]) ?? -1;
-        chapters.push(
-          App.createChapter({
-            id,
-            name,
-            chapNum,
-            time: new Date(Date.now()),
-            langCode: "it"
-          })
-        );
+        const link = $("a", item).first();
+        const href = link.attr("href");
+        const chapterId = href?.split("/").pop();
+        if (!chapterId) continue;
+        const title = link.attr("title") ?? link.text().trim();
+        const dateText = $(".chapter-release-date i", item).text().trim();
+        const chapNumMatch = title.match(/(\d+(\.\d+)?)/);
+        let chapNum = 0;
+        if (chapNumMatch && chapNumMatch[1]) chapNum = parseFloat(chapNumMatch[1]);
+        chapters.push(App.createChapter({
+          id: href,
+          // MangaWorld usa l'URL intero come ID spesso per i redirect
+          name: title,
+          chapNum,
+          time: this.convertTime(dateText),
+          langCode: "it"
+        }));
       }
       return chapters;
     }
-    parseChapterDetails($, mangaId, id) {
+    parseChapterDetails($, mangaId, chapterId) {
       const pages = [];
-      for (const item of $(".col-12.text-center.position-relative img").toArray()) {
-        let imageUrl = $(item).attr("src");
-        if (!imageUrl || imageUrl.includes("loading")) {
-          imageUrl = $(item).attr("data-src") ?? $(item).attr("data-original");
+      $("#page img").each((_, img) => {
+        let src = $(img).attr("src") || $(img).attr("data-src");
+        if (src && !src.includes("loading")) {
+          if (src.startsWith("/")) src = "https://www.mangaworld.mx" + src;
+          pages.push(src.trim());
         }
-        if (!imageUrl) continue;
-        if (imageUrl.startsWith("/")) {
-          imageUrl = "https://www.mangaworld.mx" + imageUrl;
-        }
-        pages.push(imageUrl.trim());
-      }
+      });
       return App.createChapterDetails({
-        id,
+        id: chapterId,
         mangaId,
         pages
       });
     }
-    parseTags($, baseUrl) {
-      const genres = [];
-      let first_label = "";
-      let i = 0;
-      for (const item of $(".dropdown-menu.dropdown-multicol .dropdown-item").toArray()) {
-        const id = $(item).attr("href")?.replace(`${baseUrl}/archive?genre=`, "") ?? "";
-        const label = $(item).text().trim();
-        if (i == 0) first_label = label;
-        if (label == first_label && i > 0) break;
-        genres.push(App.createTag({ label, id }));
-        i++;
-      }
-      return [App.createTagSection({ id: "0", label: "Generi", tags: genres })];
-    }
-    parseSearchResults($) {
-      const results = [];
-      for (const item of $(".comics-grid .entry").toArray()) {
-        const id = (($("a", item).attr("href") ?? "").match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ["null"])[0] ?? "";
-        const title = $("a", item).attr("title") ?? "";
-        const imgElement = $("a img", item);
-        let image = imgElement.attr("src") ?? "";
-        if (image.includes("loading") || !image || image.startsWith("data:")) {
-          image = imgElement.attr("data-src") ?? imgElement.attr("data-original") ?? "";
-        }
-        if (image && image.startsWith("/")) {
-          image = "https://www.mangaworld.mx" + image;
-        }
-        results.push(
-          App.createPartialSourceManga({
-            image,
-            title,
+    // FIX TITOLI DUPLICATI QUI
+    parseHomeSections($, sectionCallback, baseUrl) {
+      const hotSection = App.createHomeSection({ id: "hot", title: "Manga del Mese", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
+      const latestSection = App.createHomeSection({ id: "latest", title: "Ultimi Aggiornamenti", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
+      const newSection = App.createHomeSection({ id: "new", title: "Nuove Aggiunte", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
+      const hotItems = [];
+      const latestItems = [];
+      const newItems = [];
+      const hotArr = $(".owl-carousel .entry").toArray();
+      for (const item of hotArr) {
+        const link = $("a", item).first();
+        const id = link.attr("href")?.split("/").pop();
+        const image = $("img", item).attr("src") || $("img", item).attr("data-src") || "";
+        let title = link.attr("title");
+        if (!title) title = $(".name", item).text().trim();
+        if (id && title) {
+          hotItems.push(App.createPartialSourceManga({
             mangaId: id,
+            image: image.startsWith("/") ? baseUrl + image : image,
+            title,
             subtitle: void 0
-          })
-        );
+          }));
+        }
+      }
+      hotSection.items = hotItems;
+      sectionCallback(hotSection);
+      const latestArr = $(".comics-grid .entry").toArray();
+      for (const item of latestArr) {
+        const link = $("a.thumb", item);
+        const id = link.attr("href")?.split("/").pop();
+        const image = $("img", item).attr("src") || $("img", item).attr("data-src") || "";
+        let title = link.attr("title");
+        if (!title) title = $(".name a", item).text().trim();
+        const chapter = $(".chapter-number", item).first().text().trim();
+        if (id && title) {
+          latestItems.push(App.createPartialSourceManga({
+            mangaId: id,
+            image: image.startsWith("/") ? baseUrl + image : image,
+            title,
+            subtitle: chapter
+          }));
+        }
+      }
+      latestSection.items = latestItems;
+      sectionCallback(latestSection);
+    }
+    parseSearchResults($, baseUrl) {
+      const results = [];
+      const items = $(".comics-grid .entry").toArray();
+      for (const item of items) {
+        const link = $("a.thumb", item);
+        const id = link.attr("href")?.split("/").pop();
+        const image = $("img", item).attr("src") || $("img", item).attr("data-src") || "";
+        let title = link.attr("title");
+        if (!title) title = $(".name a", item).text().trim();
+        if (id && title) {
+          results.push(App.createPartialSourceManga({
+            mangaId: id,
+            image: image.startsWith("/") ? baseUrl + image : image,
+            title,
+            subtitle: void 0
+          }));
+        }
       }
       return results;
     }
-    parseHomeSections($, sectionCallback) {
-      const section1 = App.createHomeSection({
-        id: "1",
-        title: "Ultimi capitoli aggiunti",
-        containsMoreItems: true,
-        type: import_types.HomeSectionType.singleRowNormal
-      });
-      const section2 = App.createHomeSection({
-        id: "2",
-        title: "Manga del mese",
-        containsMoreItems: false,
-        type: import_types.HomeSectionType.singleRowNormal
-      });
-      const section3 = App.createHomeSection({
-        id: "3",
-        title: "Capitoli di tendenza",
-        containsMoreItems: false,
-        type: import_types.HomeSectionType.singleRowNormal
-      });
-      const latestManga = [];
-      const hotTitles = [];
-      const trending = [];
-      const arrLatest = $(".col-sm-12.col-md-8.col-xl-9 .comics-grid .entry").toArray();
-      const arrHotTitle = $(".col-12 .top-wrapper .entry").toArray();
-      const arrTrending = $(".entry.vertical").toArray();
-      for (const obj of arrLatest) {
-        const id = (($("a", obj).attr("href") ?? "").match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ["null"])[0] ?? "";
-        const title = $("a", obj).attr("title") ?? "";
-        const imgElement = $("a img", obj);
-        let image = imgElement.attr("src") ?? "";
-        if (image.includes("loading") || !image || image.startsWith("data:")) {
-          image = imgElement.attr("data-src") ?? imgElement.attr("data-original") ?? "";
-        }
-        if (image && image.startsWith("/")) {
-          image = "https://www.mangaworld.mx" + image;
-        }
-        const sub = $(".d-flex.flex-wrap.flex-row a", obj).first().attr("title") ?? "";
-        latestManga.push(
-          App.createPartialSourceManga({
-            image,
-            title,
-            mangaId: id,
-            subtitle: sub
-          })
-        );
+    convertTime(timeAgo) {
+      let time;
+      let trimmed = Number((/\d*/.exec(timeAgo) ?? [])[0]);
+      trimmed = trimmed === 0 && timeAgo.includes("a") ? 1 : trimmed;
+      if (timeAgo.includes("min")) {
+        time = new Date(Date.now() - trimmed * 6e4);
+      } else if (timeAgo.includes("or")) {
+        time = new Date(Date.now() - trimmed * 36e5);
+      } else if (timeAgo.includes("giorn")) {
+        time = new Date(Date.now() - trimmed * 864e5);
+      } else if (timeAgo.includes("anno") || timeAgo.includes("anni")) {
+        time = new Date(Date.now() - trimmed * 31556952e3);
+      } else {
+        time = new Date(timeAgo);
       }
-      section1.items = latestManga;
-      sectionCallback(section1);
-      let i = 0;
-      for (const obj of arrHotTitle) {
-        const id = (($("a", obj).attr("href") ?? "").match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ["null"])[0] ?? "";
-        const imgElement = $(".img-fluid", obj);
-        let image = imgElement.attr("src") ?? "";
-        if (image.includes("loading") || !image || image.startsWith("data:")) {
-          image = imgElement.attr("data-src") ?? imgElement.attr("data-original") ?? "";
-        }
-        if (image && image.startsWith("/")) {
-          image = "https://www.mangaworld.mx" + image;
-        }
-        let title = $("a", obj).attr("title");
-        if (!title) title = $(".name", obj).text().trim();
-        if (i == 10) break;
-        i++;
-        hotTitles.push(
-          App.createPartialSourceManga({
-            image,
-            title: title ?? "Unknown",
-            mangaId: id,
-            subtitle: void 0
-          })
-        );
-      }
-      section2.items = hotTitles;
-      sectionCallback(section2);
-      for (const obj of arrTrending) {
-        const id = (($("a", obj).attr("href") ?? "").match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ["null"])[0] ?? "";
-        const imgElement = $("a img", obj);
-        let image = imgElement.attr("src") ?? "";
-        if (image.includes("loading") || !image || image.startsWith("data:")) {
-          image = imgElement.attr("data-src") ?? imgElement.attr("data-original") ?? "";
-        }
-        if (image && image.startsWith("/")) {
-          image = "https://www.mangaworld.mx" + image;
-        }
-        const title = $(".manga-title", obj).text().trim();
-        trending.push(
-          App.createPartialSourceManga({
-            image,
-            title,
-            mangaId: id,
-            subtitle: void 0
-          })
-        );
-      }
-      section3.items = trending;
-      sectionCallback(section3);
-    }
-    parseViewMore($) {
-      const more = [];
-      const arrLatest = $(".col-sm-12.col-md-8.col-xl-9 .comics-grid .entry").toArray();
-      for (const obj of arrLatest) {
-        const id = (($("a", obj).attr("href") ?? "").match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ["null"])[0] ?? "";
-        const title = $("a", obj).attr("title") ?? "";
-        const imgElement = $("a img", obj);
-        let image = imgElement.attr("src") ?? "";
-        if (image.includes("loading") || !image || image.startsWith("data:")) {
-          image = imgElement.attr("data-src") ?? imgElement.attr("data-original") ?? "";
-        }
-        if (image && image.startsWith("/")) {
-          image = "https://www.mangaworld.mx" + image;
-        }
-        const sub = $(".d-flex.flex-wrap.flex-row a", obj).first().attr("title") ?? "";
-        more.push(
-          App.createPartialSourceManga({
-            image,
-            title,
-            mangaId: id,
-            subtitle: sub
-          })
-        );
-      }
-      return more;
+      if (isNaN(time.getTime())) return /* @__PURE__ */ new Date();
+      return time;
     }
   };
 
