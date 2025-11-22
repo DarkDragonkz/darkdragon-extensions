@@ -22,7 +22,7 @@ const MD_API = 'https://api.mangadex.org'
 const MD_UPLOADS = 'https://uploads.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '2.0.4',
+    version: '2.0.5', // Bump version
     name: 'MangaDex (EN)',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -64,7 +64,13 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const relationships = data.data.relationships
 
         const title = attributes.title.en ?? Object.values(attributes.title)[0] ?? 'Unknown Title'
-        const desc = attributes.description.en ?? Object.values(attributes.description)[0] ?? ''
+        let desc = attributes.description.en ?? Object.values(attributes.description)[0] ?? ''
+
+        // FIX: Avviso nella descrizione se non ci sono capitoli in inglese
+        const availableLanguages = attributes.availableTranslatedLanguages || []
+        if (!availableLanguages.includes('en')) {
+            desc = `⚠️ [NO ENGLISH CHAPTERS AVAILABLE]\n\n${desc}`
+        }
 
         const authors = relationships.filter((r: any) => r.type === 'author').map((r: any) => r.attributes?.name).filter((n: any) => n)
         const artists = relationships.filter((r: any) => r.type === 'artist').map((r: any) => r.attributes?.name).filter((n: any) => n)
@@ -124,6 +130,7 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
                 title = 'Oneshot'
             }
 
+            // Warning nel titolo del capitolo per link esterni
             if (attr.externalUrl !== null || attr.pages === 0) {
                 title = `🚫 [External] ${title}`
             }
@@ -182,6 +189,7 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const limit = 20
         const offset = metadata?.offset ?? 0
         
+        // Nota: La ricerca globale NON filtra per lingua, quindi usiamo il processMangaResult per segnalare quelli senza EN
         const url = `${MD_API}/manga?limit=${limit}&offset=${offset}&title=${encodeURIComponent(query.title ?? '')}&includes[]=cover_art&order[relevance]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`
         
         const request = App.createRequest({
@@ -224,8 +232,7 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
 
         const urls = {
             popular: `${MD_API}/manga?${baseParams}&order[followedCount]=desc`,
-            // FIX: "latestUploadedChapter" è più affidabile per Latest Updates
-            latest: `${MD_API}/manga?${baseParams}&order[latestUploadedChapter]=desc`, 
+            latest: `${MD_API}/manga?${baseParams}&order[latestUploadedChapter]=desc`,
             recently_added: `${MD_API}/manga?${baseParams}&order[createdAt]=desc`,
             recommended: `${MD_API}/manga?${baseParams}&order[rating]=desc`,
             featured: `${MD_API}/manga?${baseParams}&order[followedCount]=desc&createdAtSince=${new Date(Date.now() - 2592000000).toISOString().slice(0, 19)}`,
@@ -269,7 +276,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
                 url = `${MD_API}/manga?${baseParams}&order[followedCount]=desc`
                 break
             case 'latest':
-                // FIX: Usiamo latestUploadedChapter anche qui
                 url = `${MD_API}/manga?${baseParams}&order[latestUploadedChapter]=desc`
                 break
             case 'recently_added':
@@ -313,11 +319,19 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const fileName = coverRel?.attributes?.fileName
         const image = fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : 'https://paperback.moe/icons/logo-alt.svg'
 
+        // FIX: Controlla se la lingua inglese è disponibile
+        // Se 'en' non è nella lista, cambia il sottotitolo in "No EN Ch."
+        let subtitle = attr.status
+        const availableLanguages = attr.availableTranslatedLanguages || []
+        if (!availableLanguages.includes('en')) {
+            subtitle = '🚫 No EN Ch.'
+        }
+
         targetArray.push(App.createPartialSourceManga({
             mangaId: manga.id,
             image: image,
             title: title,
-            subtitle: attr.status
+            subtitle: subtitle
         }))
     }
 }
