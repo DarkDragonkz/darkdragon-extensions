@@ -24,7 +24,7 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '1.0.6',
+    version: '1.0.7',
     name: 'NineMangaIT',
     description: 'Extension that pulls manga from it.ninemanga.com',
     author: 'DarkDragonkzz',
@@ -45,14 +45,15 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     baseUrl = IT_DOMAIN
     parser = new NineMangaITParser()
 
-    // Usiamo un User-Agent desktop molto comune e recente
-    readonly userAgentDesktop = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+    // CAMBIO STRATEGIA: Usiamo Firefox su Windows. 
+    // Spesso Cloudflare è meno aggressivo con questo UA.
+    readonly userAgentDesktop = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0'
 
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
         requestsPerSecond: 2, 
-        requestTimeout: 25000, // Timeout aumentato
+        requestTimeout: 25000,
         interceptor: {
             interceptRequest: async (request: any) => {
                 request.headers = {
@@ -60,14 +61,9 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
                     ...{
                         'Referer': `${this.baseUrl}/`,
                         'User-Agent': this.userAgentDesktop,
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                        'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
-                        'Cache-Control': 'max-age=0',
-                        'Upgrade-Insecure-Requests': '1',
-                        'Sec-Fetch-Dest': 'document',
-                        'Sec-Fetch-Mode': 'navigate',
-                        'Sec-Fetch-Site': 'same-origin',
-                        'Sec-Fetch-User': '?1'
+                        // Headers semplificati per sembrare più "umani"
+                        'Accept-Language': 'it-IT,it;q=0.8,en-US;q=0.5,en;q=0.3',
+                        'Upgrade-Insecure-Requests': '1'
                     }
                 }
                 return request
@@ -205,19 +201,15 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
             url: this.baseUrl,
             method: 'GET',
             headers: {
-                'Referer': `${this.baseUrl}/`,
                 'User-Agent': this.userAgentDesktop,
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
-                'Cache-Control': 'max-age=0',
-                'Upgrade-Insecure-Requests': '1'
+                'Referer': `${this.baseUrl}/`,
+                'Accept-Language': 'it-IT,it;q=0.8,en-US;q=0.5,en;q=0.3',
             }
         })
     }
 
     checkResponseError(response: Response): void {
-        // Se riceviamo 403 o 503, significa che Cloudflare ci ha bloccato
-        // Questo messaggio specifico attiva la logica interna di Paperback per il Cloudflare Bypass
+        // Se riceviamo 403 o 503, Cloudflare ci ha bloccato
         if (response.status === 403 || response.status === 503) {
             throw new Error(`Cloudflare Bypass Required. Go to Settings > Sources > NineMangaIT > Cloud Icon to solve the captcha.`)
         }
