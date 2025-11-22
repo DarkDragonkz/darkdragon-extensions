@@ -31,18 +31,14 @@ export class NineMangaITParser {
         const statusText = $('.red').text().toLowerCase()
         if (statusText.includes('completato') || statusText.includes('completed')) status = 'Completed'
 
-        // FIX: Sostituito .each() con ciclo for per evitare ReferenceError: $
         const arrayTags: Tag[] = []
-        const genreLinks = $('li[itemprop="genre"] a').toArray()
-        
-        for (const el of genreLinks) {
-            // Usiamo $(el) dentro il ciclo for, qui $ è visibile
+        const tagLinks = $('li[itemprop="genre"] a').toArray()
+        for (const el of tagLinks) {
             const href = $(el).attr('href')
             const id = href?.split('/').pop()?.replace('.html', '') ?? ''
             const label = $(el).text().trim()
             if (id && label) arrayTags.push({ id, label })
         }
-        
         const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
 
         return App.createSourceManga({
@@ -66,7 +62,6 @@ export class NineMangaITParser {
         const selector = '.chapterbox ul.sub_vol_ul li a.chapter_list_a, .chapter-box li a, ul.chapter-list li a'
         let linkElements = $(selector).toArray()
 
-        // Fallback
         if (linkElements.length === 0) {
             linkElements = $('a[href*="/chapter/"]').toArray()
         }
@@ -80,7 +75,8 @@ export class NineMangaITParser {
             const filePart = parts.pop() ?? '' 
             const chapterId = filePart.split('?')[0].replace('.html', '')
 
-            if (seenIds.has(chapterId) || !href.includes('/chapter/')) continue
+            if (seenIds.has(chapterId)) continue
+            if (!href.includes('/chapter/')) continue
 
             seenIds.add(chapterId)
 
@@ -120,7 +116,6 @@ export class NineMangaITParser {
         const pages: string[] = []
         let foundInScript = false
         
-        // Metodo 1: Script Variabile p_urls (Veloce e sicuro)
         const scripts = $('script').toArray()
         for (const script of scripts) {
             const content = $(script).html()
@@ -134,8 +129,6 @@ export class NineMangaITParser {
             }
         }
 
-        // Metodo 2: DOM (Fallback)
-        // FIX: Sostituito .each() con ciclo for
         if (!foundInScript) {
             const imgElements = $('img.manga_pic').toArray()
             for (const img of imgElements) {
@@ -143,7 +136,6 @@ export class NineMangaITParser {
                 if (src) pages.push(src)
             }
             
-            // Metodo 3: Fallback estremo
             if (pages.length === 0) {
                  const centerImages = $('div[align="center"] img').toArray()
                  for (const img of centerImages) {
@@ -201,7 +193,6 @@ export class NineMangaITParser {
 
         const cleanTitle = (t: string) => t.replace(/(\s+(Vol\.|Ch\.|Chapter\.)?\s*\d+(\.\d+)?)+$/i, '').trim()
 
-        // POPOLARI
         const popularList = $home('#tab_content_3 li').toArray()
         for (const item of popularList) {
             const link = $home('a', item).first()
@@ -216,7 +207,6 @@ export class NineMangaITParser {
         popularSection.items = popularItems
         sectionCallback(popularSection)
 
-        // NUOVI
         const newList = $home('#tab_content_1 li').toArray()
         for (const item of newList) {
             const link = $home('a', item).first()
@@ -231,7 +221,6 @@ export class NineMangaITParser {
         newSection.items = newItems
         sectionCallback(newSection)
 
-        // ULTIMI
         const latestList = $home('#tab_content_2 li').toArray()
         for (const item of latestList) {
             const link = $home('a', item).first()
