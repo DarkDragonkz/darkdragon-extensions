@@ -143,4 +143,75 @@ export class NineMangaITParser {
 
     parseHomeSections($home: any, $updates: any, sectionCallback: (section: HomeSection) => void, baseUrl: string): void {
         const popularSection = App.createHomeSection({ id: 'popular', title: 'Popolari', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
-        const new
+        const newSection = App.createHomeSection({ id: 'new', title: 'Nuove Uscite', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
+        const latestSection = App.createHomeSection({ id: 'latest', title: 'Ultimi Aggiornamenti', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
+
+        const popularItems: PartialSourceManga[] = []
+        const newItems: PartialSourceManga[] = []
+        const latestItems: PartialSourceManga[] = []
+
+        // POPOLARI (Tab content 3 o Hot-Book)
+        // Nell'HTML mobile che hai mandato: id="tab_content_3"
+        const popularList = $home('#tab_content_3 li').toArray()
+        for (const item of popularList) {
+            const link = $home('a', item).first()
+            const href = link.attr('href')
+            const id = href?.split('/manga/')[1]?.replace('.html', '')
+            const image = $home('img', item).attr('src') ?? ''
+            const title = $home('span', item).text().trim()
+
+            if (id) {
+                popularItems.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image,
+                    title: title,
+                    subtitle: undefined
+                }))
+            }
+        }
+        popularSection.items = popularItems
+        sectionCallback(popularSection)
+
+        // NUOVI (Tab content 1)
+        const newList = $home('#tab_content_1 li').toArray()
+        for (const item of newList) {
+            const link = $home('a', item).first()
+            const href = link.attr('href')
+            const id = href?.split('/manga/')[1]?.replace('.html', '')
+            const image = $home('img', item).attr('src') ?? ''
+            const title = $home('span', item).text().trim()
+
+            if (id) {
+                newItems.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image,
+                    title: title,
+                    subtitle: undefined
+                }))
+            }
+        }
+        newSection.items = newItems
+        sectionCallback(newSection)
+
+        // ULTIMI AGGIORNAMENTI (Tab content 2)
+        const latestList = $home('#tab_content_2 li').toArray()
+        for (const item of latestList) {
+            const link = $home('a', item).first()
+            const href = link.attr('href')
+            const id = href?.split('/manga/')[1]?.replace('.html', '')
+            const image = $home('img', item).attr('src') ?? ''
+            const title = $home('span', item).text().trim()
+
+            if (id) {
+                latestItems.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image,
+                    title: title,
+                    subtitle: undefined
+                }))
+            }
+        }
+        latestSection.items = latestItems
+        sectionCallback(latestSection)
+    }
+}
