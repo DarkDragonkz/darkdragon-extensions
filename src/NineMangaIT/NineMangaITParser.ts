@@ -17,13 +17,12 @@ export class NineMangaITParser {
         if (!title) title = $('h1').first().text().trim()
         title = title.replace(/ Manga$/, '').trim()
         
-        // FIX: "bookintro" senza trattino, come da HTML fornito
         let image = $('.bookintro img[itemprop="image"]').attr('src') ?? ''
         if (!image) image = $('.book-cover img').attr('src') ?? ''
+        if (!image) image = $('div.bookintro img').attr('src') ?? ''
 
         const author = $('a[itemprop="author"]').first().text().trim() ?? 'Unknown'
         const artist = author 
-        // FIX: "bookintro" senza trattino
         let desc = $('.bookintro p[itemprop="description"]').text().trim()
         if (!desc) desc = $('.bookintro').text().trim().split('Sommario:')[1] ?? ''
         if (!desc) desc = 'No description available'
@@ -58,12 +57,9 @@ export class NineMangaITParser {
         const chapters: Chapter[] = []
         const seenIds = new Set<string>()
 
-        // FIX: Selettori basati sul tuo HTML
-        // .chapterbox (senza trattino) -> .sub_vol_ul -> li -> a.chapter_list_a
         const selector = '.chapterbox ul.sub_vol_ul li a.chapter_list_a, .chapter-box li a, ul.chapter-list li a'
         let linkElements = $(selector).toArray()
 
-        // Fallback aggressivo: tutti i link che sembrano capitoli
         if (linkElements.length === 0) {
             linkElements = $('a[href*="/chapter/"]').toArray()
         }
@@ -73,24 +69,18 @@ export class NineMangaITParser {
             const href = $link.attr('href')
             if (!href) continue
 
-            // Estrazione ID
-            // Es: /chapter/One%20Piece/982150.html -> 982150
             const parts = href.split('/')
             const filePart = parts.pop() ?? '' 
             const chapterId = filePart.split('?')[0].replace('.html', '')
 
-            // Filtro: Evita link di paginazione (es 982150-10-1.html) se possibile
-            // I link principali di solito non hanno trattini extra alla fine, o sono i primi
-            if (seenIds.has(chapterId)) continue
-            if (!href.includes('/chapter/')) continue
+            if (seenIds.has(chapterId) || !href.includes('/chapter/')) continue
 
             seenIds.add(chapterId)
 
             let titleRaw = $link.attr('title') || $link.text().trim()
             titleRaw = titleRaw.replace(new RegExp(`^${mangaId.replace(/-/g, ' ')}\\s+`, 'i'), '')
             
-            // Data (nel tuo HTML è in uno span fratello)
-            const dateText = $link.nextAll('span').last().text().trim()
+            const dateText = $link.parent().find('span').last().text().trim()
             let time = new Date()
             if (dateText) {
                 time = new Date(dateText)
@@ -109,45 +99,37 @@ export class NineMangaITParser {
             }
 
             chapters.push(App.createChapter({
-                id: chapterId, // NON usiamo il titolo come ID
+                id: chapterId,
                 name: titleRaw,
                 chapNum: chapNum,
                 time: time,
                 langCode: 'it'
             }))
         }
-
         return chapters
     }
 
     parseChapterDetails($: any, mangaId: string, chapterId: string, requestManager: any, baseUrl: string, cheerio: any): ChapterDetails {
         const pages: string[] = []
         
-        // Metodo 1: Immagini nel DOM
-        $('img.manga_pic').each((_: any, img: any) => {
-            const src = $(img).attr('src')
-            if (src) pages.push(src)
-        })
-
-        // Metodo 2: Script p_urls (comune su NineManga)
-        if (pages.length === 0) {
-            const scripts = $('script').toArray()
-            for (const script of scripts) {
-                const content = $(script).html()
-                if (content && content.includes('p_urls')) {
-                     const matches = content.match(/https?:\/\/[^"']+\.(jpg|png|webp|jpeg)/g)
-                     if (matches) pages.push(...matches)
+        // OTTIMIZZAZIONE: Cerca direttamente lo script che contiene le immagini
+        // Invece di ciclare tutto il DOM, usiamo :contains per trovare la variabile specifica
+        const scriptContent = $('script:contains("p_urls")').html()
+        if (scriptContent) {
+            // Regex più permissiva per catturare gli URL tra virgolette
+            const matches = scriptContent.match(/(https?:\/\/[^"']+\.(?:jpg|png|webp|jpeg))/gi)
+            if (matches) {
+                for(const m of matches) {
+                    pages.push(m)
                 }
             }
         }
-        
-        // Metodo 3: Fallback img center
+
+        // Fallback: Immagini nel DOM (se lo script fallisce)
         if (pages.length === 0) {
-             $('div[align="center"] img').each((_:any, img:any) => {
+            $('img.manga_pic').each((_: any, img: any) => {
                 const src = $(img).attr('src')
-                if (src && src.startsWith('http') && !src.includes('logo') && !src.includes('icon')) {
-                    pages.push(src)
-                }
+                if (src) pages.push(src)
             })
         }
 
@@ -160,9 +142,7 @@ export class NineMangaITParser {
 
     parseSearchResults($: any, baseUrl: string): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
-        // Selettore per la lista risultati mobile (in base al tuo HTML è dd.book-list o simili nella home, 
-        // nella ricerca potrebbe essere .book-list li)
-        const items = $('.book-list li, dl').toArray()
+        const items = $('.book-list li, .comic-item, dd.book-list').toArray()
 
         for (const item of items) {
             const link = $('a', item).first()
@@ -199,12 +179,11 @@ export class NineMangaITParser {
 
         const cleanTitle = (t: string) => t.replace(/(\s+(Vol\.|Ch\.|Chapter\.)?\s*\d+(\.\d+)?)+$/i, '').trim()
 
-        // POPOLARI (#tab_content_3)
+        // POPOLARI
         const popularList = $home('#tab_content_3 li').toArray()
         for (const item of popularList) {
             const link = $home('a', item).first()
             const href = link.attr('href')
-            // FIX: Estrazione ID sicura
             const id = href?.split('/manga/')[1]?.replace('.html', '')
             const image = $home('img', item).attr('src') ?? ''
             let title = link.attr('title') || $home('span', item).text().trim()
@@ -215,7 +194,7 @@ export class NineMangaITParser {
         popularSection.items = popularItems
         sectionCallback(popularSection)
 
-        // NUOVI (#tab_content_1)
+        // NUOVI
         const newList = $home('#tab_content_1 li').toArray()
         for (const item of newList) {
             const link = $home('a', item).first()
@@ -230,7 +209,7 @@ export class NineMangaITParser {
         newSection.items = newItems
         sectionCallback(newSection)
 
-        // ULTIMI (#tab_content_2)
+        // ULTIMI
         const latestList = $home('#tab_content_2 li').toArray()
         for (const item of latestList) {
             const link = $home('a', item).first()

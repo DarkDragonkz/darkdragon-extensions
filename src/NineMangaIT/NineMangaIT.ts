@@ -24,7 +24,7 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '1.0.9',
+    version: '1.1.0', // Bump version
     name: 'NineMangaIT',
     description: 'Extension that pulls manga from it.ninemanga.com',
     author: 'DarkDragonkzz',
@@ -45,13 +45,13 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     baseUrl = IT_DOMAIN
     parser = new NineMangaITParser()
 
-    // User-Agent Android standard
+    // User-Agent Android
     readonly userAgent = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
 
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 2,
+        requestsPerSecond: 3, // AUMENTATO a 3 (era 2). Se ti blocca di nuovo, torna a 2.
         requestTimeout: 25000,
         interceptor: {
             interceptRequest: async (request: any) => {
@@ -62,7 +62,8 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
                         'User-Agent': this.userAgent,
                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                         'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
-                        'Cookie': 'is_warning=1; my_limit=1' // Evita popup warning
+                        'Connection': 'keep-alive', // Mantiene la connessione attiva per velocità
+                        'Cookie': 'is_warning=1; my_limit=1'
                     }
                 }
                 return request
@@ -77,9 +78,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         return `${this.baseUrl}/manga/${mangaId}.html`
     }
 
-    // Helper per assicurarsi che l'ID del manga abbia .html alla fine nella richiesta
     private getMangaUrl(mangaId: string): string {
-        // Se l'ID ha già .html, bene. Altrimenti aggiungilo.
         const id = mangaId.endsWith('.html') ? mangaId : `${mangaId}.html`
         return `${this.baseUrl}/manga/${id}`
     }
@@ -107,14 +106,11 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // Costruzione robusta URL capitolo
         let url = chapterId
         if (!url.startsWith('http')) {
-             // Gestisce ID che sono percorsi relativi o solo nomi file
              if (!url.startsWith('/')) url = `/chapter/${mangaId}/${chapterId}`
              url = `${this.baseUrl}${url}`
         }
-        // Assicurati che finisca con .html
         if (!url.endsWith('.html')) url += '.html'
 
         const request = App.createRequest({
