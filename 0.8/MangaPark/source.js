@@ -739,6 +739,11 @@ var _Sources = (() => {
       if (url.startsWith("/")) return `${MP_DOMAIN}${url}`;
       return url;
     }
+    getImageSrc(element) {
+      let img = element.find("img").first();
+      let src = img.attr("src") || img.attr("data-src") || img.attr("srcset");
+      return this.fixImageUrl(src);
+    }
     parseMangaDetails($, mangaId) {
       let title = $("h3 a.link-hover").first().text().trim();
       if (!title) title = $(".comic-detail h3").first().text().trim();
@@ -782,14 +787,14 @@ var _Sources = (() => {
     parseChapters($, mangaId) {
       const chapters = [];
       const container = $('div[data-name="chapter-list"]');
-      const links = container.find("a").toArray();
+      const links = container.find("a.link-hover").toArray();
       for (const el of links) {
         const link = $(el);
         const href = link.attr("href");
         if (!href || !href.includes("/title/")) continue;
         const parts = href.split("/");
         const chapterId = parts.pop();
-        if (!chapterId || chapterId.length < 3 || !chapterId.match(/^\d+/)) continue;
+        if (!chapterId || chapterId.length < 3) continue;
         const titleRaw = link.text().trim();
         if (!titleRaw) continue;
         let timeStr = "";
@@ -813,7 +818,7 @@ var _Sources = (() => {
           }
         }
         const volMatch = titleRaw.match(/Vol\.(\d+)/i);
-        const volNum = volMatch ? parseFloat(volMatch[1] ?? "0") : void 0;
+        const volNum = volMatch ? parseFloat(volMatch[1]) : void 0;
         let name = titleRaw;
         const extraInfo = link.next("span").text().trim().replace(/^:\s*/, "");
         if (extraInfo) name += ` - ${extraInfo}`;
@@ -839,12 +844,9 @@ var _Sources = (() => {
         const id = idMatch ? idMatch[1] : null;
         if (!id || seenIds.has(id)) continue;
         seenIds.add(id);
-        let image = $("img", item).attr("src");
-        image = this.fixImageUrl(image);
+        const image = this.getImageSrc($(item));
         let title = $("img", item).attr("title") || $("img", item).attr("alt");
-        if (!title) {
-          title = $(item).closest("div.flex").find("h3 a").text().trim();
-        }
+        if (!title) title = $(item).closest("div.flex").find("h3 a").text().trim();
         if (!title) title = "Unknown";
         results.push(App.createPartialSourceManga({
           mangaId: id,
@@ -861,29 +863,40 @@ var _Sources = (() => {
       const popularItems = [];
       const latestItems = [];
       const seenIds = /* @__PURE__ */ new Set();
-      const gridItems = $("div.grid > div.relative.w-full.group").toArray();
-      for (let i = 0; i < gridItems.length; i++) {
-        const item = gridItems[i];
-        const link = $("a", item).first();
+      const popularGridItems = $('div.grid[class*="grid-cols-3"] > div, div.grid[class*="grid-cols-4"] > div').toArray();
+      for (const item of popularGridItems) {
+        const el = $(item);
+        const link = el.find("a").first();
         const href = link.attr("href");
-        const idMatch = href?.match(/\/title\/(\d+)-/);
-        const id = idMatch ? idMatch[1] : null;
+        const id = href?.match(/\/title\/(\d+)/)?.[1];
         if (!id || seenIds.has(id)) continue;
         seenIds.add(id);
-        let image = $("img", item).attr("src");
-        image = this.fixImageUrl(image);
-        let title = $("img", item).attr("title") || $("img", item).attr("alt");
-        if (!title) title = $(item).find("a.link-hover").text().trim();
-        if (!title) title = $(item).closest(".flex").find("h3 a").text().trim();
-        if (!title) title = "Unknown";
-        const manga = App.createPartialSourceManga({
+        const image = this.getImageSrc(el);
+        const title = el.find("a.link-hover").first().text().trim() || "Unknown";
+        popularItems.push(App.createPartialSourceManga({
           mangaId: id,
           image,
           title,
-          subtitle: void 0
-        });
-        if (i < 12) popularItems.push(manga);
-        else latestItems.push(manga);
+          subtitle: "Popular"
+        }));
+      }
+      const latestGridItems = $("div.grid.grid-cols-1 > div").toArray();
+      for (const item of latestGridItems) {
+        const el = $(item);
+        const link = el.find("h3 a").first();
+        const href = link.attr("href");
+        const id = href?.match(/\/title\/(\d+)/)?.[1];
+        if (!id || seenIds.has(id)) continue;
+        seenIds.add(id);
+        const image = this.getImageSrc(el);
+        const title = link.text().trim() || "Unknown";
+        const subtitle = el.find("div.flex.justify-between a").first().text().trim();
+        latestItems.push(App.createPartialSourceManga({
+          mangaId: id,
+          image,
+          title,
+          subtitle
+        }));
       }
       popularSection.items = popularItems;
       latestSection.items = latestItems;
