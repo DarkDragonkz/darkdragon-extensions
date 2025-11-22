@@ -1015,7 +1015,7 @@ var _Sources = (() => {
   // src/NineMangaIT/NineMangaIT.ts
   var IT_DOMAIN = "https://it.ninemanga.com";
   var NineMangaITInfo = {
-    version: "1.0.5",
+    version: "1.0.6",
     name: "NineMangaIT",
     description: "Extension that pulls manga from it.ninemanga.com",
     author: "DarkDragonkzz",
@@ -1036,12 +1036,12 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.baseUrl = IT_DOMAIN;
       this.parser = new NineMangaITParser();
-      // User-Agent Desktop aggiornato e Headers standard per ingannare Cloudflare
-      this.userAgentDesktop = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
+      // Usiamo un User-Agent desktop molto comune e recente
+      this.userAgentDesktop = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36";
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 2,
-        // Rallentiamo leggermente per sicurezza
-        requestTimeout: 2e4,
+        requestTimeout: 25e3,
+        // Timeout aumentato
         interceptor: {
           interceptRequest: async (request) => {
             request.headers = {
@@ -1052,7 +1052,11 @@ var _Sources = (() => {
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
                 "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
                 "Cache-Control": "max-age=0",
-                "Upgrade-Insecure-Requests": "1"
+                "Upgrade-Insecure-Requests": "1",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "same-origin",
+                "Sec-Fetch-User": "?1"
               }
             };
             return request;
@@ -1157,17 +1161,17 @@ var _Sources = (() => {
       }
       return App.createPagedResults({ results: [] });
     }
-    // IMPORTANTE: Questo metodo permette il Cloudflare Bypass
-    // Deve usare gli stessi headers delle altre richieste
     async getCloudflareBypassRequest() {
       return App.createRequest({
         url: this.baseUrl,
         method: "GET",
         headers: {
-          "User-Agent": this.userAgentDesktop,
           "Referer": `${this.baseUrl}/`,
+          "User-Agent": this.userAgentDesktop,
           "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-          "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7"
+          "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
+          "Cache-Control": "max-age=0",
+          "Upgrade-Insecure-Requests": "1"
         }
       });
     }
