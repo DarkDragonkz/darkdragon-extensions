@@ -732,8 +732,21 @@ var _Sources = (() => {
   // src/MangaWorld/parser.ts
   var import_types = __toESM(require_lib());
   var Parser = class {
+    // HELPER: Pulisce i titoli duplicati (es "One PieceOne Piece" -> "One Piece")
+    cleanTitle(title) {
+      if (!title) return "Unknown";
+      title = title.trim();
+      if (title.length > 0 && title.length % 2 === 0) {
+        const half = title.substring(0, title.length / 2);
+        if (half === title.substring(title.length / 2)) {
+          return half;
+        }
+      }
+      return title;
+    }
     parseMangaDetails($, mangaId) {
-      const title = $(".name.bigger").text().trim() ?? "";
+      let title = $(".name.bigger").text().trim() ?? "";
+      title = this.cleanTitle(title);
       const imgElement = $(".thumb.mb-3.text-center img");
       let image = imgElement.attr("src") ?? "";
       if (!image || image.includes("loading") || image.startsWith("data:")) {
@@ -848,7 +861,8 @@ var _Sources = (() => {
       const results = [];
       for (const item of $(".comics-grid .entry").toArray()) {
         const id = (($("a", item).attr("href") ?? "").match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ["null"])[0] ?? "";
-        const title = $("a", item).attr("title") ?? "";
+        let title = $("a", item).attr("title") ?? "";
+        title = this.cleanTitle(title);
         const imgElement = $("a img", item);
         let image = imgElement.attr("src") ?? "";
         if (image.includes("loading") || !image || image.startsWith("data:")) {
@@ -878,13 +892,15 @@ var _Sources = (() => {
       const section2 = App.createHomeSection({
         id: "2",
         title: "Manga del mese",
-        containsMoreItems: false,
+        containsMoreItems: true,
+        // Abilitato expand
         type: import_types.HomeSectionType.singleRowNormal
       });
       const section3 = App.createHomeSection({
         id: "3",
         title: "Capitoli di tendenza",
-        containsMoreItems: false,
+        containsMoreItems: true,
+        // Abilitato expand
         type: import_types.HomeSectionType.singleRowNormal
       });
       const latestManga = [];
@@ -895,7 +911,8 @@ var _Sources = (() => {
       const arrTrending = $(".entry.vertical").toArray();
       for (const obj of arrLatest) {
         const id = (($("a", obj).attr("href") ?? "").match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ["null"])[0] ?? "";
-        const title = $("a", obj).attr("title") ?? "";
+        let title = $("a", obj).attr("title") ?? "";
+        title = this.cleanTitle(title);
         const imgElement = $("a img", obj);
         let image = imgElement.attr("src") ?? "";
         if (image.includes("loading") || !image || image.startsWith("data:")) {
@@ -929,12 +946,13 @@ var _Sources = (() => {
         }
         let title = $("a", obj).attr("title");
         if (!title) title = $(".name", obj).text().trim();
+        title = this.cleanTitle(title ?? "Unknown");
         if (i == 10) break;
         i++;
         hotTitles.push(
           App.createPartialSourceManga({
             image,
-            title: title ?? "Unknown",
+            title,
             mangaId: id,
             subtitle: void 0
           })
@@ -952,7 +970,8 @@ var _Sources = (() => {
         if (image && image.startsWith("/")) {
           image = "https://www.mangaworld.mx" + image;
         }
-        const title = $(".manga-title", obj).text().trim();
+        let title = $(".manga-title", obj).text().trim();
+        title = this.cleanTitle(title);
         trending.push(
           App.createPartialSourceManga({
             image,
@@ -967,10 +986,11 @@ var _Sources = (() => {
     }
     parseViewMore($) {
       const more = [];
-      const arrLatest = $(".col-sm-12.col-md-8.col-xl-9 .comics-grid .entry").toArray();
+      const arrLatest = $(".comics-grid .entry").toArray();
       for (const obj of arrLatest) {
         const id = (($("a", obj).attr("href") ?? "").match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ["null"])[0] ?? "";
-        const title = $("a", obj).attr("title") ?? "";
+        let title = $("a", obj).attr("title") ?? "";
+        title = this.cleanTitle(title);
         const imgElement = $("a img", obj);
         let image = imgElement.attr("src") ?? "";
         if (image.includes("loading") || !image || image.startsWith("data:")) {
@@ -1033,9 +1053,8 @@ var _Sources = (() => {
   var MW_DOMAIN = "https://www.mangaworld.mx";
   var MangaWorldInfo = {
     version: "3.0.8",
-    // Bump version
     name: "MangaWorld",
-    description: "Extension that pulls manga from MangaWorld (0.8).",
+    description: "Extension that pulls manga from MangaWorld.",
     author: "NmN",
     authorWebsite: "http://github.com/pandeynmm",
     icon: "icon.png",
@@ -1054,20 +1073,18 @@ var _Sources = (() => {
     constructor(cheerio) {
       this.cheerio = cheerio;
       this.baseUrl = MW_DOMAIN;
-      this.RETRIES = 5;
-      // Ridotto leggermente, 10 è eccessivo
+      this.RETRIES = 10;
       this.parser = new Parser();
       this.requestManager = App.createRequestManager({
-        requestsPerSecond: 6,
-        // Più conservativo per evitare ban IP
+        requestsPerSecond: 8,
         requestTimeout: 2e4,
         interceptor: {
           interceptRequest: async (request) => {
             request.headers = {
               ...request.headers ?? {},
               ...{
-                "referer": `${this.baseUrl}/`
-                // RIMOSSO User-Agent hardcodato per evitare conflitti Cloudflare
+                "referer": `${this.baseUrl}/`,
+                "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
               }
             };
             return request;
@@ -1140,10 +1157,25 @@ var _Sources = (() => {
       const $ = this.cheerio.load(response.data);
       this.parser.parseHomeSections($, sectionCallback);
     }
-    async getViewMoreItems(_, metadata) {
+    // FIX: Gestione corretta delle sezioni "View More"
+    async getViewMoreItems(homepageSectionId, metadata) {
       const page = metadata?.page ?? 1;
+      let url = "";
+      switch (homepageSectionId) {
+        case "1":
+          url = `${this.baseUrl}/?page=${page}`;
+          break;
+        case "2":
+          url = `${this.baseUrl}/archive?sort=most_read&page=${page}`;
+          break;
+        case "3":
+          url = `${this.baseUrl}/archive?sort=most_read&page=${page}`;
+          break;
+        default:
+          return App.createPagedResults({ results: [], metadata: { page: -1 } });
+      }
       const request = App.createRequest({
-        url: `${this.baseUrl}/?page=${page}`,
+        url,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, this.RETRIES);
@@ -1151,8 +1183,25 @@ var _Sources = (() => {
       const manga = this.parser.parseViewMore($);
       return App.createPagedResults({
         results: manga,
-        metadata: { page: page + 1 }
+        metadata: manga.length > 0 ? { page: page + 1 } : void 0
       });
+    }
+    convertTime(timeAgo) {
+      let time;
+      let trimmed = Number((/\d*/.exec(timeAgo) ?? [])[0]);
+      trimmed = trimmed == 0 && timeAgo.includes("a") ? 1 : trimmed;
+      if (timeAgo.includes("mins") || timeAgo.includes("minutes") || timeAgo.includes("minute")) {
+        time = new Date(Date.now() - trimmed * 6e4);
+      } else if (timeAgo.includes("hours") || timeAgo.includes("hour")) {
+        time = new Date(Date.now() - trimmed * 36e5);
+      } else if (timeAgo.includes("days") || timeAgo.includes("day")) {
+        time = new Date(Date.now() - trimmed * 864e5);
+      } else if (timeAgo.includes("year") || timeAgo.includes("years")) {
+        time = new Date(Date.now() - trimmed * 31556952e3);
+      } else {
+        time = new Date(timeAgo);
+      }
+      return time;
     }
     async getCloudflareBypassRequestAsync() {
       return App.createRequest({
@@ -1161,7 +1210,6 @@ var _Sources = (() => {
         headers: {
           "referer": `${this.baseUrl}/`,
           "origin": `${this.baseUrl}/`,
-          // Qui usiamo l'UA corretto del dispositivo
           "user-agent": await this.requestManager.getDefaultUserAgent()
         }
       });
