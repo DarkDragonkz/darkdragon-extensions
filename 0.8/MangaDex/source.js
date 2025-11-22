@@ -448,7 +448,7 @@ var _Sources = (() => {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.urlEncodeObject = exports.convertTime = exports.Source = void 0;
-      var Source = class {
+      var Source2 = class {
         constructor(cheerio) {
           this.cheerio = cheerio;
         }
@@ -465,7 +465,7 @@ var _Sources = (() => {
           return this.getSearchTags?.();
         }
       };
-      exports.Source = Source;
+      exports.Source = Source2;
       function convertTime(timeAgo) {
         let time;
         let trimmed = Number((/\d*/.exec(timeAgo) ?? [])[0]);
@@ -731,25 +731,24 @@ var _Sources = (() => {
   var MD_API = "https://api.mangadex.org";
   var MD_UPLOADS = "https://uploads.mangadex.org";
   var MangaDexInfo = {
-    version: "2.1.1",
-    name: "MangaDex (EN)",
+    version: "2.1.5",
+    name: "MangaDex",
     icon: "icon.png",
     author: "DarkDragonkzz",
-    authorWebsite: "https://github.com/DarkDragonkz",
-    description: "MangaDex source (English Only) - Optimized",
+    description: "Extension for MangaDex (Official API)",
     contentRating: import_types.ContentRating.MATURE,
     websiteBaseURL: "https://mangadex.org",
     sourceTags: [
       {
-        text: "ENGLISH",
+        text: "Global",
         type: import_types.BadgeColor.BLUE
       }
     ],
     intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS
   };
-  var MangaDex = class {
-    constructor(cheerio) {
-      this.cheerio = cheerio;
+  var MangaDex = class extends import_types.Source {
+    constructor() {
+      super(...arguments);
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 4,
         requestTimeout: 2e4
@@ -760,80 +759,66 @@ var _Sources = (() => {
     }
     async getMangaDetails(mangaId) {
       const request = App.createRequest({
-        url: `${MD_API}/manga/${mangaId}?includes[]=author&includes[]=artist&includes[]=cover_art`,
+        url: `${MD_API}/manga/${mangaId}?includes[]=cover_art&includes[]=author&includes[]=artist`,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      const json = JSON.parse(response.data ?? "{}");
-      if (!json.data || !json.data.attributes) {
-        throw new Error(`Failed to load manga details for ${mangaId}`);
+      const json = JSON.parse(response.data);
+      const data = json.data;
+      const attr = data.attributes;
+      const title = attr.title.en ?? Object.values(attr.title)[0] ?? "Unknown";
+      const desc = attr.description.en ?? Object.values(attr.description)[0] ?? "No description";
+      let image = "https://paperback.moe/icons/logo-alt.svg";
+      const coverRel = data.relationships.find((x) => x.type === "cover_art");
+      if (coverRel?.attributes?.fileName) {
+        image = `${MD_UPLOADS}/covers/${mangaId}/${coverRel.attributes.fileName}`;
       }
-      const attr = json.data.attributes;
-      const rel = json.data.relationships;
-      const title = attr.title.en ?? Object.values(attr.title)[0] ?? "Unknown Title";
-      const desc = attr.description.en ?? Object.values(attr.description)[0] ?? "";
-      const authors = rel.filter((x) => x.type === "author").map((x) => x.attributes?.name).filter((x) => x);
-      const artists = rel.filter((x) => x.type === "artist").map((x) => x.attributes?.name).filter((x) => x);
-      const coverRel = rel.find((x) => x.type === "cover_art");
-      const image = coverRel?.attributes?.fileName ? `${MD_UPLOADS}/covers/${mangaId}/${coverRel.attributes.fileName}` : "https://paperback.moe/icons/logo-alt.svg";
+      const authorRel = data.relationships.find((x) => x.type === "author");
+      const author = authorRel?.attributes?.name ?? "Unknown";
       let status = "Ongoing";
       if (attr.status === "completed") status = "Completed";
       if (attr.status === "hiatus") status = "Hiatus";
-      if (attr.status === "cancelled") status = "Cancelled";
-      const tags = [App.createTagSection({ id: "0", label: "Genres", tags: [] })];
-      tags[0].tags = attr.tags.map((tag) => App.createTag({ id: tag.id, label: tag.attributes.name.en }));
+      if (attr.status === "cancelled") status = "Unknown";
       return App.createSourceManga({
         id: mangaId,
         mangaInfo: App.createMangaInfo({
           titles: [title],
           image,
           status,
-          author: authors.join(", "),
-          artist: artists.join(", "),
-          tags,
-          desc
+          author,
+          desc,
+          tags: []
         })
       });
     }
     async getChapters(mangaId) {
+      const request = App.createRequest({
+        url: `${MD_API}/manga/${mangaId}/feed?limit=500&translatedLanguage[]=en&order[volume]=desc&order[chapter]=desc&includes[]=scanlation_group`,
+        method: "GET"
+      });
+      const response = await this.requestManager.schedule(request, 1);
+      const json = JSON.parse(response.data);
       const chapters = [];
-      let offset = 0;
-      const limit = 500;
-      let run = true;
-      while (run) {
-        const url = `${MD_API}/manga/${mangaId}/feed?limit=${limit}&offset=${offset}&translatedLanguage[]=en&order[chapter]=desc&includeFutureUpdates=0`;
-        const request = App.createRequest({ url, method: "GET" });
-        const response = await this.requestManager.schedule(request, 1);
-        const json = JSON.parse(response.data ?? "{}");
-        if (!json.data || json.data.length === 0) {
-          run = false;
-          break;
+      for (const ch of json.data) {
+        const attr = ch.attributes;
+        const chapNum = parseFloat(attr.chapter) || 0;
+        const volNum = parseFloat(attr.volume) || void 0;
+        let name = "";
+        if (attr.title) name = attr.title;
+        if (!name && attr.chapter) name = `Chapter ${attr.chapter}`;
+        if (!name) name = "Oneshot";
+        const groupRel = ch.relationships.find((x) => x.type === "scanlation_group");
+        if (groupRel?.attributes?.name) {
+          name += ` [${groupRel.attributes.name}]`;
         }
-        for (const item of json.data) {
-          const attr = item.attributes;
-          if (attr.externalUrl) continue;
-          const chapNum = parseFloat(attr.chapter) || 0;
-          if (chapNum !== 0 && chapters.some((c) => c.chapNum === chapNum)) {
-            continue;
-          }
-          let name = "";
-          if (attr.title) name = attr.title;
-          else if (attr.chapter) name = `Chapter ${attr.chapter}`;
-          else name = "Oneshot";
-          chapters.push(App.createChapter({
-            id: item.id,
-            name,
-            chapNum,
-            volume: parseFloat(attr.volume) || 0,
-            time: new Date(attr.publishAt),
-            langCode: "en"
-          }));
-        }
-        if (json.total && offset + limit < json.total) {
-          offset += limit;
-        } else {
-          run = false;
-        }
+        chapters.push(App.createChapter({
+          id: ch.id,
+          name,
+          chapNum,
+          volume: volNum,
+          time: new Date(attr.publishAt),
+          langCode: "en"
+        }));
       }
       return chapters;
     }
@@ -843,13 +828,12 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      const json = JSON.parse(response.data ?? "{}");
-      if (!json.baseUrl) throw new Error("Failed to get chapter server");
+      const json = JSON.parse(response.data);
       const baseUrl = json.baseUrl;
       const hash = json.chapter.hash;
-      const fileNames = json.chapter.data;
+      const files = json.chapter.data;
       const pages = [];
-      for (const file of fileNames) {
+      for (const file of files) {
         pages.push(`${baseUrl}/data/${hash}/${file}`);
       }
       return App.createChapterDetails({
@@ -859,99 +843,101 @@ var _Sources = (() => {
       });
     }
     async getSearchResults(query, metadata) {
+      const page = metadata?.page ?? 0;
       const limit = 20;
-      const offset = metadata?.offset ?? 0;
-      const searchTitle = query.title?.trim() ?? "";
-      const encodedTitle = encodeURIComponent(searchTitle);
-      let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&includes%5B%5D=cover_art`;
-      if (encodedTitle.length > 0) {
-        url += `&title=${encodedTitle}&order%5Brelevance%5D=desc`;
-      } else {
-        url += `&order%5BfollowedCount%5D=desc`;
-      }
-      url += "&contentRating%5B%5D=safe&contentRating%5B%5D=suggestive&contentRating%5B%5D=erotica&contentRating%5B%5D=pornographic";
+      const offset = page * limit;
       const request = App.createRequest({
-        url,
+        url: `${MD_API}/manga?limit=${limit}&offset=${offset}&title=${encodeURIComponent(query.title ?? "")}&includes[]=cover_art&availableTranslatedLanguage[]=en`,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      const json = JSON.parse(response.data ?? "{}");
+      const json = JSON.parse(response.data);
       const results = [];
-      if (json.data) {
-        for (const item of json.data) {
-          results.push(this.parsePartialManga(item));
+      for (const manga of json.data) {
+        const title = manga.attributes.title.en ?? Object.values(manga.attributes.title)[0] ?? "Unknown";
+        let image = "https://paperback.moe/icons/logo-alt.svg";
+        const coverRel = manga.relationships.find((x) => x.type === "cover_art");
+        if (coverRel?.attributes?.fileName) {
+          image = `${MD_UPLOADS}/covers/${manga.id}/${coverRel.attributes.fileName}.256.jpg`;
         }
+        results.push(App.createPartialSourceManga({
+          mangaId: manga.id,
+          image,
+          title,
+          subtitle: void 0
+        }));
       }
       return App.createPagedResults({
         results,
-        metadata: { offset: offset + limit }
+        metadata: { page: page + 1 }
       });
     }
     async getHomePageSections(sectionCallback) {
-      const popularSection = App.createHomeSection({ id: "popular", title: "Popular Now (EN)", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
+      const popularSection = App.createHomeSection({ id: "popular", title: "Popular Titles", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
+      const latestSection = App.createHomeSection({ id: "latest", title: "Latest Updates", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
+      const popRequest = App.createRequest({
+        url: `${MD_API}/manga?limit=10&includes[]=cover_art&order[followedCount]=desc&availableTranslatedLanguage[]=en`,
+        method: "GET"
+      });
+      const latRequest = App.createRequest({
+        url: `${MD_API}/manga?limit=10&includes[]=cover_art&order[updatedAt]=desc&availableTranslatedLanguage[]=en`,
+        method: "GET"
+      });
+      const popResponse = await this.requestManager.schedule(popRequest, 1);
+      const latResponse = await this.requestManager.schedule(latRequest, 1);
+      const popJson = JSON.parse(popResponse.data);
+      const popItems = [];
+      for (const manga of popJson.data) {
+        const title = manga.attributes.title.en ?? Object.values(manga.attributes.title)[0] ?? "Unknown";
+        let image = "https://paperback.moe/icons/logo-alt.svg";
+        const coverRel = manga.relationships.find((x) => x.type === "cover_art");
+        if (coverRel?.attributes?.fileName) {
+          image = `${MD_UPLOADS}/covers/${manga.id}/${coverRel.attributes.fileName}.256.jpg`;
+        }
+        popItems.push(App.createPartialSourceManga({ mangaId: manga.id, image, title, subtitle: "Popular" }));
+      }
+      popularSection.items = popItems;
       sectionCallback(popularSection);
-      const latestSection = App.createHomeSection({ id: "latest", title: "Latest Updates (EN)", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
+      const latJson = JSON.parse(latResponse.data);
+      const latItems = [];
+      for (const manga of latJson.data) {
+        const title = manga.attributes.title.en ?? Object.values(manga.attributes.title)[0] ?? "Unknown";
+        let image = "https://paperback.moe/icons/logo-alt.svg";
+        const coverRel = manga.relationships.find((x) => x.type === "cover_art");
+        if (coverRel?.attributes?.fileName) {
+          image = `${MD_UPLOADS}/covers/${manga.id}/${coverRel.attributes.fileName}.256.jpg`;
+        }
+        latItems.push(App.createPartialSourceManga({ mangaId: manga.id, image, title, subtitle: "Latest" }));
+      }
+      latestSection.items = latItems;
       sectionCallback(latestSection);
-      const commonParams = "&includes[]=cover_art&availableTranslatedLanguage[]=en&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica";
-      const popularUrl = `${MD_API}/manga?limit=10&order[followedCount]=desc${commonParams}`;
-      const popularRequest = App.createRequest({ url: popularUrl, method: "GET" });
-      const popRes = await this.requestManager.schedule(popularRequest, 1);
-      const popJson = JSON.parse(popRes.data ?? "{}");
-      if (popJson.data) {
-        popularSection.items = popJson.data.map((item) => this.parsePartialManga(item));
-        sectionCallback(popularSection);
-      }
-      const latestUrl = `${MD_API}/manga?limit=10&order[latestUploadedChapter]=desc${commonParams}`;
-      const latestRequest = App.createRequest({ url: latestUrl, method: "GET" });
-      const latRes = await this.requestManager.schedule(latestRequest, 1);
-      const latJson = JSON.parse(latRes.data ?? "{}");
-      if (latJson.data) {
-        latestSection.items = latJson.data.map((item) => this.parsePartialManga(item));
-        sectionCallback(latestSection);
-      }
     }
     async getViewMoreItems(homepageSectionId, metadata) {
-      const offset = metadata?.offset ?? 0;
+      const page = metadata?.page ?? 0;
       const limit = 20;
-      let url = "";
-      const commonParams = `&includes[]=cover_art&availableTranslatedLanguage[]=en&limit=${limit}&offset=${offset}&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica`;
-      if (homepageSectionId === "popular") {
-        url = `${MD_API}/manga?order[followedCount]=desc${commonParams}`;
-      } else if (homepageSectionId === "latest") {
-        url = `${MD_API}/manga?order[latestUploadedChapter]=desc${commonParams}`;
-      } else {
-        return App.createPagedResults({ results: [] });
-      }
-      const request = App.createRequest({ url, method: "GET" });
+      const offset = page * limit;
+      let order = "";
+      if (homepageSectionId === "popular") order = "&order[followedCount]=desc";
+      else order = "&order[updatedAt]=desc";
+      const request = App.createRequest({
+        url: `${MD_API}/manga?limit=${limit}&offset=${offset}&includes[]=cover_art&availableTranslatedLanguage[]=en${order}`,
+        method: "GET"
+      });
       const response = await this.requestManager.schedule(request, 1);
-      const json = JSON.parse(response.data ?? "{}");
+      const json = JSON.parse(response.data);
       const results = [];
-      if (json.data) {
-        for (const item of json.data) {
-          results.push(this.parsePartialManga(item));
+      for (const manga of json.data) {
+        const title = manga.attributes.title.en ?? Object.values(manga.attributes.title)[0] ?? "Unknown";
+        let image = "https://paperback.moe/icons/logo-alt.svg";
+        const coverRel = manga.relationships.find((x) => x.type === "cover_art");
+        if (coverRel?.attributes?.fileName) {
+          image = `${MD_UPLOADS}/covers/${manga.id}/${coverRel.attributes.fileName}.256.jpg`;
         }
-      }
-      let nextMetadata = void 0;
-      if (results.length >= limit) {
-        nextMetadata = { offset: offset + limit };
+        results.push(App.createPartialSourceManga({ mangaId: manga.id, image, title, subtitle: void 0 }));
       }
       return App.createPagedResults({
         results,
-        metadata: nextMetadata
-      });
-    }
-    // Helper per parserizzare i risultati parziali (Home e Search)
-    parsePartialManga(item) {
-      const attr = item.attributes;
-      const title = attr.title.en ?? Object.values(attr.title)[0] ?? "Unknown";
-      const coverRel = item.relationships.find((r) => r.type === "cover_art");
-      const fileName = coverRel?.attributes?.fileName;
-      const image = fileName ? `${MD_UPLOADS}/covers/${item.id}/${fileName}.256.jpg` : "https://paperback.moe/icons/logo-alt.svg";
-      return App.createPartialSourceManga({
-        mangaId: item.id,
-        image,
-        title,
-        subtitle: attr.status ?? void 0
+        metadata: { page: page + 1 }
       });
     }
   };
