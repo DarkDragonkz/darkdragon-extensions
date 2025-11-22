@@ -749,9 +749,10 @@ var _Sources = (() => {
       const statusText = $2(".red").text().toLowerCase();
       if (statusText.includes("completato") || statusText.includes("completed")) status = "Completed";
       const arrayTags = [];
-      const tagLinks = $2('li[itemprop="genre"] a').toArray();
-      for (const el of tagLinks) {
-        const id = $2(el).attr("href")?.split("/").pop()?.replace(".html", "") ?? "";
+      const genreLinks = $2('li[itemprop="genre"] a').toArray();
+      for (const el of genreLinks) {
+        const href = $2(el).attr("href");
+        const id = href?.split("/").pop()?.replace(".html", "") ?? "";
         const label = $2(el).text().trim();
         if (id && label) arrayTags.push({ id, label });
       }
@@ -784,8 +785,7 @@ var _Sources = (() => {
         const parts = href.split("/");
         const filePart = parts.pop() ?? "";
         const chapterId = filePart.split("?")[0].replace(".html", "");
-        if (seenIds.has(chapterId)) continue;
-        if (!href.includes("/chapter/")) continue;
+        if (seenIds.has(chapterId) || !href.includes("/chapter/")) continue;
         seenIds.add(chapterId);
         let titleRaw = $link.attr("title") || $link.text().trim();
         titleRaw = titleRaw.replace(new RegExp(`^${mangaId.replace(/-/g, " ")}\\s+`, "i"), "");
