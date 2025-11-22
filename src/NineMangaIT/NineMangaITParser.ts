@@ -32,11 +32,12 @@ export class NineMangaITParser {
         if (statusText.includes('completato') || statusText.includes('completed')) status = 'Completed'
 
         const arrayTags: Tag[] = []
-        $('li[itemprop="genre"] a').each((_: any, el: any) => {
+        const tagLinks = $('li[itemprop="genre"] a').toArray()
+        for (const el of tagLinks) {
             const id = $(el).attr('href')?.split('/').pop()?.replace('.html', '') ?? ''
             const label = $(el).text().trim()
             if (id && label) arrayTags.push({ id, label })
-        })
+        }
         const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
 
         return App.createSourceManga({
@@ -73,7 +74,8 @@ export class NineMangaITParser {
             const filePart = parts.pop() ?? '' 
             const chapterId = filePart.split('?')[0].replace('.html', '')
 
-            if (seenIds.has(chapterId) || !href.includes('/chapter/')) continue
+            if (seenIds.has(chapterId)) continue
+            if (!href.includes('/chapter/')) continue
 
             seenIds.add(chapterId)
 
@@ -111,26 +113,42 @@ export class NineMangaITParser {
 
     parseChapterDetails($: any, mangaId: string, chapterId: string, requestManager: any, baseUrl: string, cheerio: any): ChapterDetails {
         const pages: string[] = []
+        let foundInScript = false
         
-        // OTTIMIZZAZIONE: Cerca direttamente lo script che contiene le immagini
-        // Invece di ciclare tutto il DOM, usiamo :contains per trovare la variabile specifica
-        const scriptContent = $('script:contains("p_urls")').html()
-        if (scriptContent) {
-            // Regex più permissiva per catturare gli URL tra virgolette
-            const matches = scriptContent.match(/(https?:\/\/[^"']+\.(?:jpg|png|webp|jpeg))/gi)
-            if (matches) {
-                for(const m of matches) {
-                    pages.push(m)
+        // 1. Tentativo Script (Veloce)
+        const scripts = $('script').toArray()
+        for (const script of scripts) {
+            const content = $(script).html()
+            if (content && (content.includes('p_urls') || content.includes('img_url'))) {
+                const matches = content.match(/(https?:\/\/[^"']+\.(?:jpg|png|webp|jpeg))/gi)
+                if (matches && matches.length > 0) {
+                    // Pulizia array
+                    for(const m of matches) pages.push(m)
+                    foundInScript = true
+                    break
                 }
             }
         }
 
-        // Fallback: Immagini nel DOM (se lo script fallisce)
-        if (pages.length === 0) {
-            $('img.manga_pic').each((_: any, img: any) => {
+        // 2. Tentativo DOM (Fallback Sicuro)
+        // FIX: Usiamo .toArray() e un ciclo for per evitare l'errore "Can't find variable: $"
+        if (!foundInScript) {
+            const imgElements = $('img.manga_pic').toArray()
+            for (const img of imgElements) {
                 const src = $(img).attr('src')
                 if (src) pages.push(src)
-            })
+            }
+            
+            // 3. Tentativo Extra Fallback
+            if (pages.length === 0) {
+                 const centerImages = $('div[align="center"] img').toArray()
+                 for (const img of centerImages) {
+                    const src = $(img).attr('src')
+                    if (src && src.startsWith('http') && !src.includes('logo') && !src.includes('icon')) {
+                        pages.push(src)
+                    }
+                }
+            }
         }
 
         return App.createChapterDetails({
