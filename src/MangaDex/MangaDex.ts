@@ -1,78 +1,87 @@
 import {
-    Source,
-    Manga,
     Chapter,
     ChapterDetails,
-    HomeSection,
-    SearchRequest,
-    PagedResults,
-    SourceInfo,
     ContentRating,
-    BadgeColor,
+    HomeSection,
+    HomeSectionType,
+    PagedResults,
+    SearchRequest,
+    SourceInfo,
     SourceIntents,
     SourceManga,
+    BadgeColor,
+    SearchResultsProviding,
+    MangaProviding,
+    ChapterProviding,
+    HomePageSectionsProviding,
     TagSection,
-    Request,
-    Response,
-    HomeSectionType,
     PartialSourceManga
 } from '@paperback/types'
+
+import { URLBuilder } from '../helper'
 
 const MD_API = 'https://api.mangadex.org'
 const MD_UPLOADS = 'https://uploads.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '2.2.2',
-    name: 'MangaDex',
+    version: '2.0.2', // Bump version
+    name: 'MangaDex (EN)',
     icon: 'icon.png',
     author: 'DarkDragonkz',
-    description: 'Extension for MangaDex (English)',
+    authorWebsite: 'https://github.com/DarkDragonkz',
+    description: 'MangaDex source (English Only)',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: 'https://mangadex.org',
     sourceTags: [
         {
-            text: 'English 🇬🇧', 
-            type: BadgeColor.GREEN
+            text: 'English 🇬🇧',
+            type: BadgeColor.GREEN,
         },
     ],
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS,
 }
 
-export class MangaDex extends Source {
+export class MangaDex implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding {
+    
+    constructor(private cheerio: any) {}
+
     requestManager = App.createRequestManager({
-        requestsPerSecond: 4,
-        requestTimeout: 20000,
+        requestsPerSecond: 5, 
+        requestTimeout: 20000
     })
 
-    getMangaShareUrl(mangaId: string): string { return `https://mangadex.org/title/${mangaId}` }
+    getMangaShareUrl(mangaId: string): string {
+        return `https://mangadex.org/title/${mangaId}`
+    }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
         const request = App.createRequest({
-            url: `${MD_API}/manga/${mangaId}?includes[]=cover_art&includes[]=author&includes[]=artist`,
-            method: 'GET'
+            url: `${MD_API}/manga/${mangaId}?includes[]=author&includes[]=artist&includes[]=cover_art`,
+            method: 'GET',
         })
+
         const response = await this.requestManager.schedule(request, 1)
-        const json = JSON.parse(response.data)
-        const data = json.data
-        const attr = data.attributes
+        const data = JSON.parse(response.data ?? '{}')
+        const attributes = data.data.attributes
+        const relationships = data.data.relationships
 
-        // Titolo: Inglese o il primo disponibile
-        const title = attr.title.en ?? Object.values(attr.title)[0] ?? 'Unknown'
-        const desc = attr.description.en ?? Object.values(attr.description)[0] ?? 'No description'
+        const title = attributes.title.en ?? Object.values(attributes.title)[0] ?? 'Unknown Title'
+        const desc = attributes.description.en ?? Object.values(attributes.description)[0] ?? ''
+
+        const authors = relationships.filter((r: any) => r.type === 'author').map((r: any) => r.attributes?.name).filter((n: any) => n)
+        const artists = relationships.filter((r: any) => r.type === 'artist').map((r: any) => r.attributes?.name).filter((n: any) => n)
         
-        let image = 'https://paperback.moe/icons/logo-alt.svg'
-        const coverRel = data.relationships.find((x: any) => x.type === 'cover_art')
-        if (coverRel?.attributes?.fileName) {
-            image = `${MD_UPLOADS}/covers/${mangaId}/${coverRel.attributes.fileName}`
-        }
-
-        const authorRel = data.relationships.find((x: any) => x.type === 'author')
-        const author = authorRel?.attributes?.name ?? 'Unknown'
+        const coverRel = relationships.find((r: any) => r.type === 'cover_art')
+        const fileName = coverRel?.attributes?.fileName
+        const image = fileName ? `${MD_UPLOADS}/covers/${mangaId}/${fileName}` : 'https://paperback.moe/icons/logo-alt.svg'
 
         let status = 'Ongoing'
-        if (attr.status === 'completed') status = 'Completed'
-        if (attr.status === 'hiatus') status = 'Hiatus'
-        if (attr.status === 'cancelled') status = 'Unknown'
+        if (attributes.status === 'completed') status = 'Completed'
+        if (attributes.status === 'hiatus') status = 'Hiatus'
+        if (attributes.status === 'cancelled') status = 'Cancelled'
+
+        const tags: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: [] })]
+        tags[0]!.tags = attributes.tags.map((tag: any) => App.createTag({ id: tag.id, label: tag.attributes.name.en }))
 
         return App.createSourceManga({
             id: mangaId,
@@ -80,48 +89,55 @@ export class MangaDex extends Source {
                 titles: [title],
                 image: image,
                 status: status,
-                author: author,
-                desc: desc,
-                tags: [] 
+                author: authors.join(', '),
+                artist: artists.join(', '),
+                tags: tags,
+                desc: desc
             })
         })
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        // Solo lingua EN, con tutti i content rating
+        const url = `${MD_API}/manga/${mangaId}/feed?limit=500&translatedLanguage[]=en&order[chapter]=desc&includeFutureUpdates=0`
+
         const request = App.createRequest({
-            url: `${MD_API}/manga/${mangaId}/feed?limit=500&translatedLanguage[]=en&order[volume]=desc&order[chapter]=desc&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
-            method: 'GET'
+            url: url,
+            method: 'GET',
         })
 
         const response = await this.requestManager.schedule(request, 1)
-        const json = JSON.parse(response.data)
+        const data = JSON.parse(response.data ?? '{}')
+        
         const chapters: Chapter[] = []
+        
+        if (!data.data) return []
 
-        for (const ch of json.data) {
-            const attr = ch.attributes
+        for (const chapter of data.data) {
+            const attr = chapter.attributes
             
-            // Filtro anti-crash per capitoli esterni/vuoti
-            if (attr.pages === 0 || attr.externalUrl !== null) continue;
-
             const chapNum = parseFloat(attr.chapter) || 0
-            const volNum = parseFloat(attr.volume) || undefined
             
-            let name = ''
-            if (attr.title) name = attr.title
-            if (!name && attr.chapter) name = `Chapter ${attr.chapter}`
-            if (!name) name = 'Oneshot'
+            let title = ''
+            if (attr.title) {
+                title = attr.title
+            } else if (attr.chapter) {
+                title = `Chapter ${attr.chapter}`
+            } else {
+                title = 'Oneshot'
+            }
 
-            const groupRel = ch.relationships.find((x: any) => x.type === 'scanlation_group')
-            if (groupRel?.attributes?.name) {
-                name += ` [${groupRel.attributes.name}]`
+            // LOGICA AVVISO UTENTE
+            // Se è un link esterno o non ha pagine, modifichiamo il titolo
+            // ma NON saltiamo il capitolo (continue).
+            if (attr.externalUrl !== null || attr.pages === 0) {
+                title = `🚫 [External/Web] ${title}`
             }
 
             chapters.push(App.createChapter({
-                id: ch.id,
-                name: name,
+                id: chapter.id,
+                name: title, // Il titolo ora contiene l'avviso
                 chapNum: chapNum,
-                volume: volNum,
+                volume: parseFloat(attr.volume) || 0,
                 time: new Date(attr.publishAt),
                 langCode: 'en'
             }))
@@ -131,152 +147,150 @@ export class MangaDex extends Source {
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        const request = App.createRequest({
-            url: `${MD_API}/at-home/server/${chapterId}`,
-            method: 'GET'
-        })
+        try {
+            const request = App.createRequest({
+                url: `${MD_API}/at-home/server/${chapterId}`,
+                method: 'GET',
+            })
 
-        const response = await this.requestManager.schedule(request, 1)
-        
-        if (response.status !== 200) {
-             throw new Error(`MangaDex API Error: ${response.status}`)
+            const response = await this.requestManager.schedule(request, 1)
+            const data = JSON.parse(response.data ?? '{}')
+            
+            // Se la risposta contiene un baseUrl, procediamo normalmente
+            if (data.baseUrl) {
+                const baseUrl = data.baseUrl
+                const hash = data.chapter.hash
+                const fileNames = data.chapter.data 
+
+                const pages: string[] = []
+                for (const file of fileNames) {
+                    pages.push(`${baseUrl}/data/${hash}/${file}`)
+                }
+
+                return App.createChapterDetails({
+                    id: chapterId,
+                    mangaId: mangaId,
+                    pages: pages
+                })
+            } else {
+                // Se non ci sono pagine (es. capitolo esterno), evitiamo il crash
+                throw new Error('External chapter')
+            }
+        } catch (e) {
+            // FALLBACK DI SICUREZZA
+            // Se l'utente apre comunque il capitolo "External", mostriamo un'immagine statica
+            // invece di far crashare l'app o mostrare errori strani.
+            return App.createChapterDetails({
+                id: chapterId,
+                mangaId: mangaId,
+                pages: ['https://paperback.moe/icons/logo-alt.svg'] // Immagine placeholder
+            })
         }
-
-        const json = JSON.parse(response.data)
-        
-        if (json.result !== 'ok' || !json.baseUrl || !json.chapter?.data) {
-            throw new Error('Failed to load chapter images')
-        }
-        
-        const baseUrl = json.baseUrl
-        const hash = json.chapter.hash
-        const files = json.chapter.data
-
-        const pages: string[] = []
-        for (const file of files) {
-            pages.push(`${baseUrl}/data/${hash}/${file}`)
-        }
-
-        return App.createChapterDetails({
-            id: chapterId,
-            mangaId: mangaId,
-            pages: pages
-        })
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        const page = metadata?.page ?? 0
         const limit = 20
-        const offset = page * limit
-
+        const offset = metadata?.offset ?? 0
+        
+        const url = `${MD_API}/manga?limit=${limit}&offset=${offset}&title=${encodeURIComponent(query.title ?? '')}&includes[]=cover_art&order[relevance]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`
+        
         const request = App.createRequest({
-            url: `${MD_API}/manga?limit=${limit}&offset=${offset}&title=${encodeURIComponent(query.title ?? '')}&includes[]=cover_art&availableTranslatedLanguage[]=en&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
-            method: 'GET'
+            url: url,
+            method: 'GET',
         })
 
         const response = await this.requestManager.schedule(request, 1)
-        const json = JSON.parse(response.data)
+        const data = JSON.parse(response.data ?? '{}')
+        
         const results: PartialSourceManga[] = []
+        
+        if (data.data) {
+            for (const manga of data.data) {
+                const attr = manga.attributes
+                const title = attr.title.en ?? Object.values(attr.title)[0] ?? 'Unknown'
+                
+                const coverRel = manga.relationships.find((r: any) => r.type === 'cover_art')
+                const fileName = coverRel?.attributes?.fileName
+                const image = fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : 'https://paperback.moe/icons/logo-alt.svg'
 
-        for (const manga of json.data) {
-            const title = manga.attributes.title.en ?? Object.values(manga.attributes.title)[0] ?? 'Unknown'
-            
-            let image = 'https://paperback.moe/icons/logo-alt.svg'
-            const coverRel = manga.relationships.find((x: any) => x.type === 'cover_art')
-            if (coverRel?.attributes?.fileName) {
-                image = `${MD_UPLOADS}/covers/${manga.id}/${coverRel.attributes.fileName}.256.jpg`
+                results.push(App.createPartialSourceManga({
+                    mangaId: manga.id,
+                    image: image,
+                    title: title,
+                    subtitle: attr.status
+                }))
             }
-
-            results.push(App.createPartialSourceManga({
-                mangaId: manga.id,
-                image: image,
-                title: title,
-                subtitle: undefined
-            }))
         }
 
         return App.createPagedResults({
             results: results,
-            metadata: { page: page + 1 }
+            metadata: { offset: offset + limit }
         })
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        const popularSection = App.createHomeSection({ id: 'popular', title: 'Popular Titles', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
-        const latestSection = App.createHomeSection({ id: 'latest', title: 'Latest Updates', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
-
-        const popRequest = App.createRequest({
-            url: `${MD_API}/manga?limit=10&includes[]=cover_art&order[followedCount]=desc&availableTranslatedLanguage[]=en&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
-            method: 'GET'
+        const section1 = App.createHomeSection({
+            id: 'popular',
+            title: 'Popular (English Available)',
+            containsMoreItems: false,
+            type: HomeSectionType.singleRowNormal
         })
+        sectionCallback(section1)
+
+        const section2 = App.createHomeSection({
+            id: 'latest',
+            title: 'Latest English Updates',
+            containsMoreItems: false,
+            type: HomeSectionType.singleRowNormal
+        })
+        sectionCallback(section2)
         
-        const latRequest = App.createRequest({
-            url: `${MD_API}/manga?limit=10&includes[]=cover_art&order[updatedAt]=desc&availableTranslatedLanguage[]=en&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
-            method: 'GET'
-        })
+        const ratings = '&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica'
 
-        const popResponse = await this.requestManager.schedule(popRequest, 1)
-        const latResponse = await this.requestManager.schedule(latRequest, 1)
-
-        const popJson = JSON.parse(popResponse.data)
-        const popItems: PartialSourceManga[] = []
-        for (const manga of popJson.data) {
-            const title = manga.attributes.title.en ?? Object.values(manga.attributes.title)[0] ?? 'Unknown'
-            let image = 'https://paperback.moe/icons/logo-alt.svg'
-            const coverRel = manga.relationships.find((x: any) => x.type === 'cover_art')
-            if (coverRel?.attributes?.fileName) {
-                image = `${MD_UPLOADS}/covers/${manga.id}/${coverRel.attributes.fileName}.256.jpg`
+        const popularUrl = `${MD_API}/manga?limit=10&order[followedCount]=desc&includes[]=cover_art&availableTranslatedLanguage[]=en${ratings}`
+        const popularRequest = App.createRequest({ url: popularUrl, method: 'GET' })
+        const popularResponse = await this.requestManager.schedule(popularRequest, 1)
+        const popularData = JSON.parse(popularResponse.data ?? '{}')
+        
+        const popularItems: PartialSourceManga[] = []
+        if (popularData.data) {
+            for (const manga of popularData.data) {
+                const coverRel = manga.relationships.find((r: any) => r.type === 'cover_art')
+                const fileName = coverRel?.attributes?.fileName
+                popularItems.push(App.createPartialSourceManga({
+                    mangaId: manga.id,
+                    image: fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : '',
+                    title: manga.attributes.title.en ?? Object.values(manga.attributes.title)[0] ?? 'Unknown',
+                    subtitle: 'Popular'
+                }))
             }
-            popItems.push(App.createPartialSourceManga({ mangaId: manga.id, image, title, subtitle: 'Popular' }))
         }
-        popularSection.items = popItems
-        sectionCallback(popularSection)
+        section1.items = popularItems
+        sectionCallback(section1)
 
-        const latJson = JSON.parse(latResponse.data)
-        const latItems: PartialSourceManga[] = []
-        for (const manga of latJson.data) {
-            const title = manga.attributes.title.en ?? Object.values(manga.attributes.title)[0] ?? 'Unknown'
-            let image = 'https://paperback.moe/icons/logo-alt.svg'
-            const coverRel = manga.relationships.find((x: any) => x.type === 'cover_art')
-            if (coverRel?.attributes?.fileName) {
-                image = `${MD_UPLOADS}/covers/${manga.id}/${coverRel.attributes.fileName}.256.jpg`
+        const latestUrl = `${MD_API}/manga?limit=10&order[createdAt]=desc&includes[]=cover_art&availableTranslatedLanguage[]=en${ratings}`
+        const latestRequest = App.createRequest({ url: latestUrl, method: 'GET' })
+        const latestResponse = await this.requestManager.schedule(latestRequest, 1)
+        const latestData = JSON.parse(latestResponse.data ?? '{}')
+        
+        const latestItems: PartialSourceManga[] = []
+        if (latestData.data) {
+            for (const manga of latestData.data) {
+                const coverRel = manga.relationships.find((r: any) => r.type === 'cover_art')
+                const fileName = coverRel?.attributes?.fileName
+                latestItems.push(App.createPartialSourceManga({
+                    mangaId: manga.id,
+                    image: fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : '',
+                    title: manga.attributes.title.en ?? Object.values(manga.attributes.title)[0] ?? 'Unknown',
+                    subtitle: 'New Entry'
+                }))
             }
-            latItems.push(App.createPartialSourceManga({ mangaId: manga.id, image, title, subtitle: 'Latest' }))
         }
-        latestSection.items = latItems
-        sectionCallback(latestSection)
+        section2.items = latestItems
+        sectionCallback(section2)
     }
-
+    
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
-        const page = metadata?.page ?? 0
-        const limit = 20
-        const offset = page * limit
-        let order = ''
-        if (homepageSectionId === 'popular') order = '&order[followedCount]=desc'
-        else order = '&order[updatedAt]=desc'
-
-        const request = App.createRequest({
-            url: `${MD_API}/manga?limit=${limit}&offset=${offset}&includes[]=cover_art&availableTranslatedLanguage[]=en&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic${order}`,
-            method: 'GET'
-        })
-
-        const response = await this.requestManager.schedule(request, 1)
-        const json = JSON.parse(response.data)
-        const results: PartialSourceManga[] = []
-
-        for (const manga of json.data) {
-            const title = manga.attributes.title.en ?? Object.values(manga.attributes.title)[0] ?? 'Unknown'
-            let image = 'https://paperback.moe/icons/logo-alt.svg'
-            const coverRel = manga.relationships.find((x: any) => x.type === 'cover_art')
-            if (coverRel?.attributes?.fileName) {
-                image = `${MD_UPLOADS}/covers/${manga.id}/${coverRel.attributes.fileName}.256.jpg`
-            }
-            results.push(App.createPartialSourceManga({ mangaId: manga.id, image, title, subtitle: undefined }))
-        }
-
-        return App.createPagedResults({
-            results: results,
-            metadata: { page: page + 1 }
-        })
+        return App.createPagedResults({ results: [] })
     }
 }
