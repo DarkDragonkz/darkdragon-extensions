@@ -15,6 +15,7 @@ import {
     HomePageSectionsProviding,
     TagSection,
     Request,
+    Response,
 } from '@paperback/types'
 
 import { NineMangaITParser } from './NineMangaITParser'
@@ -23,11 +24,10 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '1.0.2', // Bump version per forzare l'aggiornamento
+    version: '1.0.5',
     name: 'NineMangaIT',
     description: 'Extension that pulls manga from it.ninemanga.com',
-    author: 'NmN',
-    authorWebsite: 'http://github.com/pandeynmm',
+    author: 'DarkDragonkzz',
     icon: 'icon.png',
     contentRating: ContentRating.EVERYONE,
     language: 'it',
@@ -45,20 +45,25 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     baseUrl = IT_DOMAIN
     parser = new NineMangaITParser()
 
-    // HARDCODED DESKTOP USER AGENT
-    readonly userAgentDesktop = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    // User-Agent Desktop aggiornato e Headers standard per ingannare Cloudflare
+    readonly userAgentDesktop = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
 
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 3,
+        requestsPerSecond: 2, // Rallentiamo leggermente per sicurezza
+        requestTimeout: 20000,
         interceptor: {
             interceptRequest: async (request: any) => {
                 request.headers = {
                     ...(request.headers ?? {}),
                     ...{
-                        'referer': `${this.baseUrl}/`,
-                        'user-agent': this.userAgentDesktop 
+                        'Referer': `${this.baseUrl}/`,
+                        'User-Agent': this.userAgentDesktop,
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                        'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
+                        'Cache-Control': 'max-age=0',
+                        'Upgrade-Insecure-Requests': '1'
                     }
                 }
                 return request
@@ -70,7 +75,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     })
 
     getMangaShareUrl(mangaId: string): string {
-        return `${this.baseUrl}/manga/${mangaId}?waring=1`
+        return `${this.baseUrl}/manga/${mangaId}`
     }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
@@ -79,6 +84,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
+        this.checkResponseError(response)
         const $ = this.cheerio.load(response.data)
         return this.parser.parseMangaDetails($, mangaId)
     }
@@ -89,6 +95,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
+        this.checkResponseError(response)
         const $ = this.cheerio.load(response.data)
         return this.parser.parseChapters($, mangaId)
     }
@@ -99,7 +106,6 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
              if (chapterId.startsWith('/')) url = `${this.baseUrl}${chapterId}`
              else url = `${this.baseUrl}/${chapterId}`
         }
-        
         if (!url.includes('.html')) url += '.html'
 
         const request = App.createRequest({
@@ -108,7 +114,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         })
         
         const response = await this.requestManager.schedule(request, 1)
-        const $ = this.cheerio.load(response.data)
+        this.checkResponseError(response)
         return this.parser.parseChapterDetails($, mangaId, chapterId, this.requestManager, this.baseUrl, this.cheerio)
     }
 
@@ -128,6 +134,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         })
 
         const response = await this.requestManager.schedule(request, 1)
+        this.checkResponseError(response)
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($, this.baseUrl)
         
@@ -141,15 +148,17 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        // FIX: Richiediamo SIA la Home (per le classifiche) SIA la pagina Updates (per avere le immagini)
+        // Home request
         const requestHome = App.createRequest({ url: this.baseUrl, method: 'GET' })
         const requestUpdates = App.createRequest({ url: `${this.baseUrl}/list/New-Update/`, method: 'GET' })
 
-        // Eseguiamo in parallelo
         const [responseHome, responseUpdates] = await Promise.all([
             this.requestManager.schedule(requestHome, 1),
             this.requestManager.schedule(requestUpdates, 1)
         ])
+
+        this.checkResponseError(responseHome)
+        this.checkResponseError(responseUpdates)
 
         const $home = this.cheerio.load(responseHome.data)
         const $updates = this.cheerio.load(responseUpdates.data)
@@ -161,7 +170,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         let page = metadata?.page ?? 1
         let url = ''
         
-        if (homepageSectionId === 'updates' || homepageSectionId === 'recent') {
+        if (homepageSectionId === 'recent') {
             url = `${this.baseUrl}/list/New-Update/?page=${page}`
         } else if (homepageSectionId === 'popular') {
             url = `${this.baseUrl}/list/Hot-Book/?page=${page}`
@@ -173,6 +182,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
 
         const request = App.createRequest({ url, method: 'GET' })
         const response = await this.requestManager.schedule(request, 1)
+        this.checkResponseError(response)
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($, this.baseUrl)
 
@@ -186,14 +196,26 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         return App.createPagedResults({ results: [] })
     }
 
+    // IMPORTANTE: Questo metodo permette il Cloudflare Bypass
+    // Deve usare gli stessi headers delle altre richieste
     async getCloudflareBypassRequest(): Promise<Request> {
         return App.createRequest({
             url: this.baseUrl,
             method: 'GET',
             headers: {
-                'user-agent': this.userAgentDesktop,
-                'referer': `${this.baseUrl}/`,
-            },
+                'User-Agent': this.userAgentDesktop,
+                'Referer': `${this.baseUrl}/`,
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7'
+            }
         })
+    }
+
+    checkResponseError(response: Response): void {
+        // Se riceviamo 403 o 503, significa che Cloudflare ci ha bloccato
+        // Lanciare un errore specifico fa apparire l'icona della nuvola nell'app
+        if (response.status === 403 || response.status === 503) {
+            throw new Error(`Cloudflare Bypass Required. Go to Settings > Sources > NineMangaIT > Cloud Icon to solve the captcha.`)
+        }
     }
 }
