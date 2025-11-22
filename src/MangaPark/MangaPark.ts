@@ -12,15 +12,14 @@ import {
     SourceIntents,
     SourceManga,
     TagSection,
-    Request,
-    Response
+    Request
 } from '@paperback/types'
 import { MangaParkParser } from './MangaParkParser'
 
 const MP_DOMAIN = 'https://mangapark.net'
 
 export const MangaParkInfo: SourceInfo = {
-    version: '1.0.6', // Bump version
+    version: '1.0.6',
     name: 'MangaPark',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
@@ -88,19 +87,12 @@ export class MangaPark extends Source {
 
         const pages: string[] = []
 
-        // METODO DIRETTO HTML (Molto più robusto)
-        // Cerchiamo i div che contengono le immagini del capitolo
-        // Selettore basato sul tuo HTML: div[data-name="image-item"] -> img
         $('div[data-name="image-item"] img').each((_: any, el: any) => {
             const img = $(el)
             let src = img.attr('src')
-            
-            // A volte l'src è un placeholder base64 o un'icona di caricamento.
-            // In quel caso, cerchiamo data-src o altri attributi.
             if (!src || src.startsWith('data:') || src.includes('loading')) {
                 src = img.attr('data-src') || img.attr('srcset')
             }
-
             if (src && src.startsWith('http')) {
                 pages.push(src)
             }
@@ -141,6 +133,35 @@ export class MangaPark extends Source {
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         this.parser.parseHomeSections($, sectionCallback, MP_DOMAIN)
+    }
+
+    // FIX: Aggiunta logica per il tasto "Espandi" (View More)
+    async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
+        const page = metadata?.page ?? 1
+        let url = ''
+
+        if (homepageSectionId === 'latest') {
+            url = `${MP_DOMAIN}/latest?page=${page}`
+        } else if (homepageSectionId === 'popular') {
+            // Usiamo la ricerca ordinata per rating per simulare i popolari
+            url = `${MP_DOMAIN}/search?sort=rating&page=${page}`
+        } else {
+            return App.createPagedResults({ results: [] })
+        }
+
+        const request = App.createRequest({
+            url: url,
+            method: 'GET'
+        })
+
+        const response = await this.requestManager.schedule(request, 1)
+        const $ = this.cheerio.load(response.data)
+        const manga = this.parser.parseSearchResults($, MP_DOMAIN)
+        
+        return App.createPagedResults({
+            results: manga,
+            metadata: manga.length > 0 ? { page: page + 1 } : undefined
+        })
     }
 
     async getCloudflareBypassRequest(): Promise<Request> {
