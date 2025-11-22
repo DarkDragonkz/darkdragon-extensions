@@ -799,7 +799,6 @@ var _Sources = (() => {
         if (chapNumMatch && chapNumMatch[1]) chapNum = parseFloat(chapNumMatch[1]);
         chapters.push(App.createChapter({
           id: href,
-          // MangaWorld usa l'URL intero come ID spesso per i redirect
           name: title,
           chapNum,
           time: this.convertTime(dateText),
@@ -823,14 +822,11 @@ var _Sources = (() => {
         pages
       });
     }
-    // FIX TITOLI DUPLICATI QUI
     parseHomeSections($, sectionCallback, baseUrl) {
       const hotSection = App.createHomeSection({ id: "hot", title: "Manga del Mese", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
       const latestSection = App.createHomeSection({ id: "latest", title: "Ultimi Aggiornamenti", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
-      const newSection = App.createHomeSection({ id: "new", title: "Nuove Aggiunte", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
       const hotItems = [];
       const latestItems = [];
-      const newItems = [];
       const hotArr = $(".owl-carousel .entry").toArray();
       for (const item of hotArr) {
         const link = $("a", item).first();
@@ -882,6 +878,27 @@ var _Sources = (() => {
           results.push(App.createPartialSourceManga({
             mangaId: id,
             image: image.startsWith("/") ? baseUrl + image : image,
+            title,
+            subtitle: void 0
+          }));
+        }
+      }
+      return results;
+    }
+    // FIX: Funzione aggiunta per risolvere il crash
+    parseViewMore($) {
+      const results = [];
+      const items = $(".comics-grid .entry").toArray();
+      for (const item of items) {
+        const link = $("a.thumb", item);
+        const id = link.attr("href")?.split("/").pop();
+        const image = $("img", item).attr("src") || $("img", item).attr("data-src") || "";
+        let title = link.attr("title");
+        if (!title) title = $(".name a", item).text().trim();
+        if (id && title) {
+          results.push(App.createPartialSourceManga({
+            mangaId: id,
+            image: image.startsWith("/") ? "https://www.mangaworld.mx" + image : image,
             title,
             subtitle: void 0
           }));
