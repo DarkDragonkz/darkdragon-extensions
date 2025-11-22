@@ -739,7 +739,6 @@ var _Sources = (() => {
       if (url.startsWith("/")) return `${MP_DOMAIN}${url}`;
       return url;
     }
-    // Helper generico per trovare immagini
     getImageSrc(element) {
       let img = element.find("img").first();
       let src = img.attr("src") || img.attr("data-src") || img.attr("srcset");
@@ -836,35 +835,46 @@ var _Sources = (() => {
     parseSearchResults($, baseUrl) {
       const results = [];
       const seenIds = /* @__PURE__ */ new Set();
-      const items = $("div.group.relative").toArray();
+      let items = $("div.group.relative").toArray();
+      if (items.length === 0) {
+        items = $("div.flex.border-b").toArray();
+      }
       for (const item of items) {
-        const link = $("a", item).first();
+        let link = $(item).is("a") ? $(item) : $("a", item).first();
+        if (!link.attr("href")?.includes("/title/")) {
+          link = $('a[href*="/title/"]', item).first();
+        }
         const href = link.attr("href");
         const idMatch = href?.match(/\/title\/(\d+)-/);
         const id = idMatch ? idMatch[1] : null;
         if (!id || seenIds.has(id)) continue;
         seenIds.add(id);
         const image = this.getImageSrc($(item));
-        let title = $("img", item).attr("title") || $("img", item).attr("alt");
-        if (!title) title = $(item).closest("div.flex").find("h3 a").text().trim();
+        let title = "";
+        title = $("img", item).attr("title") || $("img", item).attr("alt") || "";
+        if (!title) {
+          title = $(item).find("a.font-bold").text().trim();
+          if (!title) title = $(item).find("h3 a").text().trim();
+          if (!title) title = link.text().trim();
+        }
         if (!title) title = "Unknown";
+        const subtitle = $(item).find("div.flex.justify-between a").first().text().trim();
         results.push(App.createPartialSourceManga({
           mangaId: id,
           image,
           title,
-          subtitle: void 0
+          subtitle: subtitle || void 0
         }));
       }
       return results;
     }
     parseHomeSections($, sectionCallback, baseUrl) {
-      const popularSection = App.createHomeSection({ id: "popular", title: "Popular Updates", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
-      const latestSection = App.createHomeSection({ id: "latest", title: "Latest Releases", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
+      const popularSection = App.createHomeSection({ id: "popular", title: "Popular Updates", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
+      const latestSection = App.createHomeSection({ id: "latest", title: "Latest Releases", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
       const popularItems = [];
       const latestItems = [];
       const seenIds = /* @__PURE__ */ new Set();
-      const popularContainer = $('b:contains("Popular Updates")').closest("div.space-y-5");
-      const popularGrid = popularContainer.find("div.grid div.relative.group").toArray();
+      const popularGrid = $('b:contains("Popular Updates")').closest("div.space-y-5").find("div.grid div.relative.group").toArray();
       for (const item of popularGrid) {
         const el = $(item);
         const link = el.find("a").first();
@@ -932,7 +942,6 @@ var _Sources = (() => {
   var MP_DOMAIN2 = "https://mangapark.net";
   var MangaParkInfo = {
     version: "1.0.6",
-    // Bump version
     name: "MangaPark",
     icon: "icon.png",
     author: "DarkDragonkzz",
@@ -1039,6 +1048,29 @@ var _Sources = (() => {
       const response = await this.requestManager.schedule(request, 1);
       const $ = this.cheerio.load(response.data);
       this.parser.parseHomeSections($, sectionCallback, MP_DOMAIN2);
+    }
+    // FIX: Aggiunta logica per il tasto "Espandi" (View More)
+    async getViewMoreItems(homepageSectionId, metadata) {
+      const page = metadata?.page ?? 1;
+      let url = "";
+      if (homepageSectionId === "latest") {
+        url = `${MP_DOMAIN2}/latest?page=${page}`;
+      } else if (homepageSectionId === "popular") {
+        url = `${MP_DOMAIN2}/search?sort=rating&page=${page}`;
+      } else {
+        return App.createPagedResults({ results: [] });
+      }
+      const request = App.createRequest({
+        url,
+        method: "GET"
+      });
+      const response = await this.requestManager.schedule(request, 1);
+      const $ = this.cheerio.load(response.data);
+      const manga = this.parser.parseSearchResults($, MP_DOMAIN2);
+      return App.createPagedResults({
+        results: manga,
+        metadata: manga.length > 0 ? { page: page + 1 } : void 0
+      });
     }
     async getCloudflareBypassRequest() {
       return App.createRequest({
