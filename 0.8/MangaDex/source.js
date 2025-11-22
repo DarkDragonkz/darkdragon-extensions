@@ -731,13 +731,13 @@ var _Sources = (() => {
   var MD_API = "https://api.mangadex.org";
   var MD_UPLOADS = "https://uploads.mangadex.org";
   var MangaDexInfo = {
-    version: "2.0.2",
-    // Bump version
+    version: "2.0.3",
+    // Aggiorna versione
     name: "MangaDex (EN)",
     icon: "icon.png",
     author: "DarkDragonkz",
     authorWebsite: "https://github.com/DarkDragonkz",
-    description: "MangaDex source (English Only)",
+    description: "MangaDex source (English Only) with full sections support.",
     contentRating: import_types.ContentRating.MATURE,
     websiteBaseURL: "https://mangadex.org",
     sourceTags: [
@@ -752,7 +752,7 @@ var _Sources = (() => {
     constructor(cheerio) {
       this.cheerio = cheerio;
       this.requestManager = App.createRequestManager({
-        requestsPerSecond: 5,
+        requestsPerSecond: 4,
         requestTimeout: 2e4
       });
     }
@@ -816,12 +816,11 @@ var _Sources = (() => {
           title = "Oneshot";
         }
         if (attr.externalUrl !== null || attr.pages === 0) {
-          title = `\u{1F6AB} [External/Web] ${title}`;
+          title = `\u{1F6AB} [External] ${title}`;
         }
         chapters.push(App.createChapter({
           id: chapter.id,
           name: title,
-          // Il titolo ora contiene l'avviso
           chapNum,
           volume: parseFloat(attr.volume) || 0,
           time: new Date(attr.publishAt),
@@ -859,7 +858,6 @@ var _Sources = (() => {
           id: chapterId,
           mangaId,
           pages: ["https://paperback.moe/icons/logo-alt.svg"]
-          // Immagine placeholder
         });
       }
     }
@@ -876,17 +874,7 @@ var _Sources = (() => {
       const results = [];
       if (data.data) {
         for (const manga of data.data) {
-          const attr = manga.attributes;
-          const title = attr.title.en ?? Object.values(attr.title)[0] ?? "Unknown";
-          const coverRel = manga.relationships.find((r) => r.type === "cover_art");
-          const fileName = coverRel?.attributes?.fileName;
-          const image = fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : "https://paperback.moe/icons/logo-alt.svg";
-          results.push(App.createPartialSourceManga({
-            mangaId: manga.id,
-            image,
-            title,
-            subtitle: attr.status
-          }));
+          this.processMangaResult(manga, results);
         }
       }
       return App.createPagedResults({
@@ -895,62 +883,103 @@ var _Sources = (() => {
       });
     }
     async getHomePageSections(sectionCallback) {
-      const section1 = App.createHomeSection({
-        id: "popular",
-        title: "Popular (English Available)",
-        containsMoreItems: false,
-        type: import_types.HomeSectionType.singleRowNormal
-      });
-      sectionCallback(section1);
-      const section2 = App.createHomeSection({
-        id: "latest",
-        title: "Latest English Updates",
-        containsMoreItems: false,
-        type: import_types.HomeSectionType.singleRowNormal
-      });
-      sectionCallback(section2);
-      const ratings = "&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica";
-      const popularUrl = `${MD_API}/manga?limit=10&order[followedCount]=desc&includes[]=cover_art&availableTranslatedLanguage[]=en${ratings}`;
-      const popularRequest = App.createRequest({ url: popularUrl, method: "GET" });
-      const popularResponse = await this.requestManager.schedule(popularRequest, 1);
-      const popularData = JSON.parse(popularResponse.data ?? "{}");
-      const popularItems = [];
-      if (popularData.data) {
-        for (const manga of popularData.data) {
-          const coverRel = manga.relationships.find((r) => r.type === "cover_art");
-          const fileName = coverRel?.attributes?.fileName;
-          popularItems.push(App.createPartialSourceManga({
-            mangaId: manga.id,
-            image: fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : "",
-            title: manga.attributes.title.en ?? Object.values(manga.attributes.title)[0] ?? "Unknown",
-            subtitle: "Popular"
-          }));
-        }
+      const sections = [
+        App.createHomeSection({ id: "popular", title: "Popular", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
+        App.createHomeSection({ id: "latest", title: "Latest Updates", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
+        App.createHomeSection({ id: "recommended", title: "Recommended (Top Rated)", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
+        App.createHomeSection({ id: "recently_added", title: "Recently Added", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
+        App.createHomeSection({ id: "featured", title: "Featured (Monthly)", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
+        App.createHomeSection({ id: "self_published", title: "Self-Published (Originals)", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal })
+      ];
+      for (const section of sections) {
+        sectionCallback(section);
       }
-      section1.items = popularItems;
-      sectionCallback(section1);
-      const latestUrl = `${MD_API}/manga?limit=10&order[createdAt]=desc&includes[]=cover_art&availableTranslatedLanguage[]=en${ratings}`;
-      const latestRequest = App.createRequest({ url: latestUrl, method: "GET" });
-      const latestResponse = await this.requestManager.schedule(latestRequest, 1);
-      const latestData = JSON.parse(latestResponse.data ?? "{}");
-      const latestItems = [];
-      if (latestData.data) {
-        for (const manga of latestData.data) {
-          const coverRel = manga.relationships.find((r) => r.type === "cover_art");
-          const fileName = coverRel?.attributes?.fileName;
-          latestItems.push(App.createPartialSourceManga({
-            mangaId: manga.id,
-            image: fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : "",
-            title: manga.attributes.title.en ?? Object.values(manga.attributes.title)[0] ?? "Unknown",
-            subtitle: "New Entry"
-          }));
+      const baseParams = "limit=10&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&availableTranslatedLanguage[]=en";
+      const urls = {
+        popular: `${MD_API}/manga?${baseParams}&order[followedCount]=desc`,
+        latest: `${MD_API}/manga?${baseParams}&order[readableAt]=desc`,
+        recommended: `${MD_API}/manga?${baseParams}&order[rating]=desc`,
+        recently_added: `${MD_API}/manga?${baseParams}&order[createdAt]=desc`,
+        featured: `${MD_API}/manga?${baseParams}&order[followedCount]=desc&createdAtSince=${new Date(Date.now() - 2592e6).toISOString().slice(0, 19)}`,
+        // Ultimo mese
+        self_published: `${MD_API}/manga?${baseParams}&originalLanguage[]=en&order[createdAt]=desc`
+      };
+      const promises = Object.entries(urls).map(async ([sectionId, url]) => {
+        try {
+          const request = App.createRequest({ url, method: "GET" });
+          const response = await this.requestManager.schedule(request, 1);
+          const data = JSON.parse(response.data ?? "{}");
+          const items = [];
+          if (data.data) {
+            for (const manga of data.data) {
+              this.processMangaResult(manga, items);
+            }
+          }
+          const section = sections.find((s) => s.id === sectionId);
+          if (section) {
+            section.items = items;
+            sectionCallback(section);
+          }
+        } catch (e) {
+          console.error(`Error fetching section ${sectionId}: ${e}`);
         }
-      }
-      section2.items = latestItems;
-      sectionCallback(section2);
+      });
+      await Promise.all(promises);
     }
     async getViewMoreItems(homepageSectionId, metadata) {
-      return App.createPagedResults({ results: [] });
+      const limit = 20;
+      const offset = metadata?.offset ?? 0;
+      const baseParams = `limit=${limit}&offset=${offset}&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&availableTranslatedLanguage[]=en`;
+      let url = "";
+      switch (homepageSectionId) {
+        case "popular":
+          url = `${MD_API}/manga?${baseParams}&order[followedCount]=desc`;
+          break;
+        case "latest":
+          url = `${MD_API}/manga?${baseParams}&order[readableAt]=desc`;
+          break;
+        case "recommended":
+          url = `${MD_API}/manga?${baseParams}&order[rating]=desc`;
+          break;
+        case "recently_added":
+          url = `${MD_API}/manga?${baseParams}&order[createdAt]=desc`;
+          break;
+        case "featured":
+          url = `${MD_API}/manga?${baseParams}&order[followedCount]=desc&createdAtSince=${new Date(Date.now() - 2592e6).toISOString().slice(0, 19)}`;
+          break;
+        case "self_published":
+          url = `${MD_API}/manga?${baseParams}&originalLanguage[]=en&order[createdAt]=desc`;
+          break;
+        default:
+          return App.createPagedResults({ results: [] });
+      }
+      const request = App.createRequest({ url, method: "GET" });
+      const response = await this.requestManager.schedule(request, 1);
+      const data = JSON.parse(response.data ?? "{}");
+      const results = [];
+      if (data.data) {
+        for (const manga of data.data) {
+          this.processMangaResult(manga, results);
+        }
+      }
+      return App.createPagedResults({
+        results,
+        metadata: { offset: offset + limit }
+      });
+    }
+    // Helper per processare i risultati JSON ed evitare ripetizioni codice
+    processMangaResult(manga, targetArray) {
+      const attr = manga.attributes;
+      const title = attr.title.en ?? Object.values(attr.title)[0] ?? "Unknown";
+      const coverRel = manga.relationships.find((r) => r.type === "cover_art");
+      const fileName = coverRel?.attributes?.fileName;
+      const image = fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : "https://paperback.moe/icons/logo-alt.svg";
+      targetArray.push(App.createPartialSourceManga({
+        mangaId: manga.id,
+        image,
+        title,
+        subtitle: attr.status
+      }));
     }
   };
   return __toCommonJS(MangaDex_exports);
