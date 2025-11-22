@@ -10,8 +10,23 @@ import {
 } from '@paperback/types'
 
 export class Parser {
+
+    // HELPER: Pulisce i titoli duplicati (es "One PieceOne Piece" -> "One Piece")
+    private cleanTitle(title: string): string {
+        if (!title) return 'Unknown'
+        title = title.trim()
+        if (title.length > 0 && title.length % 2 === 0) {
+            const half = title.substring(0, title.length / 2)
+            if (half === title.substring(title.length / 2)) {
+                return half
+            }
+        }
+        return title
+    }
+
     parseMangaDetails($: any, mangaId: string): SourceManga {
-        const title = $('.name.bigger').text().trim() ?? ''
+        let title = $('.name.bigger').text().trim() ?? ''
+        title = this.cleanTitle(title)
         
         const imgElement = $('.thumb.mb-3.text-center img')
         let image = imgElement.attr('src') ?? ''
@@ -147,7 +162,8 @@ export class Parser {
         for (const item of $('.comics-grid .entry').toArray()) {
             const id = (($('a', item).attr('href') ?? '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ['null'])[0] ?? ''
 
-            const title = $('a', item).attr('title') ?? ''
+            let title = $('a', item).attr('title') ?? ''
+            title = this.cleanTitle(title)
             
             const imgElement = $('a img', item)
             let image = imgElement.attr('src') ?? ''
@@ -180,13 +196,13 @@ export class Parser {
         const section2 = App.createHomeSection({
             id: '2',
             title: 'Manga del mese',
-            containsMoreItems: false,
+            containsMoreItems: true, // Abilitato expand
             type: HomeSectionType.singleRowNormal,
         })
         const section3 = App.createHomeSection({
             id: '3',
             title: 'Capitoli di tendenza',
-            containsMoreItems: false,
+            containsMoreItems: true, // Abilitato expand
             type: HomeSectionType.singleRowNormal,
         })
 
@@ -200,7 +216,8 @@ export class Parser {
 
         for (const obj of arrLatest) {
             const id = (($('a', obj).attr('href') ?? '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ['null'])[0] ?? ''
-            const title = $('a', obj).attr('title') ?? ''
+            let title = $('a', obj).attr('title') ?? ''
+            title = this.cleanTitle(title)
             
             const imgElement = $('a img', obj)
             let image = imgElement.attr('src') ?? ''
@@ -224,7 +241,6 @@ export class Parser {
         section1.items = latestManga
         sectionCallback(section1)
 
-        // FIX: Titoli duplicati
         let i = 0
         for (const obj of arrHotTitle) {
             const id = (($('a', obj).attr('href') ?? '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ['null'])[0] ?? ''
@@ -238,16 +254,16 @@ export class Parser {
                 image = 'https://www.mangaworld.mx' + image
             }
 
-            // PRENDIAMO IL TITOLO DAL LINK DIRETTAMENTE PER EVITARE DUPLICATI
             let title = $('a', obj).attr('title') 
-            if (!title) title = $('.name', obj).text().trim() // fallback
+            if (!title) title = $('.name', obj).text().trim()
+            title = this.cleanTitle(title ?? 'Unknown')
 
             if (i == 10) break
             i++
             hotTitles.push(
                 App.createPartialSourceManga({
                     image,
-                    title: title ?? 'Unknown',
+                    title: title,
                     mangaId: id,
                     subtitle: undefined,
                 })
@@ -268,7 +284,9 @@ export class Parser {
                 image = 'https://www.mangaworld.mx' + image
             }
 
-            const title = $('.manga-title', obj).text().trim()
+            let title = $('.manga-title', obj).text().trim()
+            title = this.cleanTitle(title)
+
             trending.push(
                 App.createPartialSourceManga({
                     image,
@@ -284,11 +302,14 @@ export class Parser {
 
     parseViewMore($: any): PartialSourceManga[] {
         const more: PartialSourceManga[] = []
-        const arrLatest = $('.col-sm-12.col-md-8.col-xl-9 .comics-grid .entry').toArray()
+        // Selettore generico che funziona sia in Home che in Archivio
+        const arrLatest = $('.comics-grid .entry').toArray()
+        
         for (const obj of arrLatest) {
             const id = (($('a', obj).attr('href') ?? '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ['null'])[0] ?? ''
 
-            const title = $('a', obj).attr('title') ?? ''
+            let title = $('a', obj).attr('title') ?? ''
+            title = this.cleanTitle(title)
             
             const imgElement = $('a img', obj)
             let image = imgElement.attr('src') ?? ''

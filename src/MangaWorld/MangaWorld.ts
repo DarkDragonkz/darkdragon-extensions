@@ -23,9 +23,9 @@ import { URLBuilder } from '../helper'
 const MW_DOMAIN = 'https://www.mangaworld.mx'
 
 export const MangaWorldInfo: SourceInfo = {
-    version: '3.0.8', // Bump version
+    version: '3.0.8',
     name: 'MangaWorld',
-    description: 'Extension that pulls manga from MangaWorld (0.8).',
+    description: 'Extension that pulls manga from MangaWorld.',
     author: 'NmN',
     authorWebsite: 'http://github.com/pandeynmm',
     icon: 'icon.png',
@@ -46,11 +46,11 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
     
     constructor(private cheerio: any) {}
     
-    RETRIES = 5 // Ridotto leggermente, 10 è eccessivo
+    RETRIES = 10
     parser = new Parser()
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 6, // Più conservativo per evitare ban IP
+        requestsPerSecond: 8,
         requestTimeout: 20000,
         interceptor: {
             interceptRequest: async (request: any) => {
@@ -58,7 +58,7 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
                     ...(request.headers ?? {}),
                     ...{
                         'referer': `${this.baseUrl}/`,
-                        // RIMOSSO User-Agent hardcodato per evitare conflitti Cloudflare
+                        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     }
                 }
                 return request
@@ -138,19 +138,56 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
         this.parser.parseHomeSections($, sectionCallback)
     }
 
-    async getViewMoreItems(_: string, metadata: any): Promise<PagedResults> {
+    // FIX: Gestione corretta delle sezioni "View More"
+    async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
+        let url = ''
+
+        switch (homepageSectionId) {
+            case '1': // Ultimi capitoli
+                url = `${this.baseUrl}/?page=${page}`
+                break
+            case '2': // Manga del mese (Popolari)
+                url = `${this.baseUrl}/archive?sort=most_read&page=${page}`
+                break
+            case '3': // Capitoli di tendenza
+                // Usiamo i più letti o popolari per il trending
+                url = `${this.baseUrl}/archive?sort=most_read&page=${page}`
+                break
+            default:
+                return App.createPagedResults({ results: [], metadata: { page: -1 } })
+        }
+
         const request = App.createRequest({
-            url: `${this.baseUrl}/?page=${page}`,
+            url: url,
             method: 'GET',
         })
         const response = await this.requestManager.schedule(request, this.RETRIES)
         const $ = this.cheerio.load(response.data)
         const manga: PartialSourceManga[] = this.parser.parseViewMore($)
+        
         return App.createPagedResults({
             results: manga,
-            metadata: { page: page + 1 },
+            metadata: manga.length > 0 ? { page: page + 1 } : undefined,
         })
+    }
+
+    protected convertTime(timeAgo: string): Date {
+        let time: Date
+        let trimmed = Number((/\d*/.exec(timeAgo) ?? [])[0])
+        trimmed = trimmed == 0 && timeAgo.includes('a') ? 1 : trimmed
+        if (timeAgo.includes('mins') || timeAgo.includes('minutes') || timeAgo.includes('minute')) {
+            time = new Date(Date.now() - trimmed * 60000)
+        } else if (timeAgo.includes('hours') || timeAgo.includes('hour')) {
+            time = new Date(Date.now() - trimmed * 3600000)
+        } else if (timeAgo.includes('days') || timeAgo.includes('day')) {
+            time = new Date(Date.now() - trimmed * 86400000)
+        } else if (timeAgo.includes('year') || timeAgo.includes('years')) {
+            time = new Date(Date.now() - trimmed * 31556952000)
+        } else {
+            time = new Date(timeAgo)
+        }
+        return time
     }
 
     async getCloudflareBypassRequestAsync() {
@@ -160,7 +197,6 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
             headers: {
                 'referer': `${this.baseUrl}/`,
                 'origin': `${this.baseUrl}/`,
-                // Qui usiamo l'UA corretto del dispositivo
                 'user-agent': await this.requestManager.getDefaultUserAgent()
             }
         })
