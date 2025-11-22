@@ -14,7 +14,7 @@ import {
     ChapterProviding,
     HomePageSectionsProviding,
     TagSection,
-    HomeSectionType // <--- AGGIUNTO: Mancava questo import!
+    HomeSectionType
 } from '@paperback/types'
 
 import { MangaParkITParser } from './MangaParkITParser'
@@ -23,10 +23,10 @@ import { URLBuilder } from '../helper'
 const MP_DOMAIN = 'https://mangapark.io'
 
 export const MangaParkITInfo: SourceInfo = {
-    version: '1.0.1',
+    version: '1.0.2',
     name: 'MangaPark IT',
     description: 'Estensione per MangaPark (Solo Italiano)',
-    author: 'DarkDragonkz', // <--- AGGIORNATO: Nome autore corretto
+    author: 'DarkDragonkz',
     authorWebsite: 'http://github.com/DarkDragonkz',
     icon: 'icon.png',
     contentRating: ContentRating.EVERYONE,
@@ -101,11 +101,12 @@ export class MangaParkIT implements SearchResultsProviding, MangaProviding, Chap
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
         
+        // FIX: Cambiato 'q' in 'word' per far funzionare la ricerca
         const url = new URLBuilder(this.baseUrl)
             .addPathComponent('search')
             .addQueryParameter('lang', 'it')
             .addQueryParameter('page', page.toString())
-            .addQueryParameter('q', query.title ?? '')
+            .addQueryParameter('word', query.title ?? '') 
             .buildUrl()
 
         const request = App.createRequest({
@@ -124,13 +125,11 @@ export class MangaParkIT implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        // Sezione Popolari
         const requestPopular = App.createRequest({
             url: `${this.baseUrl}/search?lang=it&sortby=field_score&page=1`,
             method: 'GET'
         })
         
-        // Sezione Recenti
         const requestLatest = App.createRequest({
             url: `${this.baseUrl}/search?lang=it&sortby=field_update&page=1`,
             method: 'GET'
@@ -147,7 +146,6 @@ export class MangaParkIT implements SearchResultsProviding, MangaProviding, Chap
         const popularManga = this.parser.parseSearchResults($popular)
         const latestManga = this.parser.parseSearchResults($latest)
         
-        // Ora HomeSectionType è importato e non darà errore
         const sectionPopular = App.createHomeSection({id: 'popular', title: 'Popolari (IT)', containsMoreItems: true, type: HomeSectionType.singleRowNormal})
         sectionPopular.items = popularManga
         sectionCallback(sectionPopular)
