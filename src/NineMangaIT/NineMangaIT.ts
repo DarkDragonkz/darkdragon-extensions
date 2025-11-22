@@ -137,7 +137,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
                 .addQueryParameter('wd', encodeURIComponent(query?.title ?? ''))
                 .addQueryParameter('page', page.toString())
                 .addQueryParameter('type', 'high')
-                .buildUrl({ addTrailingSlash: true }),
+                .buildUrl({ addTrailingSlash: true, includeUndefinedParameters: false }),
             method: 'GET'
         })
 
