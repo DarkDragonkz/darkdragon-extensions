@@ -12,22 +12,41 @@ import {
 export class NineMangaITParser {
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
-        let title = $('.book-title').text().trim()
+        // 1. Titolo
+        let title = $('h1[itemprop="name"]').first().text().trim()
+        if (!title) title = $('.book-title').text().trim()
         if (!title) title = $('h1').first().text().trim()
-        // Pulisci il titolo da suffissi comuni
         title = title.replace(/ Manga$/, '').trim()
         
-        let image = $('.book-cover img').attr('src') ?? ''
-        if (!image) image = $('.manga-cover img').attr('src') ?? ''
-        if (!image) image = $('div.book-intro img').attr('src') ?? ''
+        // 2. Immagine
+        // FIX: La classe corretta nell'HTML è "bookintro" (senza trattino)
+        let image = $('.bookintro img[itemprop="image"]').attr('src') ?? ''
+        if (!image) image = $('.book-cover img').attr('src') ?? ''
+        if (!image) image = $('div.bookintro img').attr('src') ?? ''
 
-        const author = $('a[href*="/author/"]').first().text().trim() ?? 'Unknown'
-        const artist = $('a[href*="/artist/"]').first().text().trim() ?? 'Unknown'
-        const desc = $('.book-intro').text().trim() ?? 'No description'
+        // 3. Autore e Artista
+        const author = $('a[itemprop="author"]').first().text().trim() ?? 'Unknown'
+        const artist = author // Spesso coincidono su NineManga
+
+        // 4. Descrizione
+        // FIX: Usa itemprop="description" per essere sicuri
+        let desc = $('p[itemprop="description"]').text().trim()
+        if (!desc) desc = $('.bookintro p').text().trim()
+        if (!desc) desc = 'No description available'
         
+        // 5. Status
         let status = 'Ongoing'
         const statusText = $('.red').text().toLowerCase()
         if (statusText.includes('completato') || statusText.includes('completed')) status = 'Completed'
+
+        // 6. Generi
+        const arrayTags: Tag[] = []
+        $('li[itemprop="genre"] a').each((_: any, el: any) => {
+            const id = $(el).attr('href')?.split('/').pop()?.replace('.html', '') ?? ''
+            const label = $(el).text().trim()
+            if (id && label) arrayTags.push({ id, label })
+        })
+        const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
 
         return App.createSourceManga({
             id: mangaId,
@@ -38,7 +57,7 @@ export class NineMangaITParser {
                 author: author,
                 artist: artist,
                 desc: desc,
-                tags: []
+                tags: tagSections
             })
         })
     }
@@ -47,48 +66,48 @@ export class NineMangaITParser {
         const chapters: Chapter[] = []
         const seenIds = new Set<string>()
 
-        // 1. Cerca TUTTI i link nella pagina
-        const allLinks = $('a').toArray()
+        // FIX CRITICO: Seleziona SOLO i link principali dei capitoli
+        // La classe "chapter_list_a" è quella che contiene il link vero,
+        // evitando i link di paginazione (1, 3, 6...) che sono in em.page_choose
+        const chapterLinks = $('a.chapter_list_a').toArray()
 
-        for (const link of allLinks) {
+        for (const link of chapterLinks) {
             const $link = $(link)
             const href = $link.attr('href')
             
-            // FIX: NineManga usa /chapter/, non /title/
-            if (!href || !href.includes('/chapter/')) continue
+            if (!href) continue
 
-            // Estrazione ID (es. /chapter/MangaName/12345.html -> 12345)
+            // Estrazione ID (es. /chapter/One%20Piece/982150.html -> 982150)
             const parts = href.split('/')
             const filePart = parts.pop() ?? '' 
-            const chapterId = filePart.replace('.html', '')
+            const chapterId = filePart.replace('.html', '').split('?')[0]
 
-            // Validazione ID e duplicati
-            if (seenIds.has(chapterId) || chapterId.length < 3 || href.includes('javascript:')) continue
-            
-            // Filtro extra: Assicuriamoci che il link non sia "Torna all'indice" o simili
-            // I link dei capitoli di solito finiscono con .html o numeri
-            if (!filePart.includes('.html') && !filePart.match(/^\d+$/)) continue
-
+            if (seenIds.has(chapterId) || !chapterId) continue
             seenIds.add(chapterId)
 
-            const titleRaw = $link.text().trim()
-            if (!titleRaw) continue
+            let titleRaw = $link.attr('title') || $link.text().trim()
+            
+            // Pulizia titolo (rimuovi nome manga se ripetuto all'inizio)
+            // Es: "One Piece 1141" -> "1141" (opzionale, ma spesso più pulito)
+            // Per ora lo lasciamo intero o lo puliamo leggermente
+            titleRaw = titleRaw.replace(new RegExp(`^${mangaId.replace(/-/g, ' ')}\\s+`, 'i'), '')
 
             // Data
-            const dateText = $link.find('.date').text().trim() || $link.parent().find('.date').text().trim()
+            // La data è in uno span fratello del link
+            const dateText = $link.parent().find('span').last().text().trim()
             let time = new Date()
             if (dateText) {
                 time = new Date(dateText)
                 if (isNaN(time.getTime())) time = new Date()
             }
 
-            // Parsing Numero Capitolo
-            // Cerca pattern come "Ch.123", "Chapter 123", o numeri alla fine
-            const chapNumMatch = titleRaw.match(/(?:ch|chapter|episode|c)(?:\.|apters?|\s)*\s*(\d+(\.\d+)?)/i)
+            // Parsing Numero
+            const chapNumMatch = titleRaw.match(/(?:ch|chapter|episode|c|one piece)\.?\s*(\d+(\.\d+)?)/i)
             let chapNum = 0
             if (chapNumMatch) {
                 chapNum = parseFloat(chapNumMatch[1] ?? '0')
             } else {
+                // Fallback: ultimo numero trovato
                 const simpleNums = titleRaw.match(/(\d+(\.\d+)?)/g)
                 if (simpleNums && simpleNums.length > 0) {
                     chapNum = parseFloat(simpleNums[simpleNums.length - 1] ?? '0')
@@ -110,31 +129,31 @@ export class NineMangaITParser {
     parseChapterDetails($: any, mangaId: string, chapterId: string, requestManager: any, baseUrl: string, cheerio: any): ChapterDetails {
         const pages: string[] = []
         
-        // Metodo 1: Immagini dirette
-        $('img.manga_pic').each((_: any, img: any) => {
-            const src = $(img).attr('src')
-            if (src) pages.push(src)
-        })
-
-        // Metodo 2: Estrazione da script "p_urls" (versione mobile comune)
-        if (pages.length === 0) {
-            const scripts = $('script').toArray()
-            for (const script of scripts) {
-                const content = $(script).html()
-                if (content && content.includes('p_urls')) {
-                     const matches = content.match(/https?:\/\/[^"']+\.(jpg|png|webp|jpeg)/g)
-                     if (matches) {
-                         pages.push(...matches)
-                     }
-                }
+        // Metodo 1: Cerca nello script "p_urls" (Standard Mobile NineManga)
+        const scripts = $('script').toArray()
+        for (const script of scripts) {
+            const content = $(script).html()
+            if (content && content.includes('p_urls')) {
+                 // Estrae array di immagini dal JS
+                 const matches = content.match(/https?:\/\/[^"']+\.(jpg|png|webp|jpeg)/g)
+                 if (matches) {
+                     pages.push(...matches)
+                 }
             }
         }
 
-        // Metodo 3: Fallback generico per immagini grandi al centro
+        // Metodo 2: Immagini dirette (se presenti nel DOM)
+        if (pages.length === 0) {
+            $('img.manga_pic').each((_: any, img: any) => {
+                const src = $(img).attr('src')
+                if (src) pages.push(src)
+            })
+        }
+
+        // Metodo 3: Fallback "Center Image"
         if (pages.length === 0) {
             $('div[align="center"] img').each((_:any, img:any) => {
                 const src = $(img).attr('src')
-                // Filtra icone piccole o pubblicità
                 if (src && src.startsWith('http') && !src.includes('logo') && !src.includes('icon')) {
                     pages.push(src)
                 }
@@ -155,12 +174,10 @@ export class NineMangaITParser {
         for (const item of items) {
             const link = $('a', item).first()
             const href = link.attr('href')
-            
             let id = ''
             if (href && href.includes('/manga/')) {
                  id = href.split('/manga/')[1].replace('.html', '')
             }
-
             if (!id) continue
 
             const image = $('img', item).attr('src') ?? ''
@@ -185,12 +202,10 @@ export class NineMangaITParser {
         const newItems: PartialSourceManga[] = []
         const latestItems: PartialSourceManga[] = []
 
-        // Helper per pulire i titoli (es. "One Piece 1141" -> "One Piece")
+        // Helper per pulire i titoli (Rimuove numeri alla fine)
         const cleanTitle = (t: string) => {
-            // Rimuove "Vol. 33 Ch. 135..." o numeri alla fine
-            return t.replace(/(Vol\.\s*\d+)?\s*(Ch\.\s*\d+)?.*$/, '') 
-                    .replace(/\s+\d+(\.\d+)?$/, '')
-                    .trim()
+            // Rimuove pattern come " 1141", " Vol.1", " Ch.10" alla fine della stringa
+            return t.replace(/(\s+(Vol\.|Ch\.|Chapter\.)?\s*\d+(\.\d+)?)+$/i, '').trim()
         }
 
         // POPOLARI (tab_content_3)
@@ -201,9 +216,10 @@ export class NineMangaITParser {
             const id = href?.split('/manga/')[1]?.replace('.html', '')
             const image = $home('img', item).attr('src') ?? ''
             
-            // Usa attributo title se presente, è spesso più pulito del testo
-            let title = link.attr('title') || $home('span', item).text().trim()
-            title = cleanTitle(title)
+            // Titolo Raw: "One Piece 1141"
+            const rawTitle = link.attr('title') || $home('span', item).text().trim()
+            // Titolo Pulito: "One Piece"
+            const title = cleanTitle(rawTitle)
 
             if (id) {
                 popularItems.push(App.createPartialSourceManga({
@@ -224,8 +240,8 @@ export class NineMangaITParser {
             const href = link.attr('href')
             const id = href?.split('/manga/')[1]?.replace('.html', '')
             const image = $home('img', item).attr('src') ?? ''
-            let title = link.attr('title') || $home('span', item).text().trim()
-            title = cleanTitle(title)
+            const rawTitle = link.attr('title') || $home('span', item).text().trim()
+            const title = cleanTitle(rawTitle)
 
             if (id) {
                 newItems.push(App.createPartialSourceManga({
@@ -250,7 +266,7 @@ export class NineMangaITParser {
             const rawTitle = link.attr('title') || $home('span', item).text().trim()
             const title = cleanTitle(rawTitle)
             
-            // Cerchiamo di estrarre il numero del capitolo dal titolo originale sporco
+            // Estrae il numero del capitolo per il sottotitolo
             let subtitle = undefined
             const numMatch = rawTitle.match(/(\d+(\.\d+)?)$/)
             if (numMatch) subtitle = `Ch. ${numMatch[0]}`
