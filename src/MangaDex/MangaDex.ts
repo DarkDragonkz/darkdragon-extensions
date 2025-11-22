@@ -22,16 +22,16 @@ const MD_API = 'https://api.mangadex.org'
 const MD_UPLOADS = 'https://uploads.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '2.2.0', // Major bump per il supporto Multi-Lingua
+    version: '2.2.1',
     name: 'MangaDex',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
-    description: 'Extension for MangaDex (IT + EN)',
+    description: 'Extension for MangaDex (English)',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: 'https://mangadex.org',
     sourceTags: [
         {
-            text: 'IT/EN',
+            text: 'English',
             type: BadgeColor.BLUE,
         },
     ],
@@ -56,9 +56,9 @@ export class MangaDex extends Source {
         const data = json.data
         const attr = data.attributes
 
-        // Titolo: Priorità IT -> EN -> Qualsiasi
-        const title = attr.title.it ?? attr.title.en ?? Object.values(attr.title)[0] ?? 'Unknown'
-        const desc = attr.description.it ?? attr.description.en ?? Object.values(attr.description)[0] ?? 'No description'
+        // Titolo: Inglese o il primo disponibile
+        const title = attr.title.en ?? Object.values(attr.title)[0] ?? 'Unknown'
+        const desc = attr.description.en ?? Object.values(attr.description)[0] ?? 'No description'
         
         let image = 'https://paperback.moe/icons/logo-alt.svg'
         const coverRel = data.relationships.find((x: any) => x.type === 'cover_art')
@@ -88,9 +88,9 @@ export class MangaDex extends Source {
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        // FIX: Ora richiediamo sia Italiano (it) che Inglese (en)
+        // Solo lingua EN, con tutti i content rating
         const request = App.createRequest({
-            url: `${MD_API}/manga/${mangaId}/feed?limit=500&translatedLanguage[]=it&translatedLanguage[]=en&order[volume]=desc&order[chapter]=desc&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
+            url: `${MD_API}/manga/${mangaId}/feed?limit=500&translatedLanguage[]=en&order[volume]=desc&order[chapter]=desc&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
             method: 'GET'
         })
 
@@ -101,7 +101,7 @@ export class MangaDex extends Source {
         for (const ch of json.data) {
             const attr = ch.attributes
             
-            // Saltiamo i capitoli esterni (che farebbero crashare l'app)
+            // Filtro anti-crash per capitoli esterni/vuoti
             if (attr.pages === 0 || attr.externalUrl !== null) continue;
 
             const chapNum = parseFloat(attr.chapter) || 0
@@ -112,13 +112,9 @@ export class MangaDex extends Source {
             if (!name && attr.chapter) name = `Chapter ${attr.chapter}`
             if (!name) name = 'Oneshot'
 
-            // Aggiungi Lingua e Gruppo al titolo
-            const lang = attr.translatedLanguage === 'it' ? '🇮🇹' : '🇬🇧'
             const groupRel = ch.relationships.find((x: any) => x.type === 'scanlation_group')
             if (groupRel?.attributes?.name) {
-                name = `${lang} ${name} [${groupRel.attributes.name}]`
-            } else {
-                name = `${lang} ${name}`
+                name += ` [${groupRel.attributes.name}]`
             }
 
             chapters.push(App.createChapter({
@@ -127,7 +123,7 @@ export class MangaDex extends Source {
                 chapNum: chapNum,
                 volume: volNum,
                 time: new Date(attr.publishAt),
-                langCode: attr.translatedLanguage 
+                langCode: 'en'
             }))
         }
 
@@ -173,9 +169,8 @@ export class MangaDex extends Source {
         const limit = 20
         const offset = page * limit
 
-        // FIX: Aggiunto supporto IT e tutti i content rating
         const request = App.createRequest({
-            url: `${MD_API}/manga?limit=${limit}&offset=${offset}&title=${encodeURIComponent(query.title ?? '')}&includes[]=cover_art&availableTranslatedLanguage[]=it&availableTranslatedLanguage[]=en&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
+            url: `${MD_API}/manga?limit=${limit}&offset=${offset}&title=${encodeURIComponent(query.title ?? '')}&includes[]=cover_art&availableTranslatedLanguage[]=en&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
             method: 'GET'
         })
 
@@ -210,14 +205,13 @@ export class MangaDex extends Source {
         const popularSection = App.createHomeSection({ id: 'popular', title: 'Popular Titles', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
         const latestSection = App.createHomeSection({ id: 'latest', title: 'Latest Updates', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
 
-        // FIX: Aggiunto supporto IT e rating
         const popRequest = App.createRequest({
-            url: `${MD_API}/manga?limit=10&includes[]=cover_art&order[followedCount]=desc&availableTranslatedLanguage[]=it&availableTranslatedLanguage[]=en&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
+            url: `${MD_API}/manga?limit=10&includes[]=cover_art&order[followedCount]=desc&availableTranslatedLanguage[]=en&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
             method: 'GET'
         })
         
         const latRequest = App.createRequest({
-            url: `${MD_API}/manga?limit=10&includes[]=cover_art&order[updatedAt]=desc&availableTranslatedLanguage[]=it&availableTranslatedLanguage[]=en&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
+            url: `${MD_API}/manga?limit=10&includes[]=cover_art&order[updatedAt]=desc&availableTranslatedLanguage[]=en&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
             method: 'GET'
         })
 
@@ -261,9 +255,8 @@ export class MangaDex extends Source {
         if (homepageSectionId === 'popular') order = '&order[followedCount]=desc'
         else order = '&order[updatedAt]=desc'
 
-        // FIX: Aggiunto supporto IT e rating
         const request = App.createRequest({
-            url: `${MD_API}/manga?limit=${limit}&offset=${offset}&includes[]=cover_art&availableTranslatedLanguage[]=it&availableTranslatedLanguage[]=en&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic${order}`,
+            url: `${MD_API}/manga?limit=${limit}&offset=${offset}&includes[]=cover_art&availableTranslatedLanguage[]=en&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic${order}`,
             method: 'GET'
         })
 
