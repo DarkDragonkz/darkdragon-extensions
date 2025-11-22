@@ -893,11 +893,12 @@ var _Sources = (() => {
   // src/MangaParkIT/MangaParkIT.ts
   var MP_DOMAIN = "https://mangapark.io";
   var MangaParkITInfo = {
-    version: "1.0.0",
+    version: "1.0.1",
     name: "MangaPark IT",
     description: "Estensione per MangaPark (Solo Italiano)",
-    author: "NmN",
-    authorWebsite: "http://github.com/pandeynmm",
+    author: "DarkDragonkz",
+    // <--- AGGIORNATO: Nome autore corretto
+    authorWebsite: "http://github.com/DarkDragonkz",
     icon: "icon.png",
     contentRating: import_types2.ContentRating.EVERYONE,
     language: "it",
@@ -906,7 +907,6 @@ var _Sources = (() => {
       {
         text: "Italian \u{1F1EE}\u{1F1F9}",
         type: import_types2.BadgeColor.RED
-        // Colore per l'Italia
       }
     ],
     intents: import_types2.SourceIntents.MANGA_CHAPTERS | import_types2.SourceIntents.HOMEPAGE_SECTIONS | import_types2.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
@@ -997,10 +997,10 @@ var _Sources = (() => {
       const $latest = this.cheerio.load(responseLatest.data);
       const popularManga = this.parser.parseSearchResults($popular);
       const latestManga = this.parser.parseSearchResults($latest);
-      const sectionPopular = App.createHomeSection({ id: "popular", title: "Popolari (IT)", containsMoreItems: true, type: HomeSectionType.singleRowNormal });
+      const sectionPopular = App.createHomeSection({ id: "popular", title: "Popolari (IT)", containsMoreItems: true, type: import_types2.HomeSectionType.singleRowNormal });
       sectionPopular.items = popularManga;
       sectionCallback(sectionPopular);
-      const sectionLatest = App.createHomeSection({ id: "latest", title: "Recenti (IT)", containsMoreItems: true, type: HomeSectionType.singleRowNormal });
+      const sectionLatest = App.createHomeSection({ id: "latest", title: "Recenti (IT)", containsMoreItems: true, type: import_types2.HomeSectionType.singleRowNormal });
       sectionLatest.items = latestManga;
       sectionCallback(sectionLatest);
     }

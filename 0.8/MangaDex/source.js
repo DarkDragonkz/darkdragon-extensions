@@ -734,7 +734,7 @@ var _Sources = (() => {
     version: "2.2.2",
     name: "MangaDex",
     icon: "icon.png",
-    author: "DarkDragonkzz",
+    author: "DarkDragonkz",
     description: "Extension for MangaDex (English)",
     contentRating: import_types.ContentRating.MATURE,
     websiteBaseURL: "https://mangadex.org",
