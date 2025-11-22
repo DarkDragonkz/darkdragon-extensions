@@ -25,7 +25,7 @@ export const MangaDexInfo: SourceInfo = {
     version: '2.2.2',
     name: 'MangaDex',
     icon: 'icon.png',
-    author: 'DarkDragonkzz',
+    author: 'DarkDragonkz',
     description: 'Extension for MangaDex (English)',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: 'https://mangadex.org',
