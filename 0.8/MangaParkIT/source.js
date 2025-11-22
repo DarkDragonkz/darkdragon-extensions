@@ -751,19 +751,22 @@ var _Sources = (() => {
       return time;
     }
     parseMangaDetails($, mangaId) {
-      const title = $("h3 a").first().text().trim() || $("h1").text().trim() || "Unknown";
-      let image = $("img").attr("src") || "";
+      let title = $("h3.text-lg.font-bold a").first().text().trim();
+      if (!title) title = $("h3.text-2xl.font-bold a").first().text().trim();
+      if (!title) title = $("h1").text().trim() || "Unknown";
+      let image = $(".w-24 img, .w-52 img").first().attr("src") || "";
       if (image.startsWith("/")) image = "https://mangapark.io" + image;
-      const author = $(".opacity-80 a").first().text().trim() || "Unknown";
-      const desc = $(".limit-height-body").text().trim() || "No description available";
+      if (!image) image = "https://paperback.moe/icons/logo-alt.svg";
+      const author = $('a[href*="/search?word="]').first().text().trim() || "Unknown";
+      let desc = $(".limit-html-p").text().trim();
+      if (!desc) desc = $('meta[name="description"]').attr("content") || "";
       const status = "Ongoing";
       const arrayTags = [];
-      $(".opacity-70 span, .genres a").each((_, el) => {
+      const tagElements = $(".opacity-70 span, .genres a").toArray();
+      for (const el of tagElements) {
         const label = $(el).text().trim().replace(/,$/, "");
-        if (label) {
-          arrayTags.push(App.createTag({ id: label, label }));
-        }
-      });
+        if (label && label.length > 1) arrayTags.push(App.createTag({ id: label, label }));
+      }
       const tagSections = [
         App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })
       ];
@@ -782,61 +785,77 @@ var _Sources = (() => {
     }
     parseChapters($, mangaId) {
       const chapters = [];
-      $('a[href*="/chapter/"]').each((_, obj) => {
-        const link = $(obj);
+      const chapterList = $('div[data-name="chapter-list"] .flex.border-b, div[data-name="chapter-list"] .px-2').toArray();
+      for (const element of chapterList) {
+        const row = $(element);
+        const link = row.find("a").first();
         const href = link.attr("href");
-        const id = href?.split("/").pop() || href;
-        if (!id) return;
+        if (!href || !href.includes(mangaId)) continue;
+        const parts = href.split("/");
+        const chapterId = parts.pop();
+        if (!chapterId) continue;
         const title = link.text().trim();
-        const timeStr = link.find("time").text().trim();
-        const chapNumMatch = title.match(/(\d+(\.\d+)?)/);
-        const chapNum = chapNumMatch ? parseFloat(chapNumMatch[0]) : 0;
+        const timeStr = row.find("time").text().trim();
+        let chapNum = 0;
+        const chapNumMatch = title.match(/(?:ch|chapter|episode|c)(?:\.|apters?|\s)*\s*(\d+(\.\d+)?)/i);
+        if (chapNumMatch && chapNumMatch[1]) {
+          chapNum = parseFloat(chapNumMatch[1]);
+        } else {
+          const simpleNums = title.match(/(\d+(\.\d+)?)/g);
+          if (simpleNums && simpleNums.length > 0) {
+            chapNum = parseFloat(simpleNums[simpleNums.length - 1] ?? "0");
+          }
+        }
         chapters.push(App.createChapter({
-          id,
+          id: chapterId,
           name: title,
           chapNum,
           time: this.convertTime(timeStr),
           langCode: "it"
         }));
-      });
+      }
       return chapters;
     }
     parseChapterDetails($, mangaId, chapterId) {
       const pages = [];
-      let foundInScript = false;
-      $("script").each((_, script) => {
-        if (foundInScript) return;
+      const scripts = $("script").toArray();
+      for (const script of scripts) {
         const content = $(script).html();
-        if (!content) return;
-        const matches = content.match(/"(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp))"/gi);
-        if (matches && matches.length > 0) {
-          for (const m of matches) {
-            pages.push(m.replace(/"/g, ""));
+        if (content && (content.includes("srcs") || content.includes("http"))) {
+          const matches = content.match(/\"(https?:\/\/[^\"]+\.(?:jpg|jpeg|png|webp))\"/gi);
+          if (matches) {
+            for (const m of matches) {
+              const url = m.replace(/"/g, "").replace(/\\/g, "");
+              pages.push(url);
+            }
+            if (pages.length > 0) break;
           }
-          foundInScript = true;
         }
-      });
-      if (pages.length === 0) {
-        $('img[loading="lazy"], img.w-full').each((_, img) => {
-          let src = $(img).attr("src");
+      }
+      if (pages.length == 0) {
+        const imgs = $('img[loading="lazy"], .main img').toArray();
+        for (const img of imgs) {
+          let src = $(img).attr("src") || $(img).attr("data-src");
           if (src && src.startsWith("http")) pages.push(src);
-        });
+        }
       }
       return App.createChapterDetails({
         id: chapterId,
         mangaId,
-        pages
+        pages: [...new Set(pages)]
+        // Rimuovi duplicati
       });
     }
     parseSearchResults($) {
       const results = [];
-      $(".flex.border-b.border-b-base-200").each((_, item) => {
+      const items = $(".flex.border-b.border-b-base-200").toArray();
+      for (const item of items) {
         const titleLink = $("h3.font-bold a", item);
         const title = titleLink.text().trim();
         const id = titleLink.attr("href")?.split("/").pop();
         let image = $("img", item).attr("src") || "";
         if (image.startsWith("/")) image = "https://mangapark.io" + image;
-        const subtitle = $("div.flex.flex-nowrap.justify-between a", item).first().text().trim();
+        const subtitle = $("div.flex.justify-between a", item).first().text().trim();
         if (id && title) {
           results.push(App.createPartialSourceManga({
             mangaId: id,
@@ -845,7 +864,7 @@ var _Sources = (() => {
             subtitle
           }));
         }
-      });
+      }
       return results;
     }
     parseHomeSections($, sectionCallback) {
