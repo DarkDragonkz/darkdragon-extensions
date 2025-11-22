@@ -732,7 +732,7 @@ var _Sources = (() => {
   // src/MangaWorld/parser.ts
   var import_types = __toESM(require_lib());
   var Parser = class {
-    // HELPER: Corregge i titoli duplicati (es "One PieceOne Piece" -> "One Piece")
+    // HELPER: Pulisce i titoli duplicati (es "One PieceOne Piece" -> "One Piece")
     cleanTitle(title) {
       if (!title) return "Unknown";
       title = title.trim();
@@ -744,7 +744,7 @@ var _Sources = (() => {
       }
       return title;
     }
-    // HELPER: Gestione Immagini
+    // HELPER: Gestione Immagini sicura
     getImage(element, baseUrl) {
       let src = element.attr("src") || element.attr("data-src") || element.attr("data-original");
       if (!src || src.includes("loading") || src.startsWith("data:")) {
@@ -756,7 +756,7 @@ var _Sources = (() => {
       return src;
     }
     parseMangaDetails($, mangaId) {
-      let title = $(".name.bigger").text().trim();
+      let title = $(".name.bigger").text().trim() ?? "";
       if (!title) title = $("h1").first().text().trim();
       title = this.cleanTitle(title);
       const imgElement = $(".thumb.mb-3.text-center img");
@@ -814,7 +814,6 @@ var _Sources = (() => {
         if (chapNumMatch && chapNumMatch[1]) chapNum = parseFloat(chapNumMatch[1]);
         chapters.push(App.createChapter({
           id: href,
-          // Usa l'href come ID univoco
           name: title,
           chapNum,
           time: this.convertTime(dateText),
@@ -825,14 +824,16 @@ var _Sources = (() => {
     }
     parseChapterDetails($, mangaId, chapterId) {
       const pages = [];
-      $("#page img").each((_, img) => {
-        let src = $(img).attr("src") || $(img).attr("data-src");
+      const images = $("#page img, .read-content img, .reading-content img").toArray();
+      for (const img of images) {
+        const $img = $(img);
+        let src = $img.attr("src") || $img.attr("data-src") || $img.attr("data-original");
         if (src && !src.includes("loading")) {
           src = src.trim();
           if (src.startsWith("/")) src = "https://www.mangaworld.mx" + src;
           pages.push(src);
         }
-      });
+      }
       return App.createChapterDetails({
         id: chapterId,
         mangaId,
@@ -850,8 +851,7 @@ var _Sources = (() => {
         const href = link.attr("href");
         const id = href?.split("/").pop();
         const image = this.getImage($("img", item), baseUrl);
-        let title = link.attr("title");
-        if (!title) title = $(".name", item).text().trim();
+        let title = link.attr("title") || $(".name", item).text().trim() || "Unknown";
         title = this.cleanTitle(title);
         if (id) {
           hotItems.push(App.createPartialSourceManga({
@@ -870,8 +870,7 @@ var _Sources = (() => {
         const href = link.attr("href");
         const id = href?.split("/").pop();
         const image = this.getImage($("img", item), baseUrl);
-        let title = link.attr("title");
-        if (!title) title = $(".name a", item).text().trim();
+        let title = link.attr("title") || $(".name a", item).text().trim() || "Unknown";
         title = this.cleanTitle(title);
         const chapter = $(".chapter-number", item).first().text().trim();
         if (id) {
@@ -894,8 +893,7 @@ var _Sources = (() => {
         const href = link.attr("href");
         const id = href?.split("/").pop();
         const image = this.getImage($("img", item), baseUrl);
-        let title = link.attr("title");
-        if (!title) title = $(".name a", item).text().trim();
+        let title = link.attr("title") || $(".name a", item).text().trim() || "Unknown";
         title = this.cleanTitle(title);
         if (id) {
           results.push(App.createPartialSourceManga({
@@ -916,8 +914,7 @@ var _Sources = (() => {
         const href = link.attr("href");
         const id = href?.split("/").pop();
         const image = this.getImage($("img", item), "https://www.mangaworld.mx");
-        let title = link.attr("title");
-        if (!title) title = $(".name a", item).text().trim();
+        let title = link.attr("title") || $(".name a", item).text().trim() || "Unknown";
         title = this.cleanTitle(title);
         if (id) {
           results.push(App.createPartialSourceManga({
