@@ -731,7 +731,7 @@ var _Sources = (() => {
   var MD_API = "https://api.mangadex.org";
   var MD_UPLOADS = "https://uploads.mangadex.org";
   var MangaDexInfo = {
-    version: "2.0.5",
+    version: "2.0.6",
     // Bump version
     name: "MangaDex (EN)",
     icon: "icon.png",
@@ -753,6 +753,7 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 4,
+        // Abbassato a 4 per stabilità
         requestTimeout: 2e4
       });
     }
@@ -909,8 +910,9 @@ ${desc}`;
         featured: `${MD_API}/manga?${baseParams}&order[followedCount]=desc&createdAtSince=${new Date(Date.now() - 2592e6).toISOString().slice(0, 19)}`,
         self_published: `${MD_API}/manga?${baseParams}&originalLanguage[]=en&order[createdAt]=desc`
       };
-      const promises = Object.entries(urls).map(async ([sectionId, url]) => {
+      for (const sectionId of Object.keys(urls)) {
         try {
+          const url = urls[sectionId];
           const request = App.createRequest({ url, method: "GET" });
           const response = await this.requestManager.schedule(request, 1);
           const data = JSON.parse(response.data ?? "{}");
@@ -928,8 +930,7 @@ ${desc}`;
         } catch (e) {
           console.error(`Error fetching section ${sectionId}: ${e}`);
         }
-      });
-      await Promise.all(promises);
+      }
     }
     async getViewMoreItems(homepageSectionId, metadata) {
       const limit = 20;
