@@ -11,7 +11,7 @@ import {
 
 export class Parser {
 
-    // HELPER: Corregge i titoli duplicati (es "One PieceOne Piece" -> "One Piece")
+    // HELPER: Pulisce i titoli duplicati (es "One PieceOne Piece" -> "One Piece")
     private cleanTitle(title: string): string {
         if (!title) return 'Unknown'
         title = title.trim()
@@ -25,7 +25,7 @@ export class Parser {
         return title
     }
 
-    // HELPER: Gestione Immagini
+    // HELPER: Gestione Immagini sicura
     private getImage(element: any, baseUrl: string): string {
         let src = element.attr('src') || element.attr('data-src') || element.attr('data-original')
         if (!src || src.includes('loading') || src.startsWith('data:')) {
@@ -38,8 +38,7 @@ export class Parser {
     }
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
-        // Titolo: Prova attr 'title', altrimenti testo con pulizia
-        let title = $('.name.bigger').text().trim()
+        let title = $('.name.bigger').text().trim() ?? ''
         if (!title) title = $('h1').first().text().trim()
         title = this.cleanTitle(title)
 
@@ -92,19 +91,16 @@ export class Parser {
 
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
-        // Selettore standard per MW
         const arrChapters = $('.chapter').toArray()
         
         for (const item of arrChapters) {
             const link = $('a', item).first()
             const href = link.attr('href')
             
-            // Importante: MW a volte richiede l'URL completo o relativo come ID
             if (!href) continue
 
             let title = link.attr('title') ?? link.text().trim()
-            // Pulizia titolo capitolo se necessario
-            title = title.replace(mangaId, '').trim()
+            title = title.replace(mangaId, '').trim() // Pulizia extra
             
             const dateText = $('.chapter-release-date i', item).text().trim()
             
@@ -113,7 +109,7 @@ export class Parser {
             if (chapNumMatch && chapNumMatch[1]) chapNum = parseFloat(chapNumMatch[1])
 
             chapters.push(App.createChapter({
-                id: href, // Usa l'href come ID univoco
+                id: href, 
                 name: title,
                 chapNum: chapNum,
                 time: this.convertTime(dateText),
@@ -126,14 +122,19 @@ export class Parser {
     parseChapterDetails($: any, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
         
-        $('#page img').each((_: any, img: any) => {
-             let src = $(img).attr('src') || $(img).attr('data-src')
+        // FIX: Selettore più ampio e ciclo FOR per evitare problemi con .each
+        const images = $('#page img, .read-content img, .reading-content img').toArray()
+
+        for (const img of images) {
+             const $img = $(img)
+             let src = $img.attr('src') || $img.attr('data-src') || $img.attr('data-original')
+             
              if (src && !src.includes('loading')) {
                  src = src.trim()
                  if (src.startsWith('/')) src = 'https://www.mangaworld.mx' + src
                  pages.push(src)
              }
-        })
+        }
         
         return App.createChapterDetails({
             id: chapterId,
@@ -149,7 +150,7 @@ export class Parser {
         const hotItems: PartialSourceManga[] = []
         const latestItems: PartialSourceManga[] = []
 
-        // HOT (Manga del mese)
+        // HOT
         const hotArr = $('.owl-carousel .entry').toArray()
         for (const item of hotArr) {
             const link = $('a', item).first()
@@ -157,9 +158,7 @@ export class Parser {
             const id = href?.split('/').pop()
             const image = this.getImage($('img', item), baseUrl)
             
-            // Titolo con pulizia
-            let title = link.attr('title')
-            if (!title) title = $('.name', item).text().trim()
+            let title = link.attr('title') || $('.name', item).text().trim() || 'Unknown'
             title = this.cleanTitle(title)
             
             if (id) {
@@ -182,8 +181,7 @@ export class Parser {
             const id = href?.split('/').pop()
             const image = this.getImage($('img', item), baseUrl)
             
-            let title = link.attr('title') 
-            if (!title) title = $('.name a', item).text().trim()
+            let title = link.attr('title') || $('.name a', item).text().trim() || 'Unknown'
             title = this.cleanTitle(title)
 
             const chapter = $('.chapter-number', item).first().text().trim()
@@ -211,8 +209,7 @@ export class Parser {
             const id = href?.split('/').pop()
             const image = this.getImage($('img', item), baseUrl)
             
-            let title = link.attr('title')
-            if (!title) title = $('.name a', item).text().trim()
+            let title = link.attr('title') || $('.name a', item).text().trim() || 'Unknown'
             title = this.cleanTitle(title)
 
             if (id) {
@@ -237,8 +234,7 @@ export class Parser {
             const id = href?.split('/').pop()
             const image = this.getImage($('img', item), 'https://www.mangaworld.mx')
             
-            let title = link.attr('title')
-            if (!title) title = $('.name a', item).text().trim()
+            let title = link.attr('title') || $('.name a', item).text().trim() || 'Unknown'
             title = this.cleanTitle(title)
 
             if (id) {
