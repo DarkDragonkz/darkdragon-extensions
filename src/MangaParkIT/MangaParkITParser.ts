@@ -31,22 +31,27 @@ export class MangaParkITParser {
     }
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
-        const title = $('h3 a').first().text().trim() || $('h1').text().trim() || 'Unknown'
+        let title = $('h3.text-lg.font-bold a').first().text().trim()
+        if (!title) title = $('h3.text-2xl.font-bold a').first().text().trim()
+        if (!title) title = $('h1').text().trim() || 'Unknown'
         
-        let image = $('img').attr('src') || ''
+        let image = $('.w-24 img, .w-52 img').first().attr('src') || ''
         if (image.startsWith('/')) image = 'https://mangapark.io' + image
+        if (!image) image = 'https://paperback.moe/icons/logo-alt.svg'
 
-        const author = $('.opacity-80 a').first().text().trim() || 'Unknown'
-        const desc = $('.limit-height-body').text().trim() || 'No description available'
+        const author = $('a[href*="/search?word="]').first().text().trim() || 'Unknown'
+        
+        let desc = $('.limit-html-p').text().trim()
+        if (!desc) desc = $('meta[name="description"]').attr('content') || ''
+        
         const status = 'Ongoing' 
 
         const arrayTags: Tag[] = []
-        $('.opacity-70 span, .genres a').each((_: any, el: any) => {
+        const tagElements = $('.opacity-70 span, .genres a').toArray()
+        for (const el of tagElements) {
             const label = $(el).text().trim().replace(/,$/, '')
-            if (label) {
-                arrayTags.push(App.createTag({ id: label, label: label }))
-            }
-        })
+            if (label && label.length > 1) arrayTags.push(App.createTag({ id: label, label: label }))
+        }
         
         const tagSections: TagSection[] = [
             App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })
@@ -69,72 +74,94 @@ export class MangaParkITParser {
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
         
-        $('a[href*="/chapter/"]').each((_: any, obj: any) => {
-            const link = $(obj)
+        // FIX: Usiamo .toArray() e ciclo for per stabilità
+        const chapterList = $('div[data-name="chapter-list"] .flex.border-b, div[data-name="chapter-list"] .px-2').toArray()
+        
+        for (const element of chapterList) {
+            const row = $(element)
+            const link = row.find('a').first()
             const href = link.attr('href')
-            const id = href?.split('/').pop() || href
+            
+            // L'URL deve contenere l'ID del manga per essere valido
+            if (!href || !href.includes(mangaId)) continue
 
-            if (!id) return
+            // Estrai ID capitolo (es: 8314523-vol-3-ch-18)
+            const parts = href.split('/')
+            const chapterId = parts.pop() 
+
+            if (!chapterId) continue
 
             const title = link.text().trim()
-            const timeStr = link.find('time').text().trim()
+            const timeStr = row.find('time').text().trim()
             
-            const chapNumMatch = title.match(/(\d+(\.\d+)?)/)
-            const chapNum = chapNumMatch ? parseFloat(chapNumMatch[0]) : 0
+            // FIX: Parsing numero capitolo corretto (prendiamo il gruppo 1 della regex)
+            let chapNum = 0
+            const chapNumMatch = title.match(/(?:ch|chapter|episode|c)(?:\.|apters?|\s)*\s*(\d+(\.\d+)?)/i)
+            if (chapNumMatch && chapNumMatch[1]) {
+                chapNum = parseFloat(chapNumMatch[1])
+            } else {
+                // Fallback: cerca l'ultimo numero nel titolo
+                const simpleNums = title.match(/(\d+(\.\d+)?)/g)
+                if (simpleNums && simpleNums.length > 0) {
+                    chapNum = parseFloat(simpleNums[simpleNums.length - 1] ?? '0')
+                }
+            }
 
             chapters.push(App.createChapter({
-                id: id,
+                id: chapterId,
                 name: title,
                 chapNum: chapNum,
                 time: this.convertTime(timeStr),
                 langCode: 'it'
             }))
-        })
+        }
 
         return chapters
     }
 
     parseChapterDetails($: any, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
-        let foundInScript = false
-
-        // 1. Metodo Script JSON (Nuovo MangaPark)
-        // Cerca qualsiasi script che contenga URL di immagini in un array
-        $('script').each((_: any, script: any) => {
-            if (foundInScript) return
+        
+        // Cerca URL immagini negli script JSON (Metodo principale per MP v5)
+        const scripts = $('script').toArray()
+        for (const script of scripts) {
             const content = $(script).html()
-            if (!content) return
-
-            // Cerca array di stringhe che iniziano con http e finiscono con estensioni immagine
-            const matches = content.match(/"(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp))"/gi)
-            if (matches && matches.length > 0) {
-                for (const m of matches) {
-                    // Rimuovi le virgolette
-                    pages.push(m.replace(/"/g, ''))
+            if (content && (content.includes('srcs') || content.includes('http'))) {
+                // Cerca array di immagini o URL singoli
+                const matches = content.match(/\"(https?:\/\/[^\"]+\.(?:jpg|jpeg|png|webp))\"/gi)
+                if (matches) {
+                    for (const m of matches) {
+                         const url = m.replace(/"/g, '').replace(/\\/g, '')
+                         pages.push(url)
+                    }
+                    // Se ne troviamo, ci fermiamo
+                    if (pages.length > 0) break
                 }
-                foundInScript = true
             }
-        })
+        }
 
-        // 2. Fallback DOM
-        if (pages.length === 0) {
-             $('img[loading="lazy"], img.w-full').each((_: any, img: any) => {
-                 let src = $(img).attr('src')
+        // Fallback DOM: Cerca tag img lazy loaded
+        if (pages.length == 0) {
+             const imgs = $('img[loading="lazy"], .main img').toArray()
+             for (const img of imgs) {
+                 let src = $(img).attr('src') || $(img).attr('data-src')
                  if (src && src.startsWith('http')) pages.push(src)
-             })
+             }
         }
 
         return App.createChapterDetails({
             id: chapterId,
             mangaId: mangaId,
-            pages: pages
+            pages: [...new Set(pages)] // Rimuovi duplicati
         })
     }
 
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         
-        $('.flex.border-b.border-b-base-200').each((_: any, item: any) => {
+        const items = $('.flex.border-b.border-b-base-200').toArray()
+        
+        for (const item of items) {
             const titleLink = $('h3.font-bold a', item)
             const title = titleLink.text().trim()
             const id = titleLink.attr('href')?.split('/').pop()
@@ -142,7 +169,7 @@ export class MangaParkITParser {
             let image = $('img', item).attr('src') || ''
             if (image.startsWith('/')) image = 'https://mangapark.io' + image
 
-            const subtitle = $('div.flex.flex-nowrap.justify-between a', item).first().text().trim()
+            const subtitle = $('div.flex.justify-between a', item).first().text().trim()
 
             if (id && title) {
                 results.push(App.createPartialSourceManga({
@@ -152,7 +179,7 @@ export class MangaParkITParser {
                     subtitle: subtitle
                 }))
             }
-        })
+        }
         
         return results
     }
