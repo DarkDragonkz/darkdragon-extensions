@@ -731,7 +731,8 @@ var _Sources = (() => {
   var MD_API = "https://api.mangadex.org";
   var MD_UPLOADS = "https://uploads.mangadex.org";
   var MangaDexInfo = {
-    version: "2.1.5",
+    version: "2.1.6",
+    // Bump version
     name: "MangaDex",
     icon: "icon.png",
     author: "DarkDragonkzz",
@@ -801,6 +802,7 @@ var _Sources = (() => {
       const chapters = [];
       for (const ch of json.data) {
         const attr = ch.attributes;
+        if (attr.pages === 0 || attr.externalUrl !== null) continue;
         const chapNum = parseFloat(attr.chapter) || 0;
         const volNum = parseFloat(attr.volume) || void 0;
         let name = "";
@@ -828,7 +830,13 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
+      if (response.status !== 200) {
+        throw new Error(`MangaDex API Error: ${response.status}`);
+      }
       const json = JSON.parse(response.data);
+      if (json.result !== "ok" || !json.baseUrl || !json.chapter?.data) {
+        throw new Error("Failed to load chapter images (might be external or locked)");
+      }
       const baseUrl = json.baseUrl;
       const hash = json.chapter.hash;
       const files = json.chapter.data;
