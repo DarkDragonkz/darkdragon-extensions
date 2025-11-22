@@ -732,18 +732,17 @@ var _Sources = (() => {
   // src/MangaParkIT/MangaParkITParser.ts
   var import_types = __toESM(require_lib());
   var MangaParkITParser = class {
-    // Helper per convertire le date relative (es. "2 days ago")
     convertTime(timeAgo) {
       let time;
       let trimmed = Number((/\d*/.exec(timeAgo) ?? [])[0]);
       trimmed = trimmed === 0 && timeAgo.includes("a") ? 1 : trimmed;
       if (timeAgo.includes("min")) {
         time = new Date(Date.now() - trimmed * 6e4);
-      } else if (timeAgo.includes("hour")) {
+      } else if (timeAgo.includes("hour") || timeAgo.includes("ore")) {
         time = new Date(Date.now() - trimmed * 36e5);
-      } else if (timeAgo.includes("day")) {
+      } else if (timeAgo.includes("day") || timeAgo.includes("giorn")) {
         time = new Date(Date.now() - trimmed * 864e5);
-      } else if (timeAgo.includes("year")) {
+      } else if (timeAgo.includes("year") || timeAgo.includes("anni")) {
         time = new Date(Date.now() - trimmed * 31556952e3);
       } else {
         time = new Date(timeAgo);
@@ -752,18 +751,20 @@ var _Sources = (() => {
       return time;
     }
     parseMangaDetails($, mangaId) {
-      const title = $("h3 a").first().text().trim() || $("h1").text().trim() || "Unknown";
-      let image = $("img").attr("src") || "";
+      let title = $("h3.text-lg.font-bold a").first().text().trim();
+      if (!title) title = $("h3.text-2xl.font-bold a").first().text().trim();
+      if (!title) title = $("h1").text().trim() || "Unknown";
+      let image = $(".w-24 img, .w-52 img").first().attr("src") || "";
       if (image.startsWith("/")) image = "https://mangapark.io" + image;
-      const author = $(".opacity-80 a").first().text().trim() || "Unknown";
-      const desc = $(".limit-height-body").text().trim() || "No description available";
+      if (!image) image = "https://paperback.moe/icons/logo-alt.svg";
+      const author = $('a[href*="/search?word="]').first().text().trim() || "Unknown";
+      let desc = $(".limit-html-p").text().trim();
+      if (!desc) desc = $('meta[name="description"]').attr("content") || "";
       const status = "Ongoing";
       const arrayTags = [];
       $(".opacity-70 span, .genres a").each((_, el) => {
         const label = $(el).text().trim().replace(/,$/, "");
-        if (label) {
-          arrayTags.push(App.createTag({ id: label, label }));
-        }
+        if (label && label.length > 1) arrayTags.push(App.createTag({ id: label, label }));
       });
       const tagSections = [
         App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })
@@ -783,17 +784,29 @@ var _Sources = (() => {
     }
     parseChapters($, mangaId) {
       const chapters = [];
-      $('a[href*="/chapter/"]').each((_, obj) => {
-        const link = $(obj);
+      const chapterList = $('div[data-name="chapter-list"] .flex.border-b');
+      chapterList.each((_, element) => {
+        const row = $(element);
+        const link = row.find("a").first();
         const href = link.attr("href");
-        const id = href?.split("/").pop() || href;
-        if (!id) return;
+        if (!href) return;
+        const parts = href.split("/");
+        const chapterId = parts.pop();
+        if (!chapterId) return;
         const title = link.text().trim();
-        const timeStr = link.find("time").text().trim();
-        const chapNumMatch = title.match(/(\d+(\.\d+)?)/);
-        const chapNum = chapNumMatch ? parseFloat(chapNumMatch[0]) : 0;
+        const timeStr = row.find("time").text().trim();
+        const chapNumMatch = title.match(/(?:ch|chapter|episode|c)(?:\.|apters?|\s)*\s*(\d+(\.\d+)?)/i);
+        let chapNum = 0;
+        if (chapNumMatch) {
+          chapNum = parseFloat(chapNumMatch[1] ?? "0");
+        } else {
+          const simpleNums = title.match(/(\d+(\.\d+)?)/g);
+          if (simpleNums && simpleNums.length > 0) {
+            chapNum = parseFloat(simpleNums[simpleNums.length - 1] ?? "0");
+          }
+        }
         chapters.push(App.createChapter({
-          id,
+          id: chapterId,
           name: title,
           chapNum,
           time: this.convertTime(timeStr),
@@ -819,9 +832,9 @@ var _Sources = (() => {
         }
       }
       if (pages.length == 0) {
-        $('img[loading="lazy"]').each((_, img) => {
+        $('img.loading-lazy, img[loading="lazy"]').each((_, img) => {
           let src = $(img).attr("src");
-          if (src) pages.push(src);
+          if (src && src.startsWith("http")) pages.push(src);
         });
       }
       return App.createChapterDetails({
@@ -838,7 +851,7 @@ var _Sources = (() => {
         const id = titleLink.attr("href")?.split("/").pop();
         let image = $("img", item).attr("src") || "";
         if (image.startsWith("/")) image = "https://mangapark.io" + image;
-        const subtitle = $("div.flex.flex-nowrap.justify-between a", item).first().text().trim();
+        const subtitle = $("div.flex.justify-between a", item).first().text().trim();
         if (id && title) {
           results.push(App.createPartialSourceManga({
             mangaId: id,
@@ -856,6 +869,8 @@ var _Sources = (() => {
       const mangas = this.parseSearchResults($);
       popularSection.items = mangas;
       sectionCallback(popularSection);
+      latestSection.items = mangas;
+      sectionCallback(latestSection);
     }
   };
 
