@@ -731,7 +731,7 @@ var _Sources = (() => {
   var MD_API = "https://api.mangadex.org";
   var MD_UPLOADS = "https://uploads.mangadex.org";
   var MangaDexInfo = {
-    version: "2.2.1",
+    version: "2.2.2",
     name: "MangaDex",
     icon: "icon.png",
     author: "DarkDragonkzz",
