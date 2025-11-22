@@ -931,7 +931,7 @@ var _Sources = (() => {
   // src/MangaPark/MangaPark.ts
   var MP_DOMAIN2 = "https://mangapark.net";
   var MangaParkInfo = {
-    version: "1.0.5",
+    version: "1.0.6",
     // Bump version
     name: "MangaPark",
     icon: "icon.png",
