@@ -761,8 +761,13 @@ var _Sources = (() => {
       const arrayTags = [];
       $(".opacity-70 span, .genres a").each((_, el) => {
         const label = $(el).text().trim().replace(/,$/, "");
-        if (label) arrayTags.push({ id: label, label });
+        if (label) {
+          arrayTags.push(App.createTag({ id: label, label }));
+        }
       });
+      const tagSections = [
+        App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })
+      ];
       return App.createSourceManga({
         id: mangaId,
         mangaInfo: App.createMangaInfo({
@@ -771,7 +776,7 @@ var _Sources = (() => {
           status,
           author,
           artist: "",
-          tags: [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })],
+          tags: tagSections,
           desc
         })
       });
