@@ -22,7 +22,7 @@ const MD_API = 'https://api.mangadex.org'
 const MD_UPLOADS = 'https://uploads.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '2.2.1',
+    version: '2.2.2',
     name: 'MangaDex',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
