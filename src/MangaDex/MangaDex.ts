@@ -22,7 +22,7 @@ const MD_API = 'https://api.mangadex.org'
 const MD_UPLOADS = 'https://uploads.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '2.0.3', // Aggiorna versione
+    version: '2.0.4',
     name: 'MangaDex (EN)',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -124,7 +124,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
                 title = 'Oneshot'
             }
 
-            // Warning per link esterni
             if (attr.externalUrl !== null || attr.pages === 0) {
                 title = `🚫 [External] ${title}`
             }
@@ -208,31 +207,28 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        // Definisci le sezioni
         const sections = [
             App.createHomeSection({ id: 'popular', title: 'Popular', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
             App.createHomeSection({ id: 'latest', title: 'Latest Updates', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
-            App.createHomeSection({ id: 'recommended', title: 'Recommended (Top Rated)', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
             App.createHomeSection({ id: 'recently_added', title: 'Recently Added', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
+            App.createHomeSection({ id: 'recommended', title: 'Recommended (Top Rated)', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
             App.createHomeSection({ id: 'featured', title: 'Featured (Monthly)', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
-            App.createHomeSection({ id: 'self_published', title: 'Self-Published (Originals)', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
+            App.createHomeSection({ id: 'self_published', title: 'Self-Published', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
         ]
 
-        // Invia le sezioni vuote per farle apparire subito
         for (const section of sections) {
             sectionCallback(section)
         }
 
-        // Parametri comuni
         const baseParams = 'limit=10&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&availableTranslatedLanguage[]=en'
 
-        // Esegui le richieste in parallelo
         const urls = {
             popular: `${MD_API}/manga?${baseParams}&order[followedCount]=desc`,
-            latest: `${MD_API}/manga?${baseParams}&order[readableAt]=desc`,
-            recommended: `${MD_API}/manga?${baseParams}&order[rating]=desc`,
+            // FIX: "latestUploadedChapter" è più affidabile per Latest Updates
+            latest: `${MD_API}/manga?${baseParams}&order[latestUploadedChapter]=desc`, 
             recently_added: `${MD_API}/manga?${baseParams}&order[createdAt]=desc`,
-            featured: `${MD_API}/manga?${baseParams}&order[followedCount]=desc&createdAtSince=${new Date(Date.now() - 2592000000).toISOString().slice(0, 19)}`, // Ultimo mese
+            recommended: `${MD_API}/manga?${baseParams}&order[rating]=desc`,
+            featured: `${MD_API}/manga?${baseParams}&order[followedCount]=desc&createdAtSince=${new Date(Date.now() - 2592000000).toISOString().slice(0, 19)}`,
             self_published: `${MD_API}/manga?${baseParams}&originalLanguage[]=en&order[createdAt]=desc`
         }
 
@@ -273,16 +269,16 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
                 url = `${MD_API}/manga?${baseParams}&order[followedCount]=desc`
                 break
             case 'latest':
-                url = `${MD_API}/manga?${baseParams}&order[readableAt]=desc`
-                break
-            case 'recommended':
-                url = `${MD_API}/manga?${baseParams}&order[rating]=desc`
+                // FIX: Usiamo latestUploadedChapter anche qui
+                url = `${MD_API}/manga?${baseParams}&order[latestUploadedChapter]=desc`
                 break
             case 'recently_added':
                 url = `${MD_API}/manga?${baseParams}&order[createdAt]=desc`
                 break
+            case 'recommended':
+                url = `${MD_API}/manga?${baseParams}&order[rating]=desc`
+                break
             case 'featured':
-                // Featured = Popolari dell'ultimo mese
                 url = `${MD_API}/manga?${baseParams}&order[followedCount]=desc&createdAtSince=${new Date(Date.now() - 2592000000).toISOString().slice(0, 19)}`
                 break
             case 'self_published':
@@ -309,7 +305,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         })
     }
 
-    // Helper per processare i risultati JSON ed evitare ripetizioni codice
     private processMangaResult(manga: any, targetArray: PartialSourceManga[]) {
         const attr = manga.attributes
         const title = attr.title.en ?? Object.values(attr.title)[0] ?? 'Unknown'
