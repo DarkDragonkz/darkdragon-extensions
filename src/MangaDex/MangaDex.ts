@@ -22,7 +22,7 @@ const MD_API = 'https://api.mangadex.org'
 const MD_UPLOADS = 'https://uploads.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '2.0.5', // Bump version
+    version: '2.0.6', // Bump version
     name: 'MangaDex (EN)',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -44,7 +44,7 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 4, 
+        requestsPerSecond: 4, // Abbassato a 4 per stabilità
         requestTimeout: 20000
     })
 
@@ -66,7 +66,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const title = attributes.title.en ?? Object.values(attributes.title)[0] ?? 'Unknown Title'
         let desc = attributes.description.en ?? Object.values(attributes.description)[0] ?? ''
 
-        // FIX: Avviso nella descrizione se non ci sono capitoli in inglese
         const availableLanguages = attributes.availableTranslatedLanguages || []
         if (!availableLanguages.includes('en')) {
             desc = `⚠️ [NO ENGLISH CHAPTERS AVAILABLE]\n\n${desc}`
@@ -130,7 +129,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
                 title = 'Oneshot'
             }
 
-            // Warning nel titolo del capitolo per link esterni
             if (attr.externalUrl !== null || attr.pages === 0) {
                 title = `🚫 [External] ${title}`
             }
@@ -189,7 +187,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const limit = 20
         const offset = metadata?.offset ?? 0
         
-        // Nota: La ricerca globale NON filtra per lingua, quindi usiamo il processMangaResult per segnalare quelli senza EN
         const url = `${MD_API}/manga?limit=${limit}&offset=${offset}&title=${encodeURIComponent(query.title ?? '')}&includes[]=cover_art&order[relevance]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`
         
         const request = App.createRequest({
@@ -224,6 +221,7 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
             App.createHomeSection({ id: 'self_published', title: 'Self-Published', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
         ]
 
+        // 1. Invia subito le sezioni vuote (UI immediata)
         for (const section of sections) {
             sectionCallback(section)
         }
@@ -239,9 +237,13 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
             self_published: `${MD_API}/manga?${baseParams}&originalLanguage[]=en&order[createdAt]=desc`
         }
 
-        const promises = Object.entries(urls).map(async ([sectionId, url]) => {
+        // 2. FIX: Caricamento SEQUENZIALE per evitare Timeout
+        for (const sectionId of Object.keys(urls)) {
             try {
+                const url = (urls as any)[sectionId]
                 const request = App.createRequest({ url: url, method: 'GET' })
+                
+                // Attendiamo ogni singola richiesta prima di procedere alla successiva
                 const response = await this.requestManager.schedule(request, 1)
                 const data = JSON.parse(response.data ?? '{}')
                 
@@ -259,10 +261,9 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
                 }
             } catch (e) {
                 console.error(`Error fetching section ${sectionId}: ${e}`)
+                // Continua con la prossima sezione anche se una fallisce
             }
-        })
-
-        await Promise.all(promises)
+        }
     }
     
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
@@ -319,8 +320,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const fileName = coverRel?.attributes?.fileName
         const image = fileName ? `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg` : 'https://paperback.moe/icons/logo-alt.svg'
 
-        // FIX: Controlla se la lingua inglese è disponibile
-        // Se 'en' non è nella lista, cambia il sottotitolo in "No EN Ch."
         let subtitle = attr.status
         const availableLanguages = attr.availableTranslatedLanguages || []
         if (!availableLanguages.includes('en')) {
