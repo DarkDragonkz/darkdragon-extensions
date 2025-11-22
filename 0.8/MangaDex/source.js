@@ -731,17 +731,17 @@ var _Sources = (() => {
   var MD_API = "https://api.mangadex.org";
   var MD_UPLOADS = "https://uploads.mangadex.org";
   var MangaDexInfo = {
-    version: "2.1.6",
-    // Bump version
+    version: "2.2.0",
+    // Major bump per il supporto Multi-Lingua
     name: "MangaDex",
     icon: "icon.png",
     author: "DarkDragonkzz",
-    description: "Extension for MangaDex (Official API)",
+    description: "Extension for MangaDex (IT + EN)",
     contentRating: import_types.ContentRating.MATURE,
     websiteBaseURL: "https://mangadex.org",
     sourceTags: [
       {
-        text: "Global",
+        text: "IT/EN",
         type: import_types.BadgeColor.BLUE
       }
     ],
@@ -767,8 +767,8 @@ var _Sources = (() => {
       const json = JSON.parse(response.data);
       const data = json.data;
       const attr = data.attributes;
-      const title = attr.title.en ?? Object.values(attr.title)[0] ?? "Unknown";
-      const desc = attr.description.en ?? Object.values(attr.description)[0] ?? "No description";
+      const title = attr.title.it ?? attr.title.en ?? Object.values(attr.title)[0] ?? "Unknown";
+      const desc = attr.description.it ?? attr.description.en ?? Object.values(attr.description)[0] ?? "No description";
       let image = "https://paperback.moe/icons/logo-alt.svg";
       const coverRel = data.relationships.find((x) => x.type === "cover_art");
       if (coverRel?.attributes?.fileName) {
@@ -794,7 +794,7 @@ var _Sources = (() => {
     }
     async getChapters(mangaId) {
       const request = App.createRequest({
-        url: `${MD_API}/manga/${mangaId}/feed?limit=500&translatedLanguage[]=en&order[volume]=desc&order[chapter]=desc&includes[]=scanlation_group`,
+        url: `${MD_API}/manga/${mangaId}/feed?limit=500&translatedLanguage[]=it&translatedLanguage[]=en&order[volume]=desc&order[chapter]=desc&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
@@ -809,9 +809,12 @@ var _Sources = (() => {
         if (attr.title) name = attr.title;
         if (!name && attr.chapter) name = `Chapter ${attr.chapter}`;
         if (!name) name = "Oneshot";
+        const lang = attr.translatedLanguage === "it" ? "\u{1F1EE}\u{1F1F9}" : "\u{1F1EC}\u{1F1E7}";
         const groupRel = ch.relationships.find((x) => x.type === "scanlation_group");
         if (groupRel?.attributes?.name) {
-          name += ` [${groupRel.attributes.name}]`;
+          name = `${lang} ${name} [${groupRel.attributes.name}]`;
+        } else {
+          name = `${lang} ${name}`;
         }
         chapters.push(App.createChapter({
           id: ch.id,
@@ -819,7 +822,7 @@ var _Sources = (() => {
           chapNum,
           volume: volNum,
           time: new Date(attr.publishAt),
-          langCode: "en"
+          langCode: attr.translatedLanguage
         }));
       }
       return chapters;
@@ -835,7 +838,7 @@ var _Sources = (() => {
       }
       const json = JSON.parse(response.data);
       if (json.result !== "ok" || !json.baseUrl || !json.chapter?.data) {
-        throw new Error("Failed to load chapter images (might be external or locked)");
+        throw new Error("Failed to load chapter images");
       }
       const baseUrl = json.baseUrl;
       const hash = json.chapter.hash;
@@ -855,7 +858,7 @@ var _Sources = (() => {
       const limit = 20;
       const offset = page * limit;
       const request = App.createRequest({
-        url: `${MD_API}/manga?limit=${limit}&offset=${offset}&title=${encodeURIComponent(query.title ?? "")}&includes[]=cover_art&availableTranslatedLanguage[]=en`,
+        url: `${MD_API}/manga?limit=${limit}&offset=${offset}&title=${encodeURIComponent(query.title ?? "")}&includes[]=cover_art&availableTranslatedLanguage[]=it&availableTranslatedLanguage[]=en&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
@@ -884,11 +887,11 @@ var _Sources = (() => {
       const popularSection = App.createHomeSection({ id: "popular", title: "Popular Titles", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
       const latestSection = App.createHomeSection({ id: "latest", title: "Latest Updates", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
       const popRequest = App.createRequest({
-        url: `${MD_API}/manga?limit=10&includes[]=cover_art&order[followedCount]=desc&availableTranslatedLanguage[]=en`,
+        url: `${MD_API}/manga?limit=10&includes[]=cover_art&order[followedCount]=desc&availableTranslatedLanguage[]=it&availableTranslatedLanguage[]=en&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
         method: "GET"
       });
       const latRequest = App.createRequest({
-        url: `${MD_API}/manga?limit=10&includes[]=cover_art&order[updatedAt]=desc&availableTranslatedLanguage[]=en`,
+        url: `${MD_API}/manga?limit=10&includes[]=cover_art&order[updatedAt]=desc&availableTranslatedLanguage[]=it&availableTranslatedLanguage[]=en&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
         method: "GET"
       });
       const popResponse = await this.requestManager.schedule(popRequest, 1);
@@ -928,7 +931,7 @@ var _Sources = (() => {
       if (homepageSectionId === "popular") order = "&order[followedCount]=desc";
       else order = "&order[updatedAt]=desc";
       const request = App.createRequest({
-        url: `${MD_API}/manga?limit=${limit}&offset=${offset}&includes[]=cover_art&availableTranslatedLanguage[]=en${order}`,
+        url: `${MD_API}/manga?limit=${limit}&offset=${offset}&includes[]=cover_art&availableTranslatedLanguage[]=it&availableTranslatedLanguage[]=en&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic${order}`,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
