@@ -744,24 +744,26 @@ var _Sources = (() => {
       let status = "Ongoing";
       let desc = "";
       const arrayTags = [];
-      let tempDesc = $(".description-archive").clone();
+      const context = $(".description-archive");
+      let tempDesc = context.clone();
       tempDesc.find("b, strong, div, img").remove();
       desc = tempDesc.text().trim();
-      $(".description-archive b, .description-archive strong").each((_, el) => {
-        const label = $(el).text().trim();
-        const value = $(el)[0].nextSibling?.nodeType === 3 ? $(el)[0].nextSibling.nodeValue.trim() : $(el).next().text().trim();
-        if (label.includes("Publisher")) {
-          author = value;
-        } else if (label.includes("Genres")) {
-          $(el).parent().find("a").each((__, a) => {
-            const tagLabel = $(a).text().trim();
-            const tagId = $(a).attr("href")?.split("/").filter(Boolean).pop() ?? tagLabel;
-            if (tagLabel) arrayTags.push(App.createTag({ id: tagId, label: tagLabel }));
-          });
-        } else if (label.includes("Status") && value.includes("Completed")) {
-          status = "Completed";
-        }
-      });
+      const publisherLabel = context.find('b:contains("Publisher:"), strong:contains("Publisher:")');
+      if (publisherLabel.length > 0) {
+        author = publisherLabel[0].nextSibling?.nodeValue?.trim() || publisherLabel.next().text().trim() || "Unknown";
+      }
+      const genreLabel = context.find('b:contains("Genres:"), strong:contains("Genres:")');
+      if (genreLabel.length > 0) {
+        let genreContainer = genreLabel.parent();
+        genreContainer.find("a").each((_, a) => {
+          const label = $(a).text().trim();
+          const href = $(a).attr("href");
+          const id = href?.split("/").filter(Boolean).pop() ?? label;
+          if (id && label) {
+            arrayTags.push(App.createTag({ id: String(id), label: String(label) }));
+          }
+        });
+      }
       const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })];
       return App.createSourceManga({
         id: mangaId,
@@ -784,10 +786,10 @@ var _Sources = (() => {
         if (!href) return;
         const chapterId = href;
         let chapNum = 0;
-        const numMatch = title.match(/(\d+(\.\d+)?)/g);
+        const titleClean = title.replace(/\(\d{4}\)/g, "").trim();
+        const numMatch = titleClean.match(/(\d+(\.\d+)?)/g);
         if (numMatch && numMatch.length > 0) {
-          const lastNum = parseFloat(numMatch[numMatch.length - 1]);
-          chapNum = lastNum < 1900 ? lastNum : 0;
+          chapNum = parseFloat(numMatch[numMatch.length - 1]);
         }
         chapters.push(App.createChapter({
           id: chapterId,
@@ -836,7 +838,6 @@ var _Sources = (() => {
         }
         results.push(App.createPartialSourceManga({
           mangaId: id,
-          // Questo ID pulito (es "batman") funzionerà con /category/
           image,
           title,
           subtitle: void 0
@@ -880,7 +881,7 @@ var _Sources = (() => {
   // src/ReadAllComics/ReadAllComics.ts
   var DOMAIN = "https://readallcomics.com";
   var ReadAllComicsInfo = {
-    version: "1.3.0",
+    version: "1.4.0",
     name: "ReadAllComics",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -982,6 +983,7 @@ var _Sources = (() => {
         method: "GET",
         headers: {
           "referer": `${this.baseUrl}/`,
+          "origin": this.baseUrl,
           "user-agent": await this.requestManager.getDefaultUserAgent()
         }
       });
