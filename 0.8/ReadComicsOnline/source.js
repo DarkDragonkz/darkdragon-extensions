@@ -859,8 +859,12 @@ var _Sources = (() => {
         const id = link.attr("href")?.split("/").pop();
         const title = link.text().trim();
         const img = $("div.media-left img", item);
-        let image = img.attr("data-src") ?? img.attr("src") ?? "";
-        if (image.startsWith("/")) image = BASE_URL + image;
+        let image = img.attr("src") ?? img.attr("data-src") ?? img.attr("original") ?? img.attr("data-original") ?? "";
+        if (!image || image.includes("no-image") || image.includes("placeholder")) {
+          image = `${BASE_URL}/uploads/manga/${id}/cover/cover_250x350.jpg`;
+        } else if (image.startsWith("/")) {
+          image = BASE_URL + image;
+        }
         if (id && title) {
           latestItems.push(App.createPartialSourceManga({
             mangaId: id,
