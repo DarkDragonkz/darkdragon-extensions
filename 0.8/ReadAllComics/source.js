@@ -899,7 +899,7 @@ var _Sources = (() => {
   // src/ReadAllComics/ReadAllComics.ts
   var DOMAIN = "https://readallcomics.com";
   var ReadAllComicsInfo = {
-    version: "1.4.1",
+    version: "1.5.0",
     name: "ReadAllComics",
     icon: "icon.png",
     author: "DarkDragonkz",
