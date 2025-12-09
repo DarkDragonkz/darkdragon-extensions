@@ -30,11 +30,12 @@ export class ReadAllComicsParser {
 
         const context = $('.description-archive')
         
+        // Descrizione
         let tempDesc = context.clone()
         tempDesc.find('b, strong, div, img').remove()
         desc = tempDesc.text().trim()
 
-        // Parsing Autore
+        // Metadati
         const publisherLabel = context.find('b:contains("Publisher:"), strong:contains("Publisher:")')
         if (publisherLabel.length > 0) {
             author = publisherLabel[0].nextSibling?.nodeValue?.trim() || 
@@ -42,7 +43,6 @@ export class ReadAllComicsParser {
                      'Unknown'
         }
 
-        // Parsing Generi (con fix per l'errore "Invalid type")
         const genreLabel = context.find('b:contains("Genres:"), strong:contains("Genres:")')
         if (genreLabel.length > 0) {
             let genreContainer = genreLabel.parent()
@@ -50,8 +50,6 @@ export class ReadAllComicsParser {
                 const label = $(a).text().trim()
                 const href = $(a).attr('href')
                 const id = href?.split('/').filter(Boolean).pop() ?? label
-                
-                // Controllo di sicurezza: crea il tag solo se id e label sono validi
                 if (id && label) {
                     arrayTags.push(App.createTag({ id: String(id), label: String(label) }))
                 }
@@ -76,6 +74,7 @@ export class ReadAllComicsParser {
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
         
+        // Selettore per la lista capitoli
         $('.list-story li').each((_: any, li: any) => {
             const link = $('a', li)
             const title = link.text().trim()
@@ -84,18 +83,17 @@ export class ReadAllComicsParser {
 
             const chapterId = href
 
-            // --- FIX CAPITOLI ---
+            // --- FIX CAPITOLI (Ch. 0) ---
             let chapNum = 0
             
-            // 1. Rimuovi l'anno tra parentesi (es. "(2025)") dal titolo per evitare errori
+            // 1. Rimuovi l'anno (es. "(2025)") per non confonderlo col numero
             const titleClean = title.replace(/\(\d{4}\)/g, '').trim()
             
-            // 2. Cerca l'ultimo numero rimasto nel titolo (es. "Red Band 006" -> trova 6)
-            // La regex cerca numeri interi o decimali
+            // 2. Cerca numeri (interi o decimali)
             const numMatch = titleClean.match(/(\d+(\.\d+)?)/g)
             
             if (numMatch && numMatch.length > 0) {
-                 // Prendi l'ultimo numero trovato (spesso è quello del capitolo alla fine)
+                 // Prendi l'ultimo numero trovato. Es: "Batman 006" -> 6
                  chapNum = parseFloat(numMatch[numMatch.length - 1]!)
             }
 
@@ -125,7 +123,6 @@ export class ReadAllComicsParser {
                 } else if (!url.startsWith('http')) {
                      url = url.startsWith('//') ? `https:${url}` : BASE_URL + url
                 }
-                
                 pages.push(url.trim())
             }
         }
@@ -140,29 +137,57 @@ export class ReadAllComicsParser {
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
 
-        $('#post-area .post').each((_: any, item: any) => {
-            const link = $('.pinbin-copy a', item).first()
-            const title = link.text().trim() || link.attr('title')
-            
-            const classAttr = $(item).attr('class') ?? ''
-            const categoryMatch = classAttr.match(/category-([^\s]+)/)
-            const id = categoryMatch ? categoryMatch[1] : null
+        // --- CASO 1: Griglia con immagini (Standard) ---
+        if ($('#post-area .post').length > 0) {
+            $('#post-area .post').each((_: any, item: any) => {
+                const link = $('.pinbin-copy a', item).first()
+                const title = link.text().trim() || link.attr('title')
+                
+                const classAttr = $(item).attr('class') ?? ''
+                const categoryMatch = classAttr.match(/category-([^\s]+)/)
+                const id = categoryMatch ? categoryMatch[1] : null
 
-            if (!id || !title) return
+                if (!id || !title) return
 
-            const img = $('img', item).first()
-            let image = img.attr('src') ?? img.attr('data-src') ?? ''
-            if (image.startsWith('/')) {
-                image = `https://2.bp.blogspot.com${image}`
-            }
+                const img = $('img', item).first()
+                let image = img.attr('src') ?? img.attr('data-src') ?? ''
+                if (image.startsWith('/')) image = `https://2.bp.blogspot.com${image}`
+                
+                results.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image,
+                    title: title,
+                    subtitle: undefined
+                }))
+            })
+        } 
+        // --- CASO 2: Lista testuale (Il tuo caso specifico) ---
+        // Basato sull'HTML che hai inviato: <ul class="list-story categories">
+        else if ($('.list-story li').length > 0) {
+            $('.list-story li').each((_: any, li: any) => {
+                const link = $('a', li).first()
+                const title = link.text().trim()
+                const href = link.attr('href')
+                
+                if (!href || !title) return
 
-            results.push(App.createPartialSourceManga({
-                mangaId: id,
-                image: image,
-                title: title,
-                subtitle: undefined
-            }))
-        })
+                // Estrai slug dall'URL: https://readallcomics.com/category/batman/ -> batman
+                const urlParts = href.split('/').filter(Boolean)
+                const id = urlParts[urlParts.length - 1]
+
+                // NON ci sono immagini in questo HTML, usiamo un placeholder
+                const image = 'https://readallcomics.com/wp-content/uploads/2020/09/logo.png'
+
+                if (id) {
+                    results.push(App.createPartialSourceManga({
+                        mangaId: id,
+                        image: image,
+                        title: title,
+                        subtitle: undefined
+                    }))
+                }
+            })
+        }
 
         return results
     }
