@@ -20,7 +20,7 @@ import { ReadComicsOnlineParser } from './ReadComicsOnlineParser'
 const DOMAIN = 'https://readcomicsonline.ru'
 
 export const ReadComicsOnlineInfo: SourceInfo = {
-    version: '2.2.1', // Bump versione
+    version: '2.2.3',
     name: 'ReadComicsOnline',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -44,8 +44,8 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 3, // Ridotto per stabilità
-        requestTimeout: 20000, // Aumentato a 20 secondi per evitare timeout
+        requestsPerSecond: 3,
+        requestTimeout: 20000,
         interceptor: {
             interceptRequest: async (request: any) => {
                 request.headers = {
@@ -91,8 +91,8 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        // Passiamo response.data (HTML) al parser che ora ha cheerio importato
-        return this.parser.parseChapterDetails(response.data ?? '', mangaId, chapterId)
+        // MODIFICA QUI: Passo 'this.cheerio' al parser
+        return this.parser.parseChapterDetails(this.cheerio, response.data ?? '', mangaId, chapterId)
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
@@ -110,7 +110,6 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
                 metadata: undefined
             })
         } catch (e) {
-            // Fallback in caso di errore JSON
             return App.createPagedResults({ results: [] })
         }
     }

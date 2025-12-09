@@ -9,8 +9,6 @@ import {
     TagSection,
 } from '@paperback/types'
 
-import * as cheerio from 'cheerio'
-
 const BASE_URL = 'https://readcomicsonline.ru'
 
 export class ReadComicsOnlineParser {
@@ -18,9 +16,7 @@ export class ReadComicsOnlineParser {
     parseMangaDetails($: any, mangaId: string): SourceManga {
         const title = $('h2.listmanga-header').first().text().trim() || 'Unknown'
         
-        // Cerca data-src prima, poi src
-        const img = $('img', 'div.boxed').first()
-        let image = img.attr('data-src') ?? img.attr('src') ?? ''
+        let image = $('img', 'div.boxed').attr('src') ?? ''
         if (image.startsWith('/')) image = BASE_URL + image
         
         const author = $('dd', 'dt:contains("Type")').parent().text().replace('Type', '').trim() || 'Unknown'
@@ -84,12 +80,13 @@ export class ReadComicsOnlineParser {
         return chapters
     }
 
-    parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
+    // MODIFICA QUI: Aggiunto il parametro 'cheerio'
+    parseChapterDetails(cheerio: any, html: string, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
+        // Usiamo l'istanza di cheerio passata dal main
         const $ = cheerio.load(html)
         
         $('img', 'div#all').each((_: any, img: any) => {
-            // Qui usano spesso data-src per il lazy loading
             let url = $(img).attr('data-src')?.trim() ?? $(img).attr('src')?.trim()
             if (url) {
                 url = url.trim();
@@ -128,8 +125,6 @@ export class ReadComicsOnlineParser {
     }
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
-        
-        // 1. Hot Comics
         const hotSection = App.createHomeSection({ 
             id: 'hot', 
             title: 'Hot Comics', 
@@ -142,7 +137,6 @@ export class ReadComicsOnlineParser {
             const id = $('div.schedule-name a', item).attr('href')?.split('/').pop()
             const title = $('div.schedule-name', item).text().trim()
             
-            // Cerca data-src per sicurezza anche qui
             const img = $('div.schedule-avatar img', item)
             let image = img.attr('data-src') ?? img.attr('src') ?? ''
             
@@ -160,7 +154,6 @@ export class ReadComicsOnlineParser {
         hotSection.items = hotItems
         sectionCallback(hotSection)
 
-        // 2. Latest Comics
         const latestSection = App.createHomeSection({ 
             id: 'latest', 
             title: 'Latest Comics', 
@@ -174,7 +167,6 @@ export class ReadComicsOnlineParser {
             const id = link.attr('href')?.split('/').pop()
             const title = link.text().trim()
             
-            // FIX: Cerca data-src primario, poi src
             const img = $('div.media-left img', item)
             let image = img.attr('data-src') ?? img.attr('src') ?? ''
             
