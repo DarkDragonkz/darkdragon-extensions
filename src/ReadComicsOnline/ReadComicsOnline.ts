@@ -20,7 +20,7 @@ import { ReadComicsOnlineParser } from './ReadComicsOnlineParser'
 const DOMAIN = 'https://readcomiconline.li'
 
 export const ReadComicsOnlineInfo: SourceInfo = {
-    version: '2.0.0',
+    version: '2.0.1',
     name: 'ReadComicsOnline',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -88,8 +88,8 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // TRUCCO: Aggiungiamo &s=s2 per forzare il Server 2 che è più facile da parsare
-        // chapterId è già un percorso relativo es: /Comic/Batman/Issue-1?id=123
+        // FORZA SERVER 2 per bypassare la protezione complessa delle immagini
+        // chapterId è relativo, es: /Comic/Nome/Issue-1?id=123
         const separator = chapterId.includes('?') ? '&' : '?'
         const url = `${this.baseUrl}${chapterId}${separator}quality=hq&s=s2`
 
@@ -98,12 +98,11 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        // Passiamo i dati grezzi al parser
         return this.parser.parseChapterDetails(response.data ?? '', mangaId, chapterId)
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        // RCO usa POST per la ricerca
+        // La ricerca usa POST
         const request = App.createRequest({
             url: `${this.baseUrl}/Search/Comic`,
             method: 'POST',
