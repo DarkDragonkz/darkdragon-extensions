@@ -731,36 +731,27 @@ var _Sources = (() => {
 
   // src/ReadComicsOnline/ReadComicsOnlineParser.ts
   var import_types = __toESM(require_lib());
-  var BASE_URL = "https://readcomiconline.li";
+  var BASE_URL = "https://readcomicsonline.ru";
   var ReadComicsOnlineParser = class {
     parseMangaDetails($, mangaId) {
-      const title = $("div.barContent a.bigChar").first().text().trim() || "Unknown";
-      let image = $(".rightBox .barContent img").first().attr("src") ?? "";
-      if (image.startsWith("/")) image = BASE_URL + image;
-      let author = "Unknown";
-      let status = "Ongoing";
-      let desc = "";
+      const title = $("h2.listmanga-header").first().text().trim() || $(".media-heading").first().text().trim() || "Unknown";
+      let image = $(".boxed img").first().attr("src") ?? $(".media-left img").first().attr("src") ?? "";
+      if (image.startsWith("//")) {
+        image = "https:" + image;
+      } else if (image.startsWith("/")) {
+        image = BASE_URL + image;
+      }
+      const author = $('dt:contains("Writer")').next("dd").text().trim() || "Unknown";
+      const artist = $('dt:contains("Artist")').next("dd").text().trim();
+      const status = $('dt:contains("Status")').next("dd").text().trim().includes("Completed") ? "Completed" : "Ongoing";
+      const desc = $(".manga.well p").text().trim() || "No description available";
       const arrayTags = [];
-      $(".barContent p").each((_, p) => {
-        const text = $(p).text().trim();
-        const $p = $(p);
-        if (text.includes("Genres:")) {
-          $p.find("a").each((__, a) => {
-            const label = $(a).text().trim();
-            const id = $(a).attr("href")?.split("/").pop() ?? label;
-            if (label) arrayTags.push(App.createTag({ id, label }));
-          });
-        } else if (text.includes("Writer:")) {
-          author = $p.find("a").text().trim() || "Unknown";
-        } else if (text.includes("Status:")) {
-          if (text.includes("Completed")) status = "Completed";
-        } else if (!text.includes("Artist:") && !text.includes("Publication date:")) {
-          if (text.length > 20) desc += text + "\n";
-        }
+      $(".tag-links a").each((_, a) => {
+        const label = $(a).text().trim();
+        const id = $(a).attr("href")?.split("/").pop() ?? label;
+        if (label) arrayTags.push(App.createTag({ id, label }));
       });
-      const tagSections = [
-        App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })
-      ];
+      const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })];
       return App.createSourceManga({
         id: mangaId,
         mangaInfo: App.createMangaInfo({
@@ -768,47 +759,62 @@ var _Sources = (() => {
           image,
           status,
           author,
+          artist,
           tags: tagSections,
-          desc: desc.trim() || "No description available"
+          desc
         })
       });
     }
     parseChapters($, mangaId) {
       const chapters = [];
-      const rows = $("table.listing tr").toArray();
-      for (let i = 1; i < rows.length; i++) {
-        const row = rows[i];
-        const link = $(row).find("a").first();
+      $("ul.chapters li").each((_, li) => {
+        const link = $("h5.chapter-title-rtl a", li);
         const title = link.text().trim();
         const href = link.attr("href");
-        if (!href) continue;
-        const chapterId = href;
-        const dateText = $(row).find("td").eq(1).text().trim();
-        const time = dateText ? new Date(dateText) : /* @__PURE__ */ new Date();
-        let chapNum = 0;
-        const numMatch = title.match(/#(\d+(\.\d+)?)/) ?? title.match(/(\d+(\.\d+)?)/);
-        if (numMatch) {
-          chapNum = parseFloat(numMatch[1]);
+        if (!href) return;
+        const chapterId = href.split("/").pop();
+        if (!chapterId) return;
+        const dateText = $(".date-chapter-title-rtl", li).text().trim();
+        let time = /* @__PURE__ */ new Date();
+        if (dateText) {
+          time = new Date(dateText);
+        }
+        let chapNum = parseFloat(chapterId);
+        if (isNaN(chapNum)) {
+          const numMatch = title.match(/(\d+(\.\d+)?)/);
+          chapNum = numMatch ? parseFloat(numMatch[0]) : 0;
         }
         chapters.push(App.createChapter({
           id: chapterId,
           name: title,
           chapNum,
-          time,
+          time: isNaN(time.getTime()) ? /* @__PURE__ */ new Date() : time,
           langCode: "en"
         }));
-      }
+      });
       return chapters;
     }
     parseChapterDetails(html, mangaId, chapterId) {
       const pages = [];
-      let scriptMatch = html.match(/var lstImages = new Array\((.*?)\);/);
-      if (!scriptMatch) scriptMatch = html.match(/new Array\((.*?)\);/);
-      if (scriptMatch && scriptMatch[1]) {
-        const rawUrls = scriptMatch[1].split(",");
-        for (const rawUrl of rawUrls) {
-          const url = rawUrl.trim().replace(/^"|"$/g, "").replace(/^'|'$/g, "");
-          if (url.startsWith("http")) {
+      const imgRegex = /<img[^>]+src=['"]([^'"]+)['"][^>]+class=['"]img-responsive['"]/g;
+      let match;
+      while ((match = imgRegex.exec(html)) !== null) {
+        let url = match[1];
+        if (url) {
+          url = url.trim();
+          if (url.startsWith("//")) url = "https:" + url;
+          else if (url.startsWith("/")) url = BASE_URL + url;
+          pages.push(url);
+        }
+      }
+      if (pages.length === 0) {
+        const imgLazyRegex = /data-src=['"]([^'"]+)['"]/g;
+        while ((match = imgLazyRegex.exec(html)) !== null) {
+          let url = match[1];
+          if (url && !url.includes("loader")) {
+            url = url.trim();
+            if (url.startsWith("//")) url = "https:" + url;
+            else if (url.startsWith("/")) url = BASE_URL + url;
             pages.push(url);
           }
         }
@@ -819,17 +825,94 @@ var _Sources = (() => {
         pages
       });
     }
-    parseSearchResults($) {
+    parseSearchJson(json) {
       const results = [];
-      $(".list-comic .item").each((_, item) => {
-        const link = $("a", item).first();
-        const title = $("span.title", link).text().trim() || link.text().trim();
-        let id = link.attr("href") ?? "";
-        id = id.replace(/^\/Comic\//, "").replace(/^\//, "");
-        let image = $("img", link).attr("src") ?? "";
-        if (image.startsWith("/")) image = BASE_URL + image;
+      if (json.suggestions) {
+        for (const item of json.suggestions) {
+          const title = item.value;
+          const id = item.data;
+          const image = `${BASE_URL}/uploads/manga/${id}/cover/cover_250x350.jpg`;
+          if (id && title) {
+            results.push(App.createPartialSourceManga({
+              mangaId: id,
+              image,
+              title,
+              subtitle: void 0
+            }));
+          }
+        }
+      }
+      return results;
+    }
+    parseHomeSections($, sectionCallback) {
+      const hotSection = App.createHomeSection({
+        id: "hot",
+        title: "Hot Comic Updates",
+        containsMoreItems: false,
+        type: import_types.HomeSectionType.singleRowNormal
+      });
+      const hotItems = [];
+      $("#schedule li.schedule-item").each((_, item) => {
+        const link = $(".schedule-name a", item);
+        const title = link.text().trim();
+        const href = link.attr("href");
+        const id = href?.split("/").pop();
+        let image = $(".schedule-avatar img", item).attr("src") ?? "";
+        if (image.startsWith("//")) image = "https:" + image;
+        const subtitle = $(".schedule-date", item).text().trim();
         if (id && title) {
-          results.push(App.createPartialSourceManga({
+          hotItems.push(App.createPartialSourceManga({
+            mangaId: id,
+            image,
+            title,
+            subtitle
+          }));
+        }
+      });
+      hotSection.items = hotItems;
+      sectionCallback(hotSection);
+      const latestSection = App.createHomeSection({
+        id: "latest",
+        title: "Latest Comic Updates",
+        containsMoreItems: true,
+        type: import_types.HomeSectionType.singleRowNormal
+      });
+      const latestItems = [];
+      $(".list-container .row .media").each((_, item) => {
+        const link = $("h5.media-heading a", item);
+        const title = link.text().trim();
+        const href = link.attr("href");
+        const id = href?.split("/").pop();
+        let image = $(".media-left img", item).attr("src") ?? "";
+        if (image.startsWith("//")) image = "https:" + image;
+        const subtitle = $("div a", $(".media-body", item)).first().text().trim();
+        if (id && title) {
+          latestItems.push(App.createPartialSourceManga({
+            mangaId: id,
+            image,
+            title,
+            subtitle
+          }));
+        }
+      });
+      latestSection.items = latestItems;
+      sectionCallback(latestSection);
+      const popularSection = App.createHomeSection({
+        id: "popular",
+        title: "Most Viewed",
+        containsMoreItems: false,
+        type: import_types.HomeSectionType.singleRowNormal
+      });
+      const popularItems = [];
+      $(".panel-success ul li.list-group-item .media").each((_, item) => {
+        const link = $("h5.media-heading a", item);
+        const title = link.text().trim();
+        const href = link.attr("href");
+        const id = href?.split("/").pop();
+        let image = $(".media-left img", item).attr("src") ?? "";
+        if (image.startsWith("//")) image = "https:" + image;
+        if (id && title) {
+          popularItems.push(App.createPartialSourceManga({
             mangaId: id,
             image,
             title,
@@ -837,93 +920,21 @@ var _Sources = (() => {
           }));
         }
       });
-      return results;
-    }
-    parseHomeSections($, sectionCallback) {
-      const latestSection = App.createHomeSection({
-        id: "latest",
-        title: "Latest Updates",
-        containsMoreItems: true,
-        type: import_types.HomeSectionType.singleRowNormal
-      });
-      const latestItems = [];
-      $(".bigBarContainer .items a").each((_, a) => {
-        const href = $(a).attr("href");
-        if (href && href.includes("Comic/") && !href.includes("?id=")) {
-          let id = href.replace(/^\/Comic\//, "").replace(/^Comic\//, "").replace(/^\//, "");
-          let title = $(a).text().trim();
-          if (title.includes("Issue")) title = title.split("Issue")[0].trim();
-          if (title.includes("\n")) title = title.split("\n")[0].trim();
-          if (!title) return;
-          const img = $("img", a);
-          let image = img.attr("src") ?? "";
-          if (!image || image.includes("blank") || image.includes("loader")) {
-            image = img.attr("srcTemp") ?? "";
-          }
-          if (image && image.startsWith("/")) image = BASE_URL + image;
-          if (id && !latestItems.some((x) => x.mangaId === id)) {
-            latestItems.push(App.createPartialSourceManga({
-              mangaId: id,
-              image,
-              title,
-              subtitle: "Updated"
-            }));
-          }
-        }
-      });
-      if (latestItems.length > 0) {
-        latestSection.items = latestItems;
-        sectionCallback(latestSection);
-      }
-      const parseTab = (tabId, sectionId, titleSection) => {
-        const section = App.createHomeSection({
-          id: sectionId,
-          title: titleSection,
-          containsMoreItems: false,
-          type: import_types.HomeSectionType.singleRowNormal
-        });
-        const items = [];
-        $(`#${tabId} > div`).each((_, div) => {
-          const link = $("a", div).first();
-          const href = link.attr("href");
-          if (!href) return;
-          let id = href.replace(/^\/Comic\//, "").replace(/^Comic\//, "").replace(/^\//, "");
-          let title = $(div).find("a.title").text().trim();
-          if (!title) title = link.next("a").text().trim();
-          if (!title) title = link.text().trim();
-          let image = $("img", div).attr("src") ?? "";
-          if (!image || image.includes("blank")) image = $("img", div).attr("srcTemp") ?? "";
-          if (image.startsWith("/")) image = BASE_URL + image;
-          if (id && title) {
-            items.push(App.createPartialSourceManga({
-              mangaId: id,
-              image,
-              title,
-              subtitle: void 0
-            }));
-          }
-        });
-        if (items.length > 0) {
-          section.items = items;
-          sectionCallback(section);
-        }
-      };
-      parseTab("tab-newest", "newest", "New Series");
-      parseTab("tab-mostview", "popular", "Most Popular");
-      parseTab("tab-top-day", "topday", "Top Day");
+      popularSection.items = popularItems;
+      sectionCallback(popularSection);
     }
   };
 
   // src/ReadComicsOnline/ReadComicsOnline.ts
-  var DOMAIN = "https://readcomiconline.li";
+  var DOMAIN = "https://readcomicsonline.ru";
   var ReadComicsOnlineInfo = {
-    version: "2.0.6",
+    version: "2.1.0",
     name: "ReadComicsOnline",
     icon: "icon.png",
     author: "DarkDragonkz",
     authorWebsite: "https://github.com/DarkDragonkz",
     description: `Extension that pulls comics from ${DOMAIN}`,
-    contentRating: import_types2.ContentRating.EVERYONE,
+    contentRating: import_types2.ContentRating.MATURE,
     websiteBaseURL: DOMAIN,
     sourceTags: [
       {
@@ -946,9 +957,7 @@ var _Sources = (() => {
             request.headers = {
               ...request.headers ?? {},
               "referer": `${DOMAIN}/`,
-              "user-agent": await this.requestManager.getDefaultUserAgent(),
-              "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-              "upgrade-insecure-requests": "1"
+              "user-agent": await this.requestManager.getDefaultUserAgent()
             };
             return request;
           },
@@ -958,62 +967,43 @@ var _Sources = (() => {
         }
       });
     }
-    // Controlla se la pagina ricevuta è un blocco Cloudflare
-    checkCloudflareStatus(status, data) {
-      if (status === 503 || status === 403) {
-        throw new Error(`CLOUDFLARE PROTECTION: Please click the Cloud icon in the top right corner.`);
-      }
-      if (typeof data === "string" && (data.includes("Just a moment...") || data.includes("Attention Required! | Cloudflare") || data.includes("security check"))) {
-        throw new Error(`CLOUDFLARE PROTECTION: Captcha detected. Please click the Cloud icon in the top right corner to solve it.`);
-      }
-    }
     getMangaShareUrl(mangaId) {
-      return `${this.baseUrl}/Comic/${mangaId}`;
+      return `${this.baseUrl}/comic/${mangaId}`;
     }
     async getMangaDetails(mangaId) {
       const request = App.createRequest({
-        url: `${this.baseUrl}/Comic/${mangaId}`,
+        url: `${this.baseUrl}/comic/${mangaId}`,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      this.checkCloudflareStatus(response.status, response.data);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseMangaDetails($, mangaId);
     }
     async getChapters(mangaId) {
       const request = App.createRequest({
-        url: `${this.baseUrl}/Comic/${mangaId}`,
+        url: `${this.baseUrl}/comic/${mangaId}`,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      this.checkCloudflareStatus(response.status, response.data);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseChapters($, mangaId);
     }
     async getChapterDetails(mangaId, chapterId) {
-      const separator = chapterId.includes("?") ? "&" : "?";
-      const url = `${this.baseUrl}${chapterId}${separator}quality=hq&s=s2`;
       const request = App.createRequest({
-        url,
+        url: `${this.baseUrl}/comic/${mangaId}/${chapterId}`,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      this.checkCloudflareStatus(response.status, response.data);
       return this.parser.parseChapterDetails(response.data ?? "", mangaId, chapterId);
     }
     async getSearchResults(query, metadata) {
       const request = App.createRequest({
-        url: `${this.baseUrl}/Search/Comic`,
-        method: "POST",
-        headers: {
-          "content-type": "application/x-www-form-urlencoded"
-        },
-        data: `keyword=${encodeURIComponent(query.title ?? "")}`
+        url: `${this.baseUrl}/search?query=${encodeURIComponent(query.title ?? "")}`,
+        method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      this.checkCloudflareStatus(response.status, response.data);
-      const $ = this.cheerio.load(response.data);
-      const manga = this.parser.parseSearchResults($);
+      const json = JSON.parse(response.data);
+      const manga = this.parser.parseSearchJson(json);
       return App.createPagedResults({
         results: manga,
         metadata: void 0
@@ -1025,7 +1015,6 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      this.checkCloudflareStatus(response.status, response.data);
       const $ = this.cheerio.load(response.data);
       this.parser.parseHomeSections($, sectionCallback);
     }
