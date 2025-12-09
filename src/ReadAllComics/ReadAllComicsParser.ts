@@ -16,7 +16,6 @@ export class ReadAllComicsParser {
     parseMangaDetails($: any, mangaId: string): SourceManga {
         const title = $('h1').first().text().trim() || 'Unknown'
         
-        // Immagine: Cerca nel box descrizione tipico delle categorie
         const img = $('.description-archive img').first()
         let image = img.attr('src') ?? img.attr('data-src') ?? ''
         
@@ -24,34 +23,40 @@ export class ReadAllComicsParser {
             image = `https://2.bp.blogspot.com${image}`
         }
 
-        // Info
         let author = 'Unknown'
         let status = 'Ongoing'
         let desc = ''
         const arrayTags: Tag[] = []
 
-        // Estrai descrizione pulita
-        let tempDesc = $('.description-archive').clone()
+        const context = $('.description-archive')
+        
+        let tempDesc = context.clone()
         tempDesc.find('b, strong, div, img').remove()
         desc = tempDesc.text().trim()
 
-        // Parsing Autore e Generi dai label
-        $('.description-archive b, .description-archive strong').each((_: any, el: any) => {
-            const label = $(el).text().trim()
-            const value = $(el)[0].nextSibling?.nodeType === 3 ? $(el)[0].nextSibling.nodeValue.trim() : $(el).next().text().trim()
+        // Parsing Autore
+        const publisherLabel = context.find('b:contains("Publisher:"), strong:contains("Publisher:")')
+        if (publisherLabel.length > 0) {
+            author = publisherLabel[0].nextSibling?.nodeValue?.trim() || 
+                     publisherLabel.next().text().trim() || 
+                     'Unknown'
+        }
 
-            if (label.includes('Publisher')) {
-                author = value
-            } else if (label.includes('Genres')) {
-                $(el).parent().find('a').each((__: any, a: any) => {
-                    const tagLabel = $(a).text().trim()
-                    const tagId = $(a).attr('href')?.split('/').filter(Boolean).pop() ?? tagLabel
-                    if (tagLabel) arrayTags.push(App.createTag({ id: tagId, label: tagLabel }))
-                })
-            } else if (label.includes('Status') && value.includes('Completed')) {
-                status = 'Completed'
-            }
-        })
+        // Parsing Generi (con fix per l'errore "Invalid type")
+        const genreLabel = context.find('b:contains("Genres:"), strong:contains("Genres:")')
+        if (genreLabel.length > 0) {
+            let genreContainer = genreLabel.parent()
+            genreContainer.find('a').each((_: any, a: any) => {
+                const label = $(a).text().trim()
+                const href = $(a).attr('href')
+                const id = href?.split('/').filter(Boolean).pop() ?? label
+                
+                // Controllo di sicurezza: crea il tag solo se id e label sono validi
+                if (id && label) {
+                    arrayTags.push(App.createTag({ id: String(id), label: String(label) }))
+                }
+            })
+        }
 
         const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
 
@@ -71,25 +76,27 @@ export class ReadAllComicsParser {
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
         
-        // Selettore capitoli
         $('.list-story li').each((_: any, li: any) => {
             const link = $('a', li)
             const title = link.text().trim()
             const href = link.attr('href')
             if (!href) return
 
-            // L'ID del capitolo è l'URL completo relativo
-            // es: https://readallcomics.com/batman-issue-1/
-            // Paperback gestirà questo URL nella getChapterDetails
             const chapterId = href
 
-            // Parsing numero capitolo dal titolo
+            // --- FIX CAPITOLI ---
             let chapNum = 0
-            const numMatch = title.match(/(\d+(\.\d+)?)/g)
+            
+            // 1. Rimuovi l'anno tra parentesi (es. "(2025)") dal titolo per evitare errori
+            const titleClean = title.replace(/\(\d{4}\)/g, '').trim()
+            
+            // 2. Cerca l'ultimo numero rimasto nel titolo (es. "Red Band 006" -> trova 6)
+            // La regex cerca numeri interi o decimali
+            const numMatch = titleClean.match(/(\d+(\.\d+)?)/g)
+            
             if (numMatch && numMatch.length > 0) {
-                 const lastNum = parseFloat(numMatch[numMatch.length - 1]!)
-                 // Se il numero è un anno (es. 2024), probabilmente non è il numero del capitolo
-                 chapNum = lastNum < 1900 ? lastNum : 0
+                 // Prendi l'ultimo numero trovato (spesso è quello del capitolo alla fine)
+                 chapNum = parseFloat(numMatch[numMatch.length - 1]!)
             }
 
             chapters.push(App.createChapter({
@@ -107,8 +114,6 @@ export class ReadAllComicsParser {
     parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
         
-        // Regex per estrarre le immagini dal codice HTML grezzo
-        // Questo bypassa problemi di lazy loading lato client
         const imgRegex = /<img[^>]+src="([^">]+)"/g
         let match
         while ((match = imgRegex.exec(html)) !== null) {
@@ -139,16 +144,12 @@ export class ReadAllComicsParser {
             const link = $('.pinbin-copy a', item).first()
             const title = link.text().trim() || link.attr('title')
             
-            // TRUCCO DI KARROT: Estrai ID dalla classe CSS invece che dall'URL
-            // Esempio classe: "post-123 post type-post status-publish format-standard has-post-thumbnail hentry category-batman"
-            // Noi vogliamo "batman"
             const classAttr = $(item).attr('class') ?? ''
             const categoryMatch = classAttr.match(/category-([^\s]+)/)
             const id = categoryMatch ? categoryMatch[1] : null
 
             if (!id || !title) return
 
-            // Immagine
             const img = $('img', item).first()
             let image = img.attr('src') ?? img.attr('data-src') ?? ''
             if (image.startsWith('/')) {
@@ -156,7 +157,7 @@ export class ReadAllComicsParser {
             }
 
             results.push(App.createPartialSourceManga({
-                mangaId: id, // Questo ID pulito (es "batman") funzionerà con /category/
+                mangaId: id,
                 image: image,
                 title: title,
                 subtitle: undefined
@@ -179,7 +180,6 @@ export class ReadAllComicsParser {
             const link = $('.pinbin-copy a', item).first()
             const title = link.text().trim() || link.attr('title')
             
-            // Estrazione ID dalla classe
             const classAttr = $(item).attr('class') ?? ''
             const categoryMatch = classAttr.match(/category-([^\s]+)/)
             const id = categoryMatch ? categoryMatch[1] : null
@@ -188,6 +188,7 @@ export class ReadAllComicsParser {
 
             const img = $('img', item).first()
             let image = img.attr('src') ?? img.attr('data-src') ?? ''
+            
             if (image.startsWith('/')) {
                 image = `https://2.bp.blogspot.com${image}`
             }

@@ -20,7 +20,7 @@ import { ReadAllComicsParser } from './ReadAllComicsParser'
 const DOMAIN = 'https://readallcomics.com'
 
 export const ReadAllComicsInfo: SourceInfo = {
-    version: '1.3.0',
+    version: '1.4.0',
     name: 'ReadAllComics',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -68,8 +68,6 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
-        // Qui costruiamo l'URL corretto della categoria
-        // mangaId è ora lo slug pulito (es. "batman") estratto dalla classe CSS
         const request = App.createRequest({
             url: `${this.baseUrl}/category/${mangaId}`,
             method: 'GET'
@@ -90,7 +88,6 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // chapterId è l'URL completo del capitolo che abbiamo preso nel parser
         const request = App.createRequest({
             url: chapterId,
             method: 'GET'
@@ -100,7 +97,6 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        // Usiamo ?s= per avere anche le immagini
         const searchUrl = `${this.baseUrl}/?s=${encodeURIComponent(query.title ?? '')}`
 
         const request = App.createRequest({
@@ -139,6 +135,7 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
             method: 'GET',
             headers: {
                 'referer': `${this.baseUrl}/`,
+                'origin': this.baseUrl,
                 'user-agent': await this.requestManager.getDefaultUserAgent()
             }
         })
