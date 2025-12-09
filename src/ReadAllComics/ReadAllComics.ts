@@ -21,7 +21,7 @@ import { URLBuilder } from '../helper'
 const RAC_DOMAIN = 'https://readallcomics.com'
 
 export const ReadAllComicsInfo: SourceInfo = {
-    version: '1.0.0',
+    version: '1.0.2',
     name: 'ReadAllComics',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -31,8 +31,8 @@ export const ReadAllComicsInfo: SourceInfo = {
     websiteBaseURL: RAC_DOMAIN,
     sourceTags: [
         {
-            text: 'English USA',
-            type: BadgeColor.BLUE, // Blu per USA/Comics
+            text: 'Comics 🇺🇸',
+            type: BadgeColor.BLUE,
         },
     ],
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS,
@@ -51,8 +51,13 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
             interceptRequest: async (request: any) => {
                 request.headers = {
                     ...(request.headers ?? {}),
+                    'origin': `${this.baseUrl}`,
                     'referer': `${this.baseUrl}/`,
-                    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36'
+                    'user-agent': await App.getDefaultUserAgent(),
+                    'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'accept-language': 'en-US,en;q=0.5',
+                    'accept-encoding': 'gzip, deflate, br',
+                    'x-requested-with': 'com.batcave.android' // Header critico dalla repo di riferimento
                 }
                 return request
             },
@@ -65,7 +70,6 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
-        // L'ID è l'URL intero
         const request = App.createRequest({
             url: mangaId,
             method: 'GET'
@@ -87,7 +91,7 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
         const request = App.createRequest({
-            url: chapterId, // chapterId è uguale a mangaId (URL pagina)
+            url: chapterId,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
@@ -96,19 +100,13 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        const page = metadata?.page ?? 1
-        
-        // Ricerca standard WordPress ?s=QUERY
+        // Ricerca standard WordPress
         const url = new URLBuilder(this.baseUrl)
             .addQueryParameter('s', query.title ?? '')
-            .addQueryParameter('story', query.title ?? '') // Parametro extra visto nello script
+            .addQueryParameter('story', query.title ?? '')
             .addQueryParameter('type', 'comic')
             .buildUrl()
 
-        // Se c'è paginazione nella ricerca, di solito WP usa /page/2/
-        // Ma per ora proviamo senza paginazione complessa o gestiamo solo la prima pagina di ricerca
-        // in quanto l'URL builder standard con parametri query params non supporta facilmente /page/X misto
-        
         const request = App.createRequest({
             url: url,
             method: 'GET'
@@ -120,7 +118,7 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
         
         return App.createPagedResults({
             results: manga,
-            metadata: undefined // Disabilitiamo paginazione ricerca per ora per semplicità
+            metadata: undefined 
         })
     }
 
@@ -137,8 +135,6 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
-        
-        // Paginazione Homepage: https://readallcomics.com/page/2/
         const url = `${this.baseUrl}/page/${page}/`
         
         const request = App.createRequest({

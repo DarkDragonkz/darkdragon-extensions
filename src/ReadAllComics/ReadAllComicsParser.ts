@@ -5,7 +5,6 @@ import {
     HomeSectionType,
     SourceManga,
     PartialSourceManga,
-    Tag,
     TagSection,
 } from '@paperback/types'
 
@@ -18,7 +17,7 @@ export class ReadAllComicsParser {
         if (!image) image = 'https://paperback.moe/icons/logo-alt.svg'
 
         const desc = 'Read comic online at ReadAllComics'
-        const status = 'Completed' 
+        const status = 'Completed'
 
         return App.createSourceManga({
             id: mangaId,
@@ -40,7 +39,7 @@ export class ReadAllComicsParser {
         const time = timeStr ? new Date(timeStr) : new Date()
 
         chapters.push(App.createChapter({
-            id: mangaId, 
+            id: mangaId,
             name: title,
             chapNum: 1,
             time: time,
@@ -53,26 +52,38 @@ export class ReadAllComicsParser {
     parseChapterDetails($: any, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
         
-        // FIX: Sostituito .each() con ciclo for per evitare crash
-        // Cerca immagini nel post-area o entry-content (comuni in WordPress)
+        // Ciclo for sicuro per evitare crash di cheerio con .each
+        // Aggiunti filtri ispirati alla repo esterna (preloader.gif, logo, ecc)
         const images = $('#post-area img, .entry-content img, .post img').toArray()
 
         for (const img of images) {
             const $img = $(img)
             let src = $img.attr('src')
             
-            // Gestione lazy load se presente
             if (!src || src.includes('data:image')) {
                 src = $img.attr('data-src') || $img.attr('data-lazy-src')
             }
-
-            if (src && !src.includes('logo') && !src.includes('banner') && !src.includes('button')) {
-                // Assicurati che sia un URL valido
-                if (!src.startsWith('http')) {
-                    // A volte i link sono relativi, ma su questo sito di solito sono assoluti. 
-                    // Se necessario, aggiungi logica qui.
+            
+            // Pulizia URL e filtri
+            if (src) {
+                src = src.trim()
+                // Logica della repo esterna: scarta immagini "preloader" o di sistema
+                if (
+                    src.includes('logo') || 
+                    src.includes('banner') || 
+                    src.includes('button') || 
+                    src.includes('preloader.gif') ||
+                    src.includes('loader')
+                ) {
+                    continue
                 }
-                pages.push(src.trim())
+
+                // Correzione URL relativi
+                if (src.startsWith('//')) {
+                    src = 'https:' + src
+                }
+
+                pages.push(src)
             }
         }
 
@@ -86,7 +97,6 @@ export class ReadAllComicsParser {
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         
-        // FIX: Sostituito .each() con ciclo for
         const items = $('#post-area .post').toArray()
 
         for (const item of items) {
@@ -95,7 +105,6 @@ export class ReadAllComicsParser {
             const title = titleLink.text().trim()
             const href = titleLink.attr('href')
             
-            // L'ID è l'URL completo
             const id = href ?? ''
 
             let image = $item.find('img').first().attr('src') ?? ''
