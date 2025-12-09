@@ -756,7 +756,6 @@ var _Sources = (() => {
       const time = timeStr ? new Date(timeStr) : /* @__PURE__ */ new Date();
       chapters.push(App.createChapter({
         id: mangaId,
-        // L'ID del capitolo è lo stesso della pagina
         name: title,
         chapNum: 1,
         time,
@@ -766,12 +765,19 @@ var _Sources = (() => {
     }
     parseChapterDetails($, mangaId, chapterId) {
       const pages = [];
-      $("#post-area img, .entry-content img").each((_, img) => {
-        const src = $(img).attr("src");
-        if (src && !src.includes("logo") && !src.includes("banner")) {
-          pages.push(src);
+      const images = $("#post-area img, .entry-content img, .post img").toArray();
+      for (const img of images) {
+        const $img = $(img);
+        let src = $img.attr("src");
+        if (!src || src.includes("data:image")) {
+          src = $img.attr("data-src") || $img.attr("data-lazy-src");
         }
-      });
+        if (src && !src.includes("logo") && !src.includes("banner") && !src.includes("button")) {
+          if (!src.startsWith("http")) {
+          }
+          pages.push(src.trim());
+        }
+      }
       return App.createChapterDetails({
         id: chapterId,
         mangaId,
@@ -780,13 +786,15 @@ var _Sources = (() => {
     }
     parseSearchResults($) {
       const results = [];
-      $("#post-area .post").each((_, item) => {
-        const titleLink = $(item).find("h2 a").first();
+      const items = $("#post-area .post").toArray();
+      for (const item of items) {
+        const $item = $(item);
+        const titleLink = $item.find("h2 a").first();
         const title = titleLink.text().trim();
         const href = titleLink.attr("href");
         const id = href ?? "";
-        let image = $(item).find("img").first().attr("src") ?? "";
-        const date = $(item).find("span").last().text().trim();
+        let image = $item.find("img").first().attr("src") ?? "";
+        const date = $item.find(".pinbin-date").text().trim();
         if (id && title) {
           results.push(App.createPartialSourceManga({
             mangaId: id,
@@ -795,7 +803,7 @@ var _Sources = (() => {
             subtitle: date
           }));
         }
-      });
+      }
       return results;
     }
     parseHomeSections($, sectionCallback) {
