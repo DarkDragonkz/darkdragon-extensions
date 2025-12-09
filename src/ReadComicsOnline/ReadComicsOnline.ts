@@ -22,7 +22,7 @@ import { ReadComicsOnlineParser } from './ReadComicsOnlineParser'
 const DOMAIN = 'https://readcomiconline.li'
 
 export const ReadComicsOnlineInfo: SourceInfo = {
-    version: '2.0.2',
+    version: '2.0.5',
     name: 'ReadComicsOnline',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -65,11 +65,13 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
         }
     })
 
-    // Funzione per controllare se siamo bloccati da Cloudflare
-    checkCloudflareStatus(status: number): void {
+    // Funzione MIGLIORATA per rilevare Cloudflare anche se lo status è 200
+    checkCloudflareStatus(status: number, data: any): void {
         if (status === 503 || status === 403) {
-            throw new Error(`CLOUDFLARE PROTECTION:
-Please click the Cloud icon in the top right corner and solve the CAPTCHA to access the site.`)
+            throw new Error(`CLOUDFLARE PROTECTION: Please click the Cloud icon in the top right corner.`)
+        }
+        if (typeof data === 'string' && (data.includes('Just a moment...') || data.includes('Attention Required! | Cloudflare'))) {
+             throw new Error(`CLOUDFLARE PROTECTION: Site loaded the Captcha page. Please click the Cloud icon in the top right corner.`)
         }
     }
 
@@ -83,7 +85,7 @@ Please click the Cloud icon in the top right corner and solve the CAPTCHA to acc
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        this.checkCloudflareStatus(response.status)
+        this.checkCloudflareStatus(response.status, response.data)
         
         const $ = this.cheerio.load(response.data)
         return this.parser.parseMangaDetails($, mangaId)
@@ -95,7 +97,7 @@ Please click the Cloud icon in the top right corner and solve the CAPTCHA to acc
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        this.checkCloudflareStatus(response.status)
+        this.checkCloudflareStatus(response.status, response.data)
         
         const $ = this.cheerio.load(response.data)
         return this.parser.parseChapters($, mangaId)
@@ -111,13 +113,12 @@ Please click the Cloud icon in the top right corner and solve the CAPTCHA to acc
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        this.checkCloudflareStatus(response.status)
+        this.checkCloudflareStatus(response.status, response.data)
         
         return this.parser.parseChapterDetails(response.data ?? '', mangaId, chapterId)
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        // La ricerca usa POST
         const request = App.createRequest({
             url: `${this.baseUrl}/Search/Comic`,
             method: 'POST',
@@ -128,7 +129,7 @@ Please click the Cloud icon in the top right corner and solve the CAPTCHA to acc
         })
 
         const response = await this.requestManager.schedule(request, 1)
-        this.checkCloudflareStatus(response.status)
+        this.checkCloudflareStatus(response.status, response.data)
         
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($)
@@ -146,7 +147,7 @@ Please click the Cloud icon in the top right corner and solve the CAPTCHA to acc
         })
 
         const response = await this.requestManager.schedule(request, 1)
-        this.checkCloudflareStatus(response.status)
+        this.checkCloudflareStatus(response.status, response.data)
         
         const $ = this.cheerio.load(response.data)
         this.parser.parseHomeSections($, sectionCallback)

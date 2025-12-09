@@ -148,7 +148,7 @@ export class ReadComicsOnlineParser {
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
         
-        // 1. Latest Updates
+        // --- 1. Latest Updates ---
         const latestSection = App.createHomeSection({ 
             id: 'latest', 
             title: 'Latest Updates', 
@@ -157,12 +157,11 @@ export class ReadComicsOnlineParser {
         })
         const latestItems: PartialSourceManga[] = []
         
-        // I link dei fumetti sono dentro .items > div > a
-        // Esempio HTML: <a href="Comic/Titolo">...</a>
+        // Selettore molto generico: prende qualsiasi link che punti a /Comic/ dentro la barra
         $('.bigBarContainer .items a').each((_: any, a: any) => {
             const href = $(a).attr('href')
-            // Filtra: deve contenere "Comic/" e NON contenere "?id=" (che sono i capitoli)
-            if (href && href.indexOf('Comic/') !== -1 && href.indexOf('?id=') === -1) {
+            // Ignora link ai capitoli (quelli con ?id=)
+            if (href && href.includes('Comic/') && !href.includes('?id=')) {
                 
                 let id = href.replace(/^\/Comic\//, '').replace(/^Comic\//, '').replace(/^\//, '')
                 
@@ -172,7 +171,8 @@ export class ReadComicsOnlineParser {
 
                 const img = $('img', a)
                 let image = img.attr('src') ?? ''
-                // Supporto srcTemp per lazy loading
+                
+                // Gestione Lazy Load
                 if (!image || image.includes('loader') || image.startsWith('data:')) {
                     image = img.attr('srcTemp') ?? ''
                 }
@@ -194,74 +194,50 @@ export class ReadComicsOnlineParser {
             sectionCallback(latestSection)
         }
 
-        // 2. Newest Comics
-        const newSection = App.createHomeSection({ 
-            id: 'newest', 
-            title: 'New Series', 
-            containsMoreItems: false, 
-            type: HomeSectionType.singleRowNormal 
-        })
-        const newItems: PartialSourceManga[] = []
+        // --- 2. Newest & Popular ---
+        // Funzione helper per parsare i tab
+        const parseTab = (tabId: string, sectionTitle: string) => {
+            const section = App.createHomeSection({ 
+                id: tabId, 
+                title: sectionTitle, 
+                containsMoreItems: false, 
+                type: HomeSectionType.singleRowNormal 
+            })
+            const items: PartialSourceManga[] = []
 
-        $('#tab-newest > div').each((_: any, div: any) => {
-            const link = $('a', div).first()
-            const href = link.attr('href')
-            if (!href) return
+            // Selettore: div diretti figli del tab container
+            $(`#${tabId} > div`).each((_: any, div: any) => {
+                const link = $('a', div).first()
+                const href = link.attr('href')
+                if (!href) return
 
-            let id = href.replace(/^\/Comic\//, '').replace(/^Comic\//, '').replace(/^\//, '')
-            const title = $(div).find('.title').text().trim() || link.text().trim()
+                let id = href.replace(/^\/Comic\//, '').replace(/^Comic\//, '').replace(/^\//, '')
+                
+                // Titolo: o dallo span.title o dal testo del link
+                let title = $(div).find('a.title').text().trim()
+                if (!title) title = link.text().trim()
+                
+                let image = $('img', div).attr('src') ?? ''
+                if (image.startsWith('/')) image = BASE_URL + image
+
+                if (id && title) {
+                    items.push(App.createPartialSourceManga({
+                        mangaId: id,
+                        image: image,
+                        title: title,
+                        subtitle: undefined
+                    }))
+                }
+            })
             
-            let image = $('img', div).attr('src') ?? ''
-            if (image.startsWith('/')) image = BASE_URL + image
-
-            if (id && title) {
-                newItems.push(App.createPartialSourceManga({
-                    mangaId: id,
-                    image: image,
-                    title: title,
-                    subtitle: undefined
-                }))
+            if (items.length > 0) {
+                section.items = items
+                sectionCallback(section)
             }
-        })
-        
-        if (newItems.length > 0) {
-            newSection.items = newItems
-            sectionCallback(newSection)
         }
 
-        // 3. Most Popular
-        const popularSection = App.createHomeSection({ 
-            id: 'popular', 
-            title: 'Most Popular', 
-            containsMoreItems: false, 
-            type: HomeSectionType.singleRowNormal 
-        })
-        const popularItems: PartialSourceManga[] = []
-
-        $('#tab-mostview > div').each((_: any, div: any) => {
-            const link = $('a', div).first()
-            const href = link.attr('href')
-            if (!href) return
-
-            let id = href.replace(/^\/Comic\//, '').replace(/^Comic\//, '').replace(/^\//, '')
-            const title = $(div).find('.title').text().trim() || link.text().trim()
-            
-            let image = $('img', div).attr('src') ?? ''
-            if (image.startsWith('/')) image = BASE_URL + image
-
-            if (id && title) {
-                popularItems.push(App.createPartialSourceManga({
-                    mangaId: id,
-                    image: image,
-                    title: title,
-                    subtitle: undefined
-                }))
-            }
-        })
-
-        if (popularItems.length > 0) {
-            popularSection.items = popularItems
-            sectionCallback(popularSection)
-        }
+        parseTab('tab-newest', 'New Series')
+        parseTab('tab-mostview', 'Most Popular')
+        parseTab('tab-top-day', 'Top Day')
     }
 }
