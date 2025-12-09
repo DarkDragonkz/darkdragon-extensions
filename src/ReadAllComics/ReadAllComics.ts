@@ -31,7 +31,7 @@ export const ReadAllComicsInfo: SourceInfo = {
     websiteBaseURL: RAC_DOMAIN,
     sourceTags: [
         {
-            text: 'Comics 🇺🇸',
+            text: 'English USA',
             type: BadgeColor.BLUE, // Blu per USA/Comics
         },
     ],
