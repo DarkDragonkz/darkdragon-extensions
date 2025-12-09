@@ -20,13 +20,13 @@ import { ReadAllComicsParser } from './ReadAllComicsParser'
 const DOMAIN = 'https://readallcomics.com'
 
 export const ReadAllComicsInfo: SourceInfo = {
-    version: '1.2.1',
+    version: '1.2.2',
     name: 'ReadAllComics',
     icon: 'icon.png',
     author: 'DarkDragonkz',
     authorWebsite: 'https://github.com/DarkDragonkz',
     description: `Extension that pulls comics from ${DOMAIN}`,
-    contentRating: ContentRating.MATURE,
+    contentRating: ContentRating.EVERYONE,
     websiteBaseURL: DOMAIN,
     sourceTags: [
         {
@@ -50,14 +50,10 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
             interceptRequest: async (request: any) => {
                 request.headers = {
                     ...(request.headers ?? {}),
-                    'origin': DOMAIN,
                     'referer': `${DOMAIN}/`,
+                    'origin': DOMAIN,
                     'user-agent': await this.requestManager.getDefaultUserAgent(),
                     'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
-                }
-                // Forza HTTPS
-                if (request.url.startsWith('http:')) {
-                    request.url = request.url.replace(/^http:/, 'https:')
                 }
                 return request
             },
@@ -101,8 +97,7 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        // Usiamo /?s= invece di ?story= perché ?s= restituisce la griglia con le immagini (come la home),
-        // mentre ?story= (usato dall'altro autore) restituisce solo testo.
+        // Utilizziamo la ricerca standard ?s= che restituisce la griglia con immagini
         const searchUrl = `${this.baseUrl}/?s=${encodeURIComponent(query.title ?? '')}`
 
         const request = App.createRequest({
@@ -141,7 +136,6 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
             method: 'GET',
             headers: {
                 'referer': `${this.baseUrl}/`,
-                'origin': this.baseUrl,
                 'user-agent': await this.requestManager.getDefaultUserAgent()
             }
         })
