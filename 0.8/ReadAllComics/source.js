@@ -734,9 +734,10 @@ var _Sources = (() => {
   var ReadAllComicsParser = class {
     parseMangaDetails($, mangaId) {
       const title = $("h1").first().text().trim();
-      let rawImage = $(".description-archive img").first().attr("src") || "";
-      if (rawImage.startsWith("/")) rawImage = `https://2.bp.blogspot.com${rawImage}`;
-      const image = rawImage || "https://paperback.moe/icons/logo-alt.svg";
+      let image = $(".description-archive img").first().attr("src") ?? "";
+      if (!image) image = $("#post-area img").first().attr("src") ?? "";
+      if (image.startsWith("/")) image = "https://readallcomics.com" + image;
+      if (!image) image = "https://paperback.moe/icons/logo-alt.svg";
       let description = "";
       let author = "Unknown";
       const arrayTags = [];
@@ -744,13 +745,9 @@ var _Sources = (() => {
       for (const element of infoElements) {
         const label = $(element).text().trim();
         const parentText = $(element).parent().text().trim();
-        if (!parentText.includes("Publisher:") && !parentText.includes("Genres:") && !parentText.startsWith("Vol")) {
-          description += parentText + "\n";
-        }
         if (parentText.includes("Publisher:")) {
           author = parentText.replace("Publisher:", "").trim();
-        }
-        if (parentText.includes("Genres:")) {
+        } else if (parentText.includes("Genres:")) {
           const genreText = parentText.replace("Genres:", "").trim();
           const genres = genreText.split(",");
           for (const g of genres) {
@@ -758,6 +755,8 @@ var _Sources = (() => {
             const tagId = tagLabel.toLowerCase().replace(/[^a-z0-9]/g, "");
             if (tagLabel) arrayTags.push(App.createTag({ id: tagId, label: tagLabel }));
           }
+        } else if (!parentText.startsWith("Vol")) {
+          description += parentText + "\n";
         }
       }
       const tagSections = [
@@ -769,7 +768,6 @@ var _Sources = (() => {
           titles: [title],
           image,
           status: "Ongoing",
-          // Default
           rating: 0,
           author,
           tags: tagSections,
@@ -791,18 +789,15 @@ var _Sources = (() => {
         const yearMatch = title.match(/\((\d{4})\)/);
         const time = yearMatch ? new Date(yearMatch[1]) : /* @__PURE__ */ new Date();
         let chapNum = 0;
-        const volumeMatch = title.match(/v(\d+)/i);
-        const volNum = volumeMatch ? parseInt(volumeMatch[1]) : 0;
-        const chapterMatch = title.match(/(?:v\d+\s)?(\d+)/);
+        const chapterMatch = title.match(/(?:v\d+\s)?#?(\d+)/i);
         if (chapterMatch && chapterMatch[1]) {
-          const potentialNum = parseInt(chapterMatch[1]);
-          if (potentialNum < 1900) chapNum = potentialNum;
+          const num = parseInt(chapterMatch[1]);
+          if (num < 1900) chapNum = num;
         }
         chapters.push(App.createChapter({
           id: chapterId,
           name: title,
           chapNum,
-          volume: volNum,
           time,
           langCode: "en"
         }));
@@ -814,12 +809,15 @@ var _Sources = (() => {
       const images = $("img").toArray();
       for (const img of images) {
         const $img = $(img);
-        const src = $img.attr("src") || $img.attr("data-src");
-        if (!src || src.includes("logo") || src.includes("preloader") || src.includes("banner")) {
+        let src = $img.attr("src") || $img.attr("data-src");
+        if (!src || src.includes("logo") || src.includes("banner") || src.includes("preloader")) {
           continue;
         }
-        if (src.includes("blogspot") || src.includes("wp-content") || src.startsWith("http")) {
-          pages.push(src.trim());
+        src = src.trim();
+        if (src.startsWith("//")) src = "https:" + src;
+        if (src.startsWith("/")) src = "https://readallcomics.com" + src;
+        if (src.includes("blogspot") || src.includes("wp-content")) {
+          pages.push(src);
         }
       }
       return App.createChapterDetails({
@@ -829,6 +827,7 @@ var _Sources = (() => {
         // Rimuovi duplicati
       });
     }
+    // Unica funzione per Home e Ricerca
     parseSearchResults($, isSearch) {
       const results = [];
       if (isSearch) {
@@ -843,23 +842,24 @@ var _Sources = (() => {
           results.push(App.createPartialSourceManga({
             mangaId: id,
             image: "https://paperback.moe/icons/logo-alt.svg",
-            // Niente immagini nella ricerca lista
             title,
-            subtitle: void 0
+            subtitle: "Comic"
           }));
         }
       } else {
         const items = $("#post-area .post").toArray();
         for (const item of items) {
           const $item = $(item);
-          const link = $item.find(".pinbin-copy a");
-          const title = link.attr("title")?.trim() || link.text().trim();
+          const titleLink = $item.find(".pinbin-copy a").first();
+          const title = titleLink.text().trim();
           const classAttr = $item.attr("class") || "";
           const idMatch = classAttr.match(/category-([^\s]+)/);
           const id = idMatch ? idMatch[1] : "";
-          let image = $item.find("img").first().attr("src") || "";
-          if (image.startsWith("/")) image = "https://2.bp.blogspot.com" + image;
-          const date = $item.find(".pinbin-copy span").text().trim();
+          let image = $item.find("img").first().attr("src") ?? "";
+          if (!image) image = $item.find("img").first().attr("data-src") ?? "";
+          if (image.startsWith("/")) image = "https://readallcomics.com" + image;
+          if (!image) image = "https://paperback.moe/icons/logo-alt.svg";
+          const date = $item.find(".pinbin-date").text().trim();
           if (id && title) {
             results.push(App.createPartialSourceManga({
               mangaId: id,
@@ -873,23 +873,59 @@ var _Sources = (() => {
       return results;
     }
     parseHomeSections($, sectionCallback) {
-      const catalogueSection = App.createHomeSection({
-        id: "catalogue",
-        title: "Catalogue",
+      const latestSection = App.createHomeSection({
+        id: "latest",
+        title: "Latest Releases",
         containsMoreItems: true,
         type: import_types.HomeSectionType.singleRowNormal
       });
       const items = this.parseSearchResults($, false);
-      catalogueSection.items = items;
-      sectionCallback(catalogueSection);
+      latestSection.items = items;
+      sectionCallback(latestSection);
+    }
+  };
+
+  // src/helper.ts
+  var URLBuilder = class {
+    constructor(baseUrl) {
+      this.parameters = {};
+      this.pathComponents = [];
+      this.baseUrl = baseUrl.replace(/(^\/)?(?=.*)(\/$)?/gim, "");
+    }
+    addPathComponent(component) {
+      this.pathComponents.push(component.replace(/(^\/)?(?=.*)(\/$)?/gim, ""));
+      return this;
+    }
+    addQueryParameter(key, value) {
+      this.parameters[key] = value;
+      return this;
+    }
+    buildUrl({ addTrailingSlash, includeUndefinedParameters } = { addTrailingSlash: false, includeUndefinedParameters: false }) {
+      let finalUrl = this.baseUrl + "/";
+      finalUrl += this.pathComponents.join("/");
+      finalUrl += addTrailingSlash ? "/" : "";
+      finalUrl += Object.values(this.parameters).length > 0 ? "?" : "";
+      finalUrl += Object.entries(this.parameters).map((entry) => {
+        if (entry[1] == null && !includeUndefinedParameters) {
+          return void 0;
+        }
+        if (Array.isArray(entry[1])) {
+          return `${entry[0]}=` + entry[1].map((value) => value || includeUndefinedParameters ? `${value},` : void 0).filter((x) => x !== void 0).join("");
+        }
+        if (typeof entry[1] === "object") {
+          return Object.keys(entry[1]).map((key) => `${entry[0]}[${key}]=${entry[1][key]}`).join("&");
+        }
+        return `${entry[0]}=${entry[1]}`;
+      }).filter((x) => x !== void 0).join("&");
+      return finalUrl;
     }
   };
 
   // src/ReadAllComics/ReadAllComics.ts
   var DOMAIN = "https://readallcomics.com";
   var ReadAllComicsInfo = {
-    version: "1.0.4",
-    // Aggiornato
+    version: "1.0.5",
+    // Bump version
     name: "ReadAllComics",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -919,17 +955,11 @@ var _Sources = (() => {
               ...request.headers ?? {},
               "origin": DOMAIN,
               "referer": `${DOMAIN}/`,
-              "user-agent": await this.requestManager.getDefaultUserAgent(),
-              "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-              "accept-language": "en-US,en;q=0.5"
+              "user-agent": await this.requestManager.getDefaultUserAgent()
             };
-            request.url = request.url.replace(/^http:/, "https:");
             return request;
           },
           interceptResponse: async (response) => {
-            if (response.headers.location) {
-              response.headers.location = response.headers.location.replace(/^http:/, "https:");
-            }
             return response;
           }
         }
@@ -959,6 +989,7 @@ var _Sources = (() => {
     async getChapterDetails(mangaId, chapterId) {
       const request = App.createRequest({
         url: `${this.baseUrl}/${chapterId}`,
+        // chapterId è lo slug completo
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
@@ -971,7 +1002,7 @@ var _Sources = (() => {
       let url = "";
       let isSearch = false;
       if (searchTerm.trim().length > 0) {
-        url = `${this.baseUrl}/?story=${encodeURIComponent(searchTerm)}&s=&type=comic`;
+        url = new URLBuilder(this.baseUrl).addQueryParameter("story", searchTerm).addQueryParameter("s", "").addQueryParameter("type", "comic").buildUrl();
         isSearch = true;
       } else {
         url = page > 1 ? `${this.baseUrl}/page/${page}/` : this.baseUrl;
@@ -984,10 +1015,7 @@ var _Sources = (() => {
       const response = await this.requestManager.schedule(request, 1);
       const $ = this.cheerio.load(response.data);
       const manga = this.parser.parseSearchResults($, isSearch);
-      let nextPage = void 0;
-      if (!isSearch && manga.length > 0) {
-        nextPage = { page: page + 1 };
-      }
+      const nextPage = !isSearch && manga.length > 0 ? { page: page + 1 } : void 0;
       return App.createPagedResults({
         results: manga,
         metadata: nextPage
@@ -1011,7 +1039,6 @@ var _Sources = (() => {
         method: "GET",
         headers: {
           "referer": `${this.baseUrl}/`,
-          "origin": `${this.baseUrl}/`,
           "user-agent": await this.requestManager.getDefaultUserAgent()
         }
       });
