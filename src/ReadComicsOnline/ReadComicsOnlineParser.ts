@@ -14,20 +14,16 @@ const BASE_URL = 'https://readcomiconline.li'
 export class ReadComicsOnlineParser {
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
-        // Titolo: cerca il link grande nella barra dei contenuti
         const title = $('div.barContent a.bigChar').first().text().trim() || 'Unknown'
         
-        // Immagine: cerca la prima immagine nella colonna destra
         let image = $('.rightBox .barContent img').first().attr('src') ?? ''
         if (image.startsWith('/')) image = BASE_URL + image
         
-        // Info (Autore, Generi, Stato)
         let author = 'Unknown'
         let status = 'Ongoing'
         let desc = ''
         const arrayTags: Tag[] = []
 
-        // Parsing metadati: itera su tutti i paragrafi che potrebbero contenere info
         $('.barContent p').each((_: any, p: any) => {
             const text = $(p).text().trim()
             const $p = $(p)
@@ -42,9 +38,8 @@ export class ReadComicsOnlineParser {
                 author = $p.find('a').text().trim() || 'Unknown'
             } else if (text.includes('Status:')) {
                 if (text.includes('Completed')) status = 'Completed'
-            } else if (!text.includes('Artist:') && !text.includes('Publication date:') && text.length > 5) {
-                // Se non è un metadato noto, probabilmente è la descrizione
-                desc += text + '\n'
+            } else if (!text.includes('Artist:') && !text.includes('Publication date:')) {
+                if (text.length > 20) desc += text + '\n'
             }
         })
 
@@ -67,11 +62,8 @@ export class ReadComicsOnlineParser {
 
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
-        
-        // Tabella capitoli
         const rows = $('table.listing tr').toArray()
 
-        // Salta intestazione
         for (let i = 1; i < rows.length; i++) {
             const row = rows[i]
             const link = $(row).find('a').first()
@@ -84,13 +76,11 @@ export class ReadComicsOnlineParser {
             const dateText = $(row).find('td').eq(1).text().trim()
             const time = dateText ? new Date(dateText) : new Date()
 
-            // Estrai numero capitolo (es. Issue #14 -> 14)
             let chapNum = 0
             const numMatch = title.match(/#(\d+(\.\d+)?)/)
             if (numMatch) {
                 chapNum = parseFloat(numMatch[1])
             } else {
-                // Fallback: cerca qualsiasi numero
                 const looseMatch = title.match(/(\d+)/)
                 if (looseMatch) chapNum = parseFloat(looseMatch[1])
             }
@@ -103,17 +93,13 @@ export class ReadComicsOnlineParser {
                 langCode: 'en'
             }))
         }
-
         return chapters
     }
 
     parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
         
-        // Tentativo 1: Cerca lstImages (Array standard del Server 2)
         let scriptMatch = html.match(/var lstImages = new Array\((.*?)\);/)
-        
-        // Tentativo 2: Se fallisce, cerca eventuali altre variabili array
         if (!scriptMatch) {
              scriptMatch = html.match(/new Array\((.*?)\);/)
         }
@@ -138,16 +124,12 @@ export class ReadComicsOnlineParser {
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         
-        // Selettore basato sul tuo HTML "Find comic"
         $('.list-comic .item').each((_: any, item: any) => {
             const link = $('a', item).first()
-            // Titolo spesso è nello span o direttamente nel testo
             const title = $('span.title', link).text().trim() || link.text().trim()
             
             let id = link.attr('href') ?? ''
-            // Pulisci ID
-            id = id.replace(/^\/Comic\//, '')
-            id = id.replace(/^\//, '')
+            id = id.replace(/^\/Comic\//, '').replace(/^\//, '')
 
             let image = $('img', link).attr('src') ?? ''
             if (image.startsWith('/')) image = BASE_URL + image
@@ -161,13 +143,12 @@ export class ReadComicsOnlineParser {
                 }))
             }
         })
-
         return results
     }
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
         
-        // -- 1. Latest Updates --
+        // 1. Latest Updates
         const latestSection = App.createHomeSection({ 
             id: 'latest', 
             title: 'Latest Updates', 
@@ -176,20 +157,22 @@ export class ReadComicsOnlineParser {
         })
         const latestItems: PartialSourceManga[] = []
         
-        // Cerca dentro la barra degli aggiornamenti
+        // I link dei fumetti sono dentro .items > div > a
+        // Esempio HTML: <a href="Comic/Titolo">...</a>
         $('.bigBarContainer .items a').each((_: any, a: any) => {
             const href = $(a).attr('href')
-            // Filtra: deve essere un link a un fumetto, non a un capitolo specifico (che ha ?id=)
-            if (href && href.includes('Comic/') && !href.includes('?id=')) {
-                let id = href.replace(/^\/Comic\//, '').replace(/^\//, '')
+            // Filtra: deve contenere "Comic/" e NON contenere "?id=" (che sono i capitoli)
+            if (href && href.indexOf('Comic/') !== -1 && href.indexOf('?id=') === -1) {
                 
-                // Pulisce titolo da "Issue #..."
+                let id = href.replace(/^\/Comic\//, '').replace(/^Comic\//, '').replace(/^\//, '')
+                
                 let title = $(a).text().trim()
                 if (title.includes('Issue')) title = title.split('Issue')[0].trim()
+                if (!title) return
 
-                // Gestione immagine (src o srcTemp per lazy load)
                 const img = $('img', a)
                 let image = img.attr('src') ?? ''
+                // Supporto srcTemp per lazy loading
                 if (!image || image.includes('loader') || image.startsWith('data:')) {
                     image = img.attr('srcTemp') ?? ''
                 }
@@ -211,7 +194,7 @@ export class ReadComicsOnlineParser {
             sectionCallback(latestSection)
         }
 
-        // -- 2. Newest Comics --
+        // 2. Newest Comics
         const newSection = App.createHomeSection({ 
             id: 'newest', 
             title: 'New Series', 
@@ -220,19 +203,14 @@ export class ReadComicsOnlineParser {
         })
         const newItems: PartialSourceManga[] = []
 
-        // Selettore generico: prendi tutti i div figli diretti del tab, ignorando lo stile
         $('#tab-newest > div').each((_: any, div: any) => {
-            const titleLink = $('a.title', div)
-            // Se non c'è classe .title, prova il primo link
-            const link = titleLink.length > 0 ? titleLink : $('a', div).first()
-            
+            const link = $('a', div).first()
             const href = link.attr('href')
-            if (!href || !href.includes('Comic/')) return
+            if (!href) return
 
-            let id = href.replace(/^\/Comic\//, '').replace(/^\//, '')
-            const title = link.text().trim()
+            let id = href.replace(/^\/Comic\//, '').replace(/^Comic\//, '').replace(/^\//, '')
+            const title = $(div).find('.title').text().trim() || link.text().trim()
             
-            // Immagine: cerca un img nel div
             let image = $('img', div).attr('src') ?? ''
             if (image.startsWith('/')) image = BASE_URL + image
 
@@ -251,7 +229,7 @@ export class ReadComicsOnlineParser {
             sectionCallback(newSection)
         }
 
-        // -- 3. Most Popular --
+        // 3. Most Popular
         const popularSection = App.createHomeSection({ 
             id: 'popular', 
             title: 'Most Popular', 
@@ -261,14 +239,12 @@ export class ReadComicsOnlineParser {
         const popularItems: PartialSourceManga[] = []
 
         $('#tab-mostview > div').each((_: any, div: any) => {
-            const titleLink = $('a.title', div)
-            const link = titleLink.length > 0 ? titleLink : $('a', div).first()
-
+            const link = $('a', div).first()
             const href = link.attr('href')
-            if (!href || !href.includes('Comic/')) return
+            if (!href) return
 
-            let id = href.replace(/^\/Comic\//, '').replace(/^\//, '')
-            const title = link.text().trim()
+            let id = href.replace(/^\/Comic\//, '').replace(/^Comic\//, '').replace(/^\//, '')
+            const title = $(div).find('.title').text().trim() || link.text().trim()
             
             let image = $('img', div).attr('src') ?? ''
             if (image.startsWith('/')) image = BASE_URL + image
