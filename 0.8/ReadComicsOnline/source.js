@@ -14932,7 +14932,8 @@ var _Sources = (() => {
   var ReadComicsOnlineParser = class {
     parseMangaDetails($2, mangaId) {
       const title = $2("h2.listmanga-header").first().text().trim() || "Unknown";
-      let image = $2("img", "div.boxed").attr("src") ?? "";
+      const img = $2("img", "div.boxed").first();
+      let image = img.attr("data-src") ?? img.attr("src") ?? "";
       if (image.startsWith("/")) image = BASE_URL + image;
       const author = $2("dd", 'dt:contains("Type")').parent().text().replace("Type", "").trim() || "Unknown";
       const statusText = $2("span.label").text().trim().toLowerCase();
@@ -14986,7 +14987,7 @@ var _Sources = (() => {
       const pages = [];
       const $2 = load(html3);
       $2("img", "div#all").each((_, img) => {
-        let url = $2(img).attr("data-src")?.trim();
+        let url = $2(img).attr("data-src")?.trim() ?? $2(img).attr("src")?.trim();
         if (url) {
           url = url.trim();
           if (url.startsWith("/")) url = BASE_URL + url;
@@ -15029,7 +15030,8 @@ var _Sources = (() => {
       $2("li.schedule-item", "div.carousel").each((_, item) => {
         const id = $2("div.schedule-name a", item).attr("href")?.split("/").pop();
         const title = $2("div.schedule-name", item).text().trim();
-        let image = $2("div.schedule-avatar img", item).attr("src") ?? "";
+        const img = $2("div.schedule-avatar img", item);
+        let image = img.attr("data-src") ?? img.attr("src") ?? "";
         if (image.startsWith("/")) image = BASE_URL + image;
         if (id && title) {
           hotItems.push(App.createPartialSourceManga({
@@ -15053,7 +15055,8 @@ var _Sources = (() => {
         const link = $2("h5.media-heading a", item);
         const id = link.attr("href")?.split("/").pop();
         const title = link.text().trim();
-        let image = $2("div.media-left img", item).attr("src") ?? "";
+        const img = $2("div.media-left img", item);
+        let image = img.attr("data-src") ?? img.attr("src") ?? "";
         if (image.startsWith("/")) image = BASE_URL + image;
         if (id && title) {
           latestItems.push(App.createPartialSourceManga({
