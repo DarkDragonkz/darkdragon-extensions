@@ -13,22 +13,20 @@ import {
     MangaProviding,
     ChapterProviding,
     HomePageSectionsProviding,
-    Request,
-    Response,
 } from '@paperback/types'
 
 import { ReadComicsOnlineParser } from './ReadComicsOnlineParser'
 
-const DOMAIN = 'https://readcomiconline.li'
+const DOMAIN = 'https://readcomicsonline.ru'
 
 export const ReadComicsOnlineInfo: SourceInfo = {
-    version: '2.0.6',
+    version: '2.1.0',
     name: 'ReadComicsOnline',
     icon: 'icon.png',
     author: 'DarkDragonkz',
     authorWebsite: 'https://github.com/DarkDragonkz',
     description: `Extension that pulls comics from ${DOMAIN}`,
-    contentRating: ContentRating.EVERYONE,
+    contentRating: ContentRating.MATURE,
     websiteBaseURL: DOMAIN,
     sourceTags: [
         {
@@ -49,91 +47,65 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
         requestsPerSecond: 3,
         requestTimeout: 20000,
         interceptor: {
-            interceptRequest: async (request: Request): Promise<Request> => {
+            interceptRequest: async (request: any) => {
                 request.headers = {
                     ...(request.headers ?? {}),
                     'referer': `${DOMAIN}/`,
                     'user-agent': await this.requestManager.getDefaultUserAgent(),
-                    'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                    'upgrade-insecure-requests': '1'
                 }
                 return request
             },
-            interceptResponse: async (response: Response): Promise<Response> => {
+            interceptResponse: async (response: any) => {
                 return response
             }
         }
     })
 
-    // Controlla se la pagina ricevuta è un blocco Cloudflare
-    checkCloudflareStatus(status: number, data: any): void {
-        if (status === 503 || status === 403) {
-            throw new Error(`CLOUDFLARE PROTECTION: Please click the Cloud icon in the top right corner.`)
-        }
-        if (typeof data === 'string' && (data.includes('Just a moment...') || data.includes('Attention Required! | Cloudflare') || data.includes('security check'))) {
-             throw new Error(`CLOUDFLARE PROTECTION: Captcha detected. Please click the Cloud icon in the top right corner to solve it.`)
-        }
-    }
-
     getMangaShareUrl(mangaId: string): string {
-        return `${this.baseUrl}/Comic/${mangaId}`
+        return `${this.baseUrl}/comic/${mangaId}`
     }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
         const request = App.createRequest({
-            url: `${this.baseUrl}/Comic/${mangaId}`,
+            url: `${this.baseUrl}/comic/${mangaId}`,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        this.checkCloudflareStatus(response.status, response.data)
-        
         const $ = this.cheerio.load(response.data)
         return this.parser.parseMangaDetails($, mangaId)
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
         const request = App.createRequest({
-            url: `${this.baseUrl}/Comic/${mangaId}`,
+            url: `${this.baseUrl}/comic/${mangaId}`,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        this.checkCloudflareStatus(response.status, response.data)
-        
         const $ = this.cheerio.load(response.data)
         return this.parser.parseChapters($, mangaId)
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // FORZA IL SERVER 2 per evitare protezioni complesse sulle immagini
-        const separator = chapterId.includes('?') ? '&' : '?'
-        const url = `${this.baseUrl}${chapterId}${separator}quality=hq&s=s2`
-
+        // URL formato: domain/comic/manga-slug/chapter-id
         const request = App.createRequest({
-            url: url,
+            url: `${this.baseUrl}/comic/${mangaId}/${chapterId}`,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        this.checkCloudflareStatus(response.status, response.data)
-        
         return this.parser.parseChapterDetails(response.data ?? '', mangaId, chapterId)
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        // La ricerca usa POST su questo sito
+        // Il sito .ru usa un endpoint di ricerca che ritorna JSON
         const request = App.createRequest({
-            url: `${this.baseUrl}/Search/Comic`,
-            method: 'POST',
-            headers: {
-                'content-type': 'application/x-www-form-urlencoded'
-            },
-            data: `keyword=${encodeURIComponent(query.title ?? '')}`
+            url: `${this.baseUrl}/search?query=${encodeURIComponent(query.title ?? '')}`,
+            method: 'GET'
         })
 
         const response = await this.requestManager.schedule(request, 1)
-        this.checkCloudflareStatus(response.status, response.data)
-        
-        const $ = this.cheerio.load(response.data)
-        const manga = this.parser.parseSearchResults($)
+        // La risposta è JSON, la parso
+        const json = JSON.parse(response.data)
+        const manga = this.parser.parseSearchJson(json)
 
         return App.createPagedResults({
             results: manga,
@@ -148,17 +120,16 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
         })
 
         const response = await this.requestManager.schedule(request, 1)
-        this.checkCloudflareStatus(response.status, response.data)
-        
         const $ = this.cheerio.load(response.data)
         this.parser.parseHomeSections($, sectionCallback)
     }
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
+        // Implementazione base per ora
         return App.createPagedResults({ results: [] })
     }
     
-    async getCloudflareBypassRequestAsync(): Promise<Request> {
+    async getCloudflareBypassRequestAsync() {
         return App.createRequest({
             url: this.baseUrl,
             method: 'GET',

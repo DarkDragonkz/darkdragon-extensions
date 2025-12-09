@@ -9,43 +9,40 @@ import {
     TagSection,
 } from '@paperback/types'
 
-const BASE_URL = 'https://readcomiconline.li'
+const BASE_URL = 'https://readcomicsonline.ru'
 
 export class ReadComicsOnlineParser {
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
-        const title = $('div.barContent a.bigChar').first().text().trim() || 'Unknown'
+        // Su .ru il titolo è spesso in h2.listmanga-header o simile nella pagina dettaglio
+        const title = $('h2.listmanga-header').first().text().trim() || 
+                      $('.media-heading').first().text().trim() || 
+                      'Unknown'
         
-        let image = $('.rightBox .barContent img').first().attr('src') ?? ''
-        if (image.startsWith('/')) image = BASE_URL + image
+        let image = $('.boxed img').first().attr('src') ?? 
+                    $('.media-left img').first().attr('src') ?? ''
         
-        let author = 'Unknown'
-        let status = 'Ongoing'
-        let desc = ''
+        // Fix URL immagini (spesso sono //readcomicsonline.ru/...)
+        if (image.startsWith('//')) {
+            image = 'https:' + image
+        } else if (image.startsWith('/')) {
+            image = BASE_URL + image
+        }
+        
+        // Info (Autore, Stato, ecc sono spesso in una dl-horizontal)
+        const author = $('dt:contains("Writer")').next('dd').text().trim() || 'Unknown'
+        const artist = $('dt:contains("Artist")').next('dd').text().trim()
+        const status = $('dt:contains("Status")').next('dd').text().trim().includes('Completed') ? 'Completed' : 'Ongoing'
+        const desc = $('.manga.well p').text().trim() || 'No description available'
+
+        // Generi
         const arrayTags: Tag[] = []
-
-        $('.barContent p').each((_: any, p: any) => {
-            const text = $(p).text().trim()
-            const $p = $(p)
-            
-            if (text.includes('Genres:')) {
-                $p.find('a').each((__: any, a: any) => {
-                    const label = $(a).text().trim()
-                    const id = $(a).attr('href')?.split('/').pop() ?? label
-                    if (label) arrayTags.push(App.createTag({ id, label }))
-                })
-            } else if (text.includes('Writer:')) {
-                author = $p.find('a').text().trim() || 'Unknown'
-            } else if (text.includes('Status:')) {
-                if (text.includes('Completed')) status = 'Completed'
-            } else if (!text.includes('Artist:') && !text.includes('Publication date:')) {
-                if (text.length > 20) desc += text + '\n'
-            }
+        $('.tag-links a').each((_: any, a: any) => {
+            const label = $(a).text().trim()
+            const id = $(a).attr('href')?.split('/').pop() ?? label
+            if (label) arrayTags.push(App.createTag({ id, label }))
         })
-
-        const tagSections: TagSection[] = [
-            App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })
-        ]
+        const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
 
         return App.createSourceManga({
             id: mangaId,
@@ -54,62 +51,89 @@ export class ReadComicsOnlineParser {
                 image: image,
                 status: status,
                 author: author,
+                artist: artist,
                 tags: tagSections,
-                desc: desc.trim() || 'No description available'
+                desc: desc
             })
         })
     }
 
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
-        const rows = $('table.listing tr').toArray()
-
-        for (let i = 1; i < rows.length; i++) {
-            const row = rows[i]
-            const link = $(row).find('a').first()
+        
+        // La lista capitoli è in ul.chapters
+        $('ul.chapters li').each((_: any, li: any) => {
+            const link = $('h5.chapter-title-rtl a', li)
             const title = link.text().trim()
             const href = link.attr('href')
             
-            if (!href) continue
+            if (!href) return
 
-            const chapterId = href
-            const dateText = $(row).find('td').eq(1).text().trim()
-            const time = dateText ? new Date(dateText) : new Date()
+            // L'ID del capitolo in .ru è l'ultimo segmento dell'URL
+            // es: https://readcomicsonline.ru/comic/batman-2016/105 -> 105
+            const chapterId = href.split('/').pop()
 
-            let chapNum = 0
-            // Cerca numeri nel titolo tipo "Issue #15" o "15"
-            const numMatch = title.match(/#(\d+(\.\d+)?)/) ?? title.match(/(\d+(\.\d+)?)/)
-            if (numMatch) {
-                chapNum = parseFloat(numMatch[1])
+            if (!chapterId) return
+
+            const dateText = $('.date-chapter-title-rtl', li).text().trim()
+            let time = new Date()
+            if (dateText) {
+                 time = new Date(dateText)
+            }
+
+            // Estrazione numero capitolo
+            // Spesso l'ID è il numero, ma controlliamo il titolo
+            let chapNum = parseFloat(chapterId)
+            if (isNaN(chapNum)) {
+                const numMatch = title.match(/(\d+(\.\d+)?)/)
+                chapNum = numMatch ? parseFloat(numMatch[0]) : 0
             }
 
             chapters.push(App.createChapter({
                 id: chapterId,
                 name: title,
                 chapNum: chapNum,
-                time: time,
+                time: isNaN(time.getTime()) ? new Date() : time,
                 langCode: 'en'
             }))
-        }
+        })
+
         return chapters
     }
 
     parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
         
-        // Estrazione URL immagini da variabile Javascript (metodo più affidabile per questo sito)
-        let scriptMatch = html.match(/var lstImages = new Array\((.*?)\);/)
-        if (!scriptMatch) scriptMatch = html.match(/new Array\((.*?)\);/)
-
-        if (scriptMatch && scriptMatch[1]) {
-            const rawUrls = scriptMatch[1].split(',')
-            for (const rawUrl of rawUrls) {
-                const url = rawUrl.trim().replace(/^"|"$/g, '').replace(/^'|'$/g, '')
-                if (url.startsWith('http')) {
-                    pages.push(url)
-                }
+        // In .ru le immagini sono spesso dentro #all img o .img-responsive
+        // Usiamo una regex per trovare tutte le immagini caricate
+        const imgRegex = /<img[^>]+src=['"]([^'"]+)['"][^>]+class=['"]img-responsive['"]/g
+        let match
+        
+        // Metodo 1: Regex su HTML grezzo (più veloce)
+        while ((match = imgRegex.exec(html)) !== null) {
+            let url = match[1]
+            if (url) {
+                url = url.trim()
+                if (url.startsWith('//')) url = 'https:' + url
+                else if (url.startsWith('/')) url = BASE_URL + url
+                
+                pages.push(url)
             }
-        } 
+        }
+
+        // Metodo 2: Se regex fallisce, fallback su data-src (lazy load)
+        if (pages.length === 0) {
+            const imgLazyRegex = /data-src=['"]([^'"]+)['"]/g
+            while ((match = imgLazyRegex.exec(html)) !== null) {
+                 let url = match[1]
+                 if (url && !url.includes('loader')) {
+                    url = url.trim()
+                    if (url.startsWith('//')) url = 'https:' + url
+                    else if (url.startsWith('/')) url = BASE_URL + url
+                    pages.push(url)
+                 }
+            }
+        }
 
         return App.createChapterDetails({
             id: chapterId,
@@ -118,22 +142,122 @@ export class ReadComicsOnlineParser {
         })
     }
 
-    parseSearchResults($: any): PartialSourceManga[] {
+    parseSearchJson(json: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         
-        $('.list-comic .item').each((_: any, item: any) => {
-            const link = $('a', item).first()
-            const title = $('span.title', link).text().trim() || link.text().trim()
-            
-            let id = link.attr('href') ?? ''
-            // Pulisce l'ID rimuovendo percorsi extra
-            id = id.replace(/^\/Comic\//, '').replace(/^\//, '')
+        // Il JSON di .ru è: { "suggestions": [ { "value": "Batman", "data": "batman-2016" }, ... ] }
+        if (json.suggestions) {
+            for (const item of json.suggestions) {
+                const title = item.value
+                const id = item.data // lo slug
+                
+                // .ru non fornisce l'immagine nel JSON di ricerca, dobbiamo costruirla
+                // Pattern: uploads/manga/{slug}/cover/cover_250x350.jpg
+                const image = `${BASE_URL}/uploads/manga/${id}/cover/cover_250x350.jpg`
 
-            let image = $('img', link).attr('src') ?? ''
-            if (image.startsWith('/')) image = BASE_URL + image
+                if (id && title) {
+                    results.push(App.createPartialSourceManga({
+                        mangaId: id,
+                        image: image,
+                        title: title,
+                        subtitle: undefined
+                    }))
+                }
+            }
+        }
+        return results
+    }
+
+    parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
+        
+        // 1. Hot Comic Updates (Carousel)
+        const hotSection = App.createHomeSection({ 
+            id: 'hot', 
+            title: 'Hot Comic Updates', 
+            containsMoreItems: false, 
+            type: HomeSectionType.singleRowNormal 
+        })
+        const hotItems: PartialSourceManga[] = []
+        
+        $('#schedule li.schedule-item').each((_: any, item: any) => {
+            const link = $('.schedule-name a', item)
+            const title = link.text().trim()
+            // Estrai ID dall'href: https://readcomicsonline.ru/comic/slug -> slug
+            const href = link.attr('href')
+            const id = href?.split('/').pop()
+
+            let image = $('.schedule-avatar img', item).attr('src') ?? ''
+            if (image.startsWith('//')) image = 'https:' + image
+
+            const subtitle = $('.schedule-date', item).text().trim()
 
             if (id && title) {
-                results.push(App.createPartialSourceManga({
+                hotItems.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image,
+                    title: title,
+                    subtitle: subtitle
+                }))
+            }
+        })
+        hotSection.items = hotItems
+        sectionCallback(hotSection)
+
+        // 2. Latest Comic Updates
+        const latestSection = App.createHomeSection({ 
+            id: 'latest', 
+            title: 'Latest Comic Updates', 
+            containsMoreItems: true, 
+            type: HomeSectionType.singleRowNormal 
+        })
+        const latestItems: PartialSourceManga[] = []
+
+        // Si trovano in .list-container .row .media
+        $('.list-container .row .media').each((_: any, item: any) => {
+            const link = $('h5.media-heading a', item)
+            const title = link.text().trim()
+            const href = link.attr('href')
+            const id = href?.split('/').pop()
+
+            let image = $('.media-left img', item).attr('src') ?? ''
+            if (image.startsWith('//')) image = 'https:' + image
+
+            // Ultimo capitolo come sottotitolo
+            const subtitle = $('div a', $('.media-body', item)).first().text().trim()
+
+            if (id && title) {
+                latestItems.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image,
+                    title: title,
+                    subtitle: subtitle
+                }))
+            }
+        })
+        latestSection.items = latestItems
+        sectionCallback(latestSection)
+
+        // 3. Most Viewed
+        const popularSection = App.createHomeSection({ 
+            id: 'popular', 
+            title: 'Most Viewed', 
+            containsMoreItems: false, 
+            type: HomeSectionType.singleRowNormal 
+        })
+        const popularItems: PartialSourceManga[] = []
+
+        // Si trovano nel widget a destra: .panel-success ul li.list-group-item
+        $('.panel-success ul li.list-group-item .media').each((_: any, item: any) => {
+            const link = $('h5.media-heading a', item)
+            const title = link.text().trim()
+            const href = link.attr('href')
+            const id = href?.split('/').pop()
+
+            let image = $('.media-left img', item).attr('src') ?? ''
+            if (image.startsWith('//')) image = 'https:' + image
+
+            if (id && title) {
+                popularItems.push(App.createPartialSourceManga({
                     mangaId: id,
                     image: image,
                     title: title,
@@ -141,103 +265,7 @@ export class ReadComicsOnlineParser {
                 }))
             }
         })
-        return results
-    }
-
-    parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
-        
-        // --- 1. Latest Updates ---
-        const latestSection = App.createHomeSection({ 
-            id: 'latest', 
-            title: 'Latest Updates', 
-            containsMoreItems: true, 
-            type: HomeSectionType.singleRowNormal 
-        })
-        const latestItems: PartialSourceManga[] = []
-        
-        // Selettore specifico per la struttura a "items" che mi hai mostrato
-        $('.bigBarContainer .items a').each((_: any, a: any) => {
-            const href = $(a).attr('href')
-            // Ignora i link ai capitoli specifici (che contengono ?id=)
-            if (href && href.includes('Comic/') && !href.includes('?id=')) {
-                
-                let id = href.replace(/^\/Comic\//, '').replace(/^Comic\//, '').replace(/^\//, '')
-                
-                // Il testo contiene spesso "Title Issue #1", puliamo
-                let title = $(a).text().trim()
-                if (title.includes('Issue')) title = title.split('Issue')[0].trim()
-                if (title.includes('\n')) title = title.split('\n')[0].trim()
-                
-                if (!title) return
-
-                const img = $('img', a)
-                // LOGICA CRITICA: Cerca srcTemp se src è vuoto o placeholder
-                let image = img.attr('src') ?? ''
-                if (!image || image.includes('blank') || image.includes('loader')) {
-                    image = img.attr('srcTemp') ?? ''
-                }
-                if (image && image.startsWith('/')) image = BASE_URL + image
-
-                if (id && !latestItems.some(x => x.mangaId === id)) {
-                    latestItems.push(App.createPartialSourceManga({
-                        mangaId: id,
-                        image: image,
-                        title: title,
-                        subtitle: 'Updated'
-                    }))
-                }
-            }
-        })
-        
-        if (latestItems.length > 0) {
-            latestSection.items = latestItems
-            sectionCallback(latestSection)
-        }
-
-        // --- 2. Newest & Popular (Tabbed content) ---
-        const parseTab = (tabId: string, sectionId: string, titleSection: string) => {
-            const section = App.createHomeSection({ 
-                id: sectionId, 
-                title: titleSection, 
-                containsMoreItems: false, 
-                type: HomeSectionType.singleRowNormal 
-            })
-            const items: PartialSourceManga[] = []
-
-            $(`#${tabId} > div`).each((_: any, div: any) => {
-                const link = $('a', div).first() // Prende il primo link (spesso l'immagine)
-                const href = link.attr('href')
-                if (!href) return
-
-                let id = href.replace(/^\/Comic\//, '').replace(/^Comic\//, '').replace(/^\//, '')
-                
-                // Cerca il titolo in vari punti
-                let title = $(div).find('a.title').text().trim()
-                if (!title) title = link.next('a').text().trim() // A volte il titolo è il link dopo l'immagine
-                if (!title) title = link.text().trim()
-
-                let image = $('img', div).attr('src') ?? ''
-                if (!image || image.includes('blank')) image = $('img', div).attr('srcTemp') ?? ''
-                if (image.startsWith('/')) image = BASE_URL + image
-
-                if (id && title) {
-                    items.push(App.createPartialSourceManga({
-                        mangaId: id,
-                        image: image,
-                        title: title,
-                        subtitle: undefined
-                    }))
-                }
-            })
-            
-            if (items.length > 0) {
-                section.items = items
-                sectionCallback(section)
-            }
-        }
-
-        parseTab('tab-newest', 'newest', 'New Series')
-        parseTab('tab-mostview', 'popular', 'Most Popular')
-        parseTab('tab-top-day', 'topday', 'Top Day')
+        popularSection.items = popularItems
+        sectionCallback(popularSection)
     }
 }
