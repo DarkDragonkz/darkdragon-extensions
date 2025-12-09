@@ -20,13 +20,13 @@ import { ReadAllComicsParser } from './ReadAllComicsParser'
 const DOMAIN = 'https://readallcomics.com'
 
 export const ReadAllComicsInfo: SourceInfo = {
-    version: '1.2.0',
+    version: '1.2.1',
     name: 'ReadAllComics',
     icon: 'icon.png',
     author: 'DarkDragonkz',
     authorWebsite: 'https://github.com/DarkDragonkz',
     description: `Extension that pulls comics from ${DOMAIN}`,
-    contentRating: ContentRating.EVERYONE,
+    contentRating: ContentRating.MATURE,
     websiteBaseURL: DOMAIN,
     sourceTags: [
         {
@@ -50,8 +50,14 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
             interceptRequest: async (request: any) => {
                 request.headers = {
                     ...(request.headers ?? {}),
+                    'origin': DOMAIN,
                     'referer': `${DOMAIN}/`,
-                    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    'user-agent': await this.requestManager.getDefaultUserAgent(),
+                    'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+                }
+                // Forza HTTPS
+                if (request.url.startsWith('http:')) {
+                    request.url = request.url.replace(/^http:/, 'https:')
                 }
                 return request
             },
@@ -95,9 +101,12 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        // ReadAllComics ricerca: https://readallcomics.com/?s=batman
+        // Usiamo /?s= invece di ?story= perché ?s= restituisce la griglia con le immagini (come la home),
+        // mentre ?story= (usato dall'altro autore) restituisce solo testo.
+        const searchUrl = `${this.baseUrl}/?s=${encodeURIComponent(query.title ?? '')}`
+
         const request = App.createRequest({
-            url: `${this.baseUrl}/?s=${encodeURIComponent(query.title ?? '')}`,
+            url: searchUrl,
             method: 'GET'
         })
 
@@ -132,6 +141,7 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
             method: 'GET',
             headers: {
                 'referer': `${this.baseUrl}/`,
+                'origin': this.baseUrl,
                 'user-agent': await this.requestManager.getDefaultUserAgent()
             }
         })

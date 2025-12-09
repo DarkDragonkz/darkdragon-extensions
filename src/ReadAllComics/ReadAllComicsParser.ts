@@ -16,15 +16,19 @@ export class ReadAllComicsParser {
     parseMangaDetails($: any, mangaId: string): SourceManga {
         const title = $('h1').first().text().trim() || 'Unknown'
         
-        // Gestione immagine robusta per WordPress
+        // Logica immagine migliorata (ispirata al codice fornito)
         const img = $('div.summary_image img').first()
-        let image = img.attr('data-src') ?? img.attr('src') ?? ''
-        if (image && !image.startsWith('http')) image = image.startsWith('//') ? `https:${image}` : BASE_URL + image
+        let image = img.attr('data-src') || img.attr('src') || ''
+        if (image.startsWith('/')) {
+            image = `https://2.bp.blogspot.com${image}`
+        }
 
         // Info
         const author = $('.author-content a').map((_: any, a: any) => $(a).text().trim()).get().join(', ') || 'Unknown'
         const status = $('.post-status .summary-content').text().trim().includes('OnGoing') ? 'Ongoing' : 'Completed'
-        const desc = $('.description-summary .summary__content').text().trim()
+        
+        // Descrizione pulita dai tag interni
+        let desc = $('.description-summary .summary__content').text().trim()
 
         // Generi
         const arrayTags: Tag[] = []
@@ -51,17 +55,15 @@ export class ReadAllComicsParser {
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
         
-        // I capitoli sono in ul.main-version-ul li
         $('.main-version-ul li').each((_: any, li: any) => {
             const link = $('a', li)
             const title = link.text().trim()
             const href = link.attr('href')
             if (!href) return
 
-            // ID del capitolo è l'intero URL per ReadAllComics
             const chapterId = href
 
-            // Cerca di estrarre un numero dal titolo
+            // Parsing numero capitolo
             const numMatch = title.match(/(\d+(\.\d+)?)/g)
             const chapNum = numMatch ? parseFloat(numMatch[numMatch.length - 1]!) : 0
 
@@ -69,7 +71,7 @@ export class ReadAllComicsParser {
                 id: chapterId,
                 name: title,
                 chapNum: chapNum,
-                time: new Date(), // Sito non fornisce date precise nei listing
+                time: new Date(),
                 langCode: 'en'
             }))
         })
@@ -80,18 +82,18 @@ export class ReadAllComicsParser {
     parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
         
-        // ReadAllComics mette tutte le immagini <img> dentro un div, spesso .entry-content o semplice lista
-        // Cerchiamo tutte le immagini nel body per sicurezza, filtrando quelle piccole
-        // Oppure usiamo una regex per trovare i tag img nell'HTML grezzo
-        
-        // Regex per catturare src nelle immagini
+        // Regex per trovare le immagini nel contenuto
         const imgRegex = /<img[^>]+src="([^">]+)"/g
         let match
         while ((match = imgRegex.exec(html)) !== null) {
             let url = match[1]
             if (url && !url.includes('logo') && !url.includes('facebook') && !url.includes('twitter')) {
-                // Pulisce URL
-                if (!url.startsWith('http')) url = url.startsWith('//') ? `https:${url}` : BASE_URL + url
+                // Fix URL relativi come nel codice di Karrot
+                if (url.startsWith('/')) {
+                    url = `https://2.bp.blogspot.com${url}`
+                } else if (!url.startsWith('http')) {
+                     url = url.startsWith('//') ? `https:${url}` : BASE_URL + url
+                }
                 pages.push(url)
             }
         }
@@ -106,34 +108,23 @@ export class ReadAllComicsParser {
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
 
-        // ReadAllComics ha diversi layout di ricerca. Cerchiamo di essere generici.
-        // Solitamente sono dentro 'article' o 'div.post-item'
-        
-        $('article, div.post-item, div.item-summary').each((_: any, item: any) => {
-            const link = $('a', item).first()
+        // Usiamo il selettore del codice che mi hai mandato (#post-area .post) 
+        // perché è quello che contiene le immagini nel layout a griglia
+        $('#post-area .post').each((_: any, item: any) => {
+            const link = $('.pinbin-copy a', item).first()
             const href = link.attr('href')
-            const title = link.attr('title') || $('h3, h4, h5', item).text().trim() || link.text().trim()
+            const title = link.text().trim() || link.attr('title')
             
             if (!href || !title) return
 
-            // ID è l'URL
             const id = href
 
-            // Immagine: Cerchiamo in modo aggressivo
+            // Logica immagine PRESA DAL CODICE CHE MI HAI MANDATO
             const img = $('img', item).first()
-            let image = img.attr('data-src') ?? 
-                        img.attr('src') ?? 
-                        img.attr('srcset')?.split(',')[0]?.split(' ')[0] ?? 
-                        ''
-
-            // Fix URL immagine
-            if (image && !image.startsWith('http')) {
-                 image = image.startsWith('//') ? `https:${image}` : BASE_URL + image
-            }
-
-            // FALLBACK: Se non c'è immagine (risultato testuale), usa logo placeholder
-            if (!image || image.includes('blank') || image === '') {
-                image = 'https://readallcomics.com/wp-content/uploads/2020/09/logo.png' 
+            let image = img.attr('data-src') || img.attr('src') || ''
+            
+            if (image.startsWith('/')) {
+                image = `https://2.bp.blogspot.com${image}`
             }
 
             results.push(App.createPartialSourceManga({
@@ -150,29 +141,35 @@ export class ReadAllComicsParser {
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
         const latestSection = App.createHomeSection({ 
             id: 'latest', 
-            title: 'Latest Added', 
+            title: 'Catalogue', 
             containsMoreItems: false, 
-            type: HomeSectionType.singleRowNormal 
+            type: HomeSectionType.singleRowLarge 
         })
         const items: PartialSourceManga[] = []
 
-        // Home page items
-        $('ul.list-story li, div.item-summary').each((_: any, item: any) => {
-            const link = $('a', item).first()
+        // Stesso selettore robusto per la home
+        $('#post-area .post').each((_: any, item: any) => {
+            const link = $('.pinbin-copy a', item).first()
             const href = link.attr('href')
-            const title = link.attr('title') || $('h3', item).text().trim()
+            const title = link.text().trim() || link.attr('title')
             
             if (!href || !title) return
 
             const img = $('img', item).first()
-            let image = img.attr('data-src') ?? img.attr('src') ?? ''
-            if (image && !image.startsWith('http')) image = image.startsWith('//') ? `https:${image}` : BASE_URL + image
+            let image = img.attr('data-src') || img.attr('src') || ''
+            
+            // Fix per immagini relative blogspot
+            if (image.startsWith('/')) {
+                image = `https://2.bp.blogspot.com${image}`
+            }
+
+            const dateText = $('.pinbin-copy span', item).text().trim()
 
             items.push(App.createPartialSourceManga({
                 mangaId: href,
                 image: image,
                 title: title,
-                subtitle: 'New'
+                subtitle: dateText
             }))
         })
 
