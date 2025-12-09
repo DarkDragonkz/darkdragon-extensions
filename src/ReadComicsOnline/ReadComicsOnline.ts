@@ -20,7 +20,7 @@ import { ReadComicsOnlineParser } from './ReadComicsOnlineParser'
 const DOMAIN = 'https://readcomicsonline.ru'
 
 export const ReadComicsOnlineInfo: SourceInfo = {
-    version: '2.1.0',
+    version: '2.2.0',
     name: 'ReadComicsOnline',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -31,7 +31,7 @@ export const ReadComicsOnlineInfo: SourceInfo = {
     sourceTags: [
         {
             text: 'Comics 🇺🇸',
-            type: BadgeColor.BLUE,
+            type: BadgeColor.BLUE, // Colore blu per differenziarlo
         },
     ],
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,
@@ -44,8 +44,8 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 3,
-        requestTimeout: 20000,
+        requestsPerSecond: 5, // Ottimizzato per velocità
+        requestTimeout: 15000,
         interceptor: {
             interceptRequest: async (request: any) => {
                 request.headers = {
@@ -86,7 +86,6 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // URL formato: domain/comic/manga-slug/chapter-id
         const request = App.createRequest({
             url: `${this.baseUrl}/comic/${mangaId}/${chapterId}`,
             method: 'GET'
@@ -96,14 +95,12 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        // Il sito .ru usa un endpoint di ricerca che ritorna JSON
         const request = App.createRequest({
             url: `${this.baseUrl}/search?query=${encodeURIComponent(query.title ?? '')}`,
             method: 'GET'
         })
 
         const response = await this.requestManager.schedule(request, 1)
-        // La risposta è JSON, la parso
         const json = JSON.parse(response.data)
         const manga = this.parser.parseSearchJson(json)
 
@@ -125,7 +122,6 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
     }
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
-        // Implementazione base per ora
         return App.createPagedResults({ results: [] })
     }
     
