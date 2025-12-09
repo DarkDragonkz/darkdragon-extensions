@@ -9,209 +9,173 @@ import {
     TagSection,
 } from '@paperback/types'
 
+const BASE_URL = 'https://readallcomics.com'
+
 export class ReadAllComicsParser {
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
-        const title = $('h1').first().text().trim()
+        const title = $('h1').first().text().trim() || 'Unknown'
         
-        // Gestione Immagine
-        let image = $('.description-archive img').first().attr('src') ?? ''
-        if (!image) image = $('#post-area img').first().attr('src') ?? ''
-        if (image.startsWith('/')) image = 'https://readallcomics.com' + image
-        if (!image) image = 'https://paperback.moe/icons/logo-alt.svg'
+        // Gestione immagine robusta per WordPress
+        const img = $('div.summary_image img').first()
+        let image = img.attr('data-src') ?? img.attr('src') ?? ''
+        if (image && !image.startsWith('http')) image = image.startsWith('//') ? `https:${image}` : BASE_URL + image
 
-        // Descrizione e Autore
-        let description = ''
-        let author = 'Unknown'
+        // Info
+        const author = $('.author-content a').map((_: any, a: any) => $(a).text().trim()).get().join(', ') || 'Unknown'
+        const status = $('.post-status .summary-content').text().trim().includes('OnGoing') ? 'Ongoing' : 'Completed'
+        const desc = $('.description-summary .summary__content').text().trim()
+
+        // Generi
         const arrayTags: Tag[] = []
-
-        const infoElements = $('.b strong').toArray()
-        
-        // Estrazione metadati dal blocco disordinato del sito
-        for (const element of infoElements) {
-            const label = $(element).text().trim()
-            const parentText = $(element).parent().text().trim()
-
-            if (parentText.includes('Publisher:')) {
-                author = parentText.replace('Publisher:', '').trim()
-            } else if (parentText.includes('Genres:')) {
-                const genreText = parentText.replace('Genres:', '').trim()
-                const genres = genreText.split(',')
-                for (const g of genres) {
-                    const tagLabel = g.trim()
-                    const tagId = tagLabel.toLowerCase().replace(/[^a-z0-9]/g, '')
-                    if (tagLabel) arrayTags.push(App.createTag({ id: tagId, label: tagLabel }))
-                }
-            } else if (!parentText.startsWith('Vol')) {
-                // Tutto ciò che non è un metadato è descrizione
-                description += parentText + '\n'
-            }
-        }
-
-        const tagSections: TagSection[] = [
-            App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })
-        ]
+        $('.genres-content a').each((_: any, a: any) => {
+            const label = $(a).text().trim()
+            const id = $(a).attr('href')?.split('/').filter(Boolean).pop() ?? label
+            if (label) arrayTags.push(App.createTag({ id, label }))
+        })
+        const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
 
         return App.createSourceManga({
             id: mangaId,
             mangaInfo: App.createMangaInfo({
                 titles: [title],
                 image: image,
-                status: 'Ongoing',
-                rating: 0,
+                status: status,
                 author: author,
                 tags: tagSections,
-                desc: description.trim() || 'No description available',
-                hentai: false
+                desc: desc
             })
         })
     }
 
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
-        const items = $('.list-story li').toArray()
-
-        for (const item of items) {
-            const link = $(item).find('a')
-            const href = link.attr('href')
+        
+        // I capitoli sono in ul.main-version-ul li
+        $('.main-version-ul li').each((_: any, li: any) => {
+            const link = $('a', li)
             const title = link.text().trim()
+            const href = link.attr('href')
+            if (!href) return
 
-            if (!href) continue
+            // ID del capitolo è l'intero URL per ReadAllComics
+            const chapterId = href
 
-            // ID Capitolo: ultima parte dell'URL
-            const parts = href.split('/').filter((p: string) => p.length > 0)
-            const chapterId = parts[parts.length - 1]
-
-            // Data (spesso l'anno è nel titolo)
-            const yearMatch = title.match(/\((\d{4})\)/)
-            const time = yearMatch ? new Date(yearMatch[1]) : new Date()
-
-            // Numero capitolo
-            let chapNum = 0
-            const chapterMatch = title.match(/(?:v\d+\s)?#?(\d+)/i)
-            if (chapterMatch && chapterMatch[1]) {
-                const num = parseInt(chapterMatch[1])
-                if (num < 1900) chapNum = num
-            }
+            // Cerca di estrarre un numero dal titolo
+            const numMatch = title.match(/(\d+(\.\d+)?)/g)
+            const chapNum = numMatch ? parseFloat(numMatch[numMatch.length - 1]!) : 0
 
             chapters.push(App.createChapter({
                 id: chapterId,
                 name: title,
                 chapNum: chapNum,
-                time: time,
+                time: new Date(), // Sito non fornisce date precise nei listing
                 langCode: 'en'
             }))
-        }
+        })
 
         return chapters
     }
 
-    parseChapterDetails($: any, mangaId: string, chapterId: string): ChapterDetails {
+    parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
         
-        // Cerca tutte le immagini nel corpo della pagina
-        const images = $('img').toArray()
-
-        for (const img of images) {
-            const $img = $(img)
-            let src = $img.attr('src') || $img.attr('data-src')
-
-            // Filtra immagini di sistema
-            if (!src || src.includes('logo') || src.includes('banner') || src.includes('preloader')) {
-                continue
-            }
-            
-            // Correzione URL
-            src = src.trim()
-            if (src.startsWith('//')) src = 'https:' + src
-            if (src.startsWith('/')) src = 'https://readallcomics.com' + src
-
-            // Accetta solo immagini che sembrano pagine (spesso hostate su blogspot o wp-content)
-            if (src.includes('blogspot') || src.includes('wp-content')) {
-                 pages.push(src)
+        // ReadAllComics mette tutte le immagini <img> dentro un div, spesso .entry-content o semplice lista
+        // Cerchiamo tutte le immagini nel body per sicurezza, filtrando quelle piccole
+        // Oppure usiamo una regex per trovare i tag img nell'HTML grezzo
+        
+        // Regex per catturare src nelle immagini
+        const imgRegex = /<img[^>]+src="([^">]+)"/g
+        let match
+        while ((match = imgRegex.exec(html)) !== null) {
+            let url = match[1]
+            if (url && !url.includes('logo') && !url.includes('facebook') && !url.includes('twitter')) {
+                // Pulisce URL
+                if (!url.startsWith('http')) url = url.startsWith('//') ? `https:${url}` : BASE_URL + url
+                pages.push(url)
             }
         }
-        
+
         return App.createChapterDetails({
             id: chapterId,
             mangaId: mangaId,
-            pages: [...new Set(pages)] // Rimuovi duplicati
+            pages: pages
         })
     }
 
-    // Unica funzione per Home e Ricerca
-    parseSearchResults($: any, isSearch: boolean): PartialSourceManga[] {
+    parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
+
+        // ReadAllComics ha diversi layout di ricerca. Cerchiamo di essere generici.
+        // Solitamente sono dentro 'article' o 'div.post-item'
         
-        if (isSearch) {
-            // LISTA (Ricerca testuale) - Di solito senza immagini
-            const items = $('.list-story li').toArray()
-            for (const item of items) {
-                const link = $(item).find('a')
-                const title = link.attr('title') || link.text().trim()
-                const href = link.attr('href')
-                if (!href) continue
+        $('article, div.post-item, div.item-summary').each((_: any, item: any) => {
+            const link = $('a', item).first()
+            const href = link.attr('href')
+            const title = link.attr('title') || $('h3, h4, h5', item).text().trim() || link.text().trim()
+            
+            if (!href || !title) return
 
-                const parts = href.split('/').filter((p: string) => p.length > 0)
-                const id = parts[parts.length - 1]
+            // ID è l'URL
+            const id = href
 
-                results.push(App.createPartialSourceManga({
-                    mangaId: id,
-                    image: 'https://paperback.moe/icons/logo-alt.svg',
-                    title: title,
-                    subtitle: 'Comic'
-                }))
+            // Immagine: Cerchiamo in modo aggressivo
+            const img = $('img', item).first()
+            let image = img.attr('data-src') ?? 
+                        img.attr('src') ?? 
+                        img.attr('srcset')?.split(',')[0]?.split(' ')[0] ?? 
+                        ''
+
+            // Fix URL immagine
+            if (image && !image.startsWith('http')) {
+                 image = image.startsWith('//') ? `https:${image}` : BASE_URL + image
             }
-        } else {
-            // GRIGLIA (Home / Browse / Categoria) - Con immagini
-            const items = $('#post-area .post').toArray()
-            for (const item of items) {
-                const $item = $(item)
-                const titleLink = $item.find('.pinbin-copy a').first()
-                const title = titleLink.text().trim()
-                
-                // Estrai ID dalla classe category
-                const classAttr = $item.attr('class') || ''
-                const idMatch = classAttr.match(/category-([^\s]+)/)
-                const id = idMatch ? idMatch[1] : ''
 
-                // Estrazione Immagine robusta
-                let image = $item.find('img').first().attr('src') ?? ''
-                // A volte è in data-src
-                if (!image) image = $item.find('img').first().attr('data-src') ?? ''
-                
-                if (image.startsWith('/')) image = 'https://readallcomics.com' + image
-                
-                // Fallback se ancora vuota
-                if (!image) image = 'https://paperback.moe/icons/logo-alt.svg'
-
-                const date = $item.find('.pinbin-date').text().trim()
-
-                if (id && title) {
-                    results.push(App.createPartialSourceManga({
-                        mangaId: id,
-                        image: image,
-                        title: title,
-                        subtitle: date
-                    }))
-                }
+            // FALLBACK: Se non c'è immagine (risultato testuale), usa logo placeholder
+            if (!image || image.includes('blank') || image === '') {
+                image = 'https://readallcomics.com/wp-content/uploads/2020/09/logo.png' 
             }
-        }
-        
+
+            results.push(App.createPartialSourceManga({
+                mangaId: id,
+                image: image,
+                title: title,
+                subtitle: undefined
+            }))
+        })
+
         return results
     }
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
         const latestSection = App.createHomeSection({ 
             id: 'latest', 
-            title: 'Latest Releases', 
-            containsMoreItems: true, 
+            title: 'Latest Added', 
+            containsMoreItems: false, 
             type: HomeSectionType.singleRowNormal 
         })
-        
-        // false = modalità "Griglia/Browse"
-        const items = this.parseSearchResults($, false)
-        
+        const items: PartialSourceManga[] = []
+
+        // Home page items
+        $('ul.list-story li, div.item-summary').each((_: any, item: any) => {
+            const link = $('a', item).first()
+            const href = link.attr('href')
+            const title = link.attr('title') || $('h3', item).text().trim()
+            
+            if (!href || !title) return
+
+            const img = $('img', item).first()
+            let image = img.attr('data-src') ?? img.attr('src') ?? ''
+            if (image && !image.startsWith('http')) image = image.startsWith('//') ? `https:${image}` : BASE_URL + image
+
+            items.push(App.createPartialSourceManga({
+                mangaId: href,
+                image: image,
+                title: title,
+                subtitle: 'New'
+            }))
+        })
+
         latestSection.items = items
         sectionCallback(latestSection)
     }
