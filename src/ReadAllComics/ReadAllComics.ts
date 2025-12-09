@@ -20,7 +20,7 @@ import { ReadAllComicsParser } from './ReadAllComicsParser'
 const DOMAIN = 'https://readallcomics.com'
 
 export const ReadAllComicsInfo: SourceInfo = {
-    version: '1.2.5',
+    version: '1.3.0',
     name: 'ReadAllComics',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -68,7 +68,8 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
-        // COSTRUZIONE URL CRITICA: Usa /category/ + slug
+        // Qui costruiamo l'URL corretto della categoria
+        // mangaId è ora lo slug pulito (es. "batman") estratto dalla classe CSS
         const request = App.createRequest({
             url: `${this.baseUrl}/category/${mangaId}`,
             method: 'GET'
@@ -89,9 +90,9 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // I capitoli sono link diretti (non category), quindi: DOMAIN/chapter-slug
+        // chapterId è l'URL completo del capitolo che abbiamo preso nel parser
         const request = App.createRequest({
-            url: `${this.baseUrl}/${chapterId}`,
+            url: chapterId,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
@@ -99,7 +100,7 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        // Usiamo la ricerca standard ?s= che restituisce la griglia con immagini
+        // Usiamo ?s= per avere anche le immagini
         const searchUrl = `${this.baseUrl}/?s=${encodeURIComponent(query.title ?? '')}`
 
         const request = App.createRequest({
@@ -138,7 +139,6 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
             method: 'GET',
             headers: {
                 'referer': `${this.baseUrl}/`,
-                'origin': this.baseUrl,
                 'user-agent': await this.requestManager.getDefaultUserAgent()
             }
         })
