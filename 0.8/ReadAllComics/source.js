@@ -772,10 +772,15 @@ var _Sources = (() => {
         if (!src || src.includes("data:image")) {
           src = $img.attr("data-src") || $img.attr("data-lazy-src");
         }
-        if (src && !src.includes("logo") && !src.includes("banner") && !src.includes("button")) {
-          if (!src.startsWith("http")) {
+        if (src) {
+          src = src.trim();
+          if (src.includes("logo") || src.includes("banner") || src.includes("button") || src.includes("preloader.gif") || src.includes("loader")) {
+            continue;
           }
-          pages.push(src.trim());
+          if (src.startsWith("//")) {
+            src = "https:" + src;
+          }
+          pages.push(src);
         }
       }
       return App.createChapterDetails({
@@ -858,7 +863,7 @@ var _Sources = (() => {
   // src/ReadAllComics/ReadAllComics.ts
   var RAC_DOMAIN = "https://readallcomics.com";
   var ReadAllComicsInfo = {
-    version: "1.0.0",
+    version: "1.0.2",
     name: "ReadAllComics",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -868,9 +873,8 @@ var _Sources = (() => {
     websiteBaseURL: RAC_DOMAIN,
     sourceTags: [
       {
-        text: "English USA",
+        text: "Comics \u{1F1FA}\u{1F1F8}",
         type: import_types2.BadgeColor.BLUE
-        // Blu per USA/Comics
       }
     ],
     intents: import_types2.SourceIntents.MANGA_CHAPTERS | import_types2.SourceIntents.HOMEPAGE_SECTIONS
@@ -887,8 +891,14 @@ var _Sources = (() => {
           interceptRequest: async (request) => {
             request.headers = {
               ...request.headers ?? {},
+              "origin": `${this.baseUrl}`,
               "referer": `${this.baseUrl}/`,
-              "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
+              "user-agent": await App.getDefaultUserAgent(),
+              "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+              "accept-language": "en-US,en;q=0.5",
+              "accept-encoding": "gzip, deflate, br",
+              "x-requested-with": "com.batcave.android"
+              // Header critico dalla repo di riferimento
             };
             return request;
           },
@@ -922,7 +932,6 @@ var _Sources = (() => {
     async getChapterDetails(mangaId, chapterId) {
       const request = App.createRequest({
         url: chapterId,
-        // chapterId è uguale a mangaId (URL pagina)
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
@@ -930,7 +939,6 @@ var _Sources = (() => {
       return this.parser.parseChapterDetails($, mangaId, chapterId);
     }
     async getSearchResults(query, metadata) {
-      const page = metadata?.page ?? 1;
       const url = new URLBuilder(this.baseUrl).addQueryParameter("s", query.title ?? "").addQueryParameter("story", query.title ?? "").addQueryParameter("type", "comic").buildUrl();
       const request = App.createRequest({
         url,
@@ -942,7 +950,6 @@ var _Sources = (() => {
       return App.createPagedResults({
         results: manga,
         metadata: void 0
-        // Disabilitiamo paginazione ricerca per ora per semplicità
       });
     }
     async getHomePageSections(sectionCallback) {
