@@ -20,7 +20,7 @@ import { ReadComicsOnlineParser } from './ReadComicsOnlineParser'
 const DOMAIN = 'https://readcomicsonline.ru'
 
 export const ReadComicsOnlineInfo: SourceInfo = {
-    version: '2.2.0',
+    version: '2.2.1', // Bump versione
     name: 'ReadComicsOnline',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -31,7 +31,7 @@ export const ReadComicsOnlineInfo: SourceInfo = {
     sourceTags: [
         {
             text: 'Comics 🇺🇸',
-            type: BadgeColor.BLUE, // Colore blu per differenziarlo
+            type: BadgeColor.BLUE,
         },
     ],
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,
@@ -44,8 +44,8 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 5, // Ottimizzato per velocità
-        requestTimeout: 15000,
+        requestsPerSecond: 3, // Ridotto per stabilità
+        requestTimeout: 20000, // Aumentato a 20 secondi per evitare timeout
         interceptor: {
             interceptRequest: async (request: any) => {
                 request.headers = {
@@ -91,6 +91,7 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
+        // Passiamo response.data (HTML) al parser che ora ha cheerio importato
         return this.parser.parseChapterDetails(response.data ?? '', mangaId, chapterId)
     }
 
@@ -101,13 +102,17 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
         })
 
         const response = await this.requestManager.schedule(request, 1)
-        const json = JSON.parse(response.data)
-        const manga = this.parser.parseSearchJson(json)
-
-        return App.createPagedResults({
-            results: manga,
-            metadata: undefined
-        })
+        try {
+            const json = JSON.parse(response.data)
+            const manga = this.parser.parseSearchJson(json)
+            return App.createPagedResults({
+                results: manga,
+                metadata: undefined
+            })
+        } catch (e) {
+            // Fallback in caso di errore JSON
+            return App.createPagedResults({ results: [] })
+        }
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
