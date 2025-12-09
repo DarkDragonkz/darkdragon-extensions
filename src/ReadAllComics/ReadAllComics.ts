@@ -16,11 +16,12 @@ import {
 } from '@paperback/types'
 
 import { ReadAllComicsParser } from './ReadAllComicsParser'
+import { URLBuilder } from '../helper'
 
 const DOMAIN = 'https://readallcomics.com'
 
 export const ReadAllComicsInfo: SourceInfo = {
-    version: '1.0.4', // Aggiornato
+    version: '1.0.5', // Bump version
     name: 'ReadAllComics',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -53,16 +54,10 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
                     'origin': DOMAIN,
                     'referer': `${DOMAIN}/`,
                     'user-agent': await this.requestManager.getDefaultUserAgent(),
-                    'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                    'accept-language': 'en-US,en;q=0.5'
                 }
-                request.url = request.url.replace(/^http:/, 'https:')
                 return request
             },
             interceptResponse: async (response: any) => {
-                if (response.headers.location) {
-                    response.headers.location = response.headers.location.replace(/^http:/, 'https:')
-                }
                 return response
             }
         }
@@ -93,10 +88,8 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // chapterId per ReadAllComics è lo slug dell'albo (es. batman-001)
-        // L'URL diretto è DOMAIN/chapterId
         const request = App.createRequest({
-            url: `${this.baseUrl}/${chapterId}`,
+            url: `${this.baseUrl}/${chapterId}`, // chapterId è lo slug completo
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
@@ -111,12 +104,16 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
         let url = ''
         let isSearch = false
 
+        // Se c'è testo, usiamo la ricerca testuale (che restituisce una lista senza immagini)
         if (searchTerm.trim().length > 0) {
-            // Ricerca testuale
-            url = `${this.baseUrl}/?story=${encodeURIComponent(searchTerm)}&s=&type=comic`
+            url = new URLBuilder(this.baseUrl)
+                .addQueryParameter('story', searchTerm)
+                .addQueryParameter('s', '')
+                .addQueryParameter('type', 'comic')
+                .buildUrl()
             isSearch = true
         } else {
-            // Browse / Paginazione "View More" (Griglia)
+            // Se non c'è testo (es. "View More" o Browse), usiamo la paginazione della home (che ha immagini)
             url = page > 1 ? `${this.baseUrl}/page/${page}/` : this.baseUrl
             isSearch = false
         }
@@ -130,11 +127,7 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($, isSearch)
         
-        // Paginazione supportata solo per Browse
-        let nextPage = undefined
-        if (!isSearch && manga.length > 0) {
-             nextPage = { page: page + 1 }
-        }
+        const nextPage = (!isSearch && manga.length > 0) ? { page: page + 1 } : undefined
 
         return App.createPagedResults({
             results: manga,
@@ -154,7 +147,7 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     }
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
-        // Usa getSearchResults in modalità "Browse" (senza query)
+        // Usa la logica "Browse" (query vuota)
         return this.getSearchResults({ title: '' }, metadata)
     }
     
@@ -164,7 +157,6 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
             method: 'GET',
             headers: {
                 'referer': `${this.baseUrl}/`,
-                'origin': `${this.baseUrl}/`,
                 'user-agent': await this.requestManager.getDefaultUserAgent()
             }
         })
