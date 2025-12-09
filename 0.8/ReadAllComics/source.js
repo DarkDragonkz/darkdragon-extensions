@@ -860,7 +860,7 @@ var _Sources = (() => {
     websiteBaseURL: RAC_DOMAIN,
     sourceTags: [
       {
-        text: "Comics \u{1F1FA}\u{1F1F8}",
+        text: "English USA",
         type: import_types2.BadgeColor.BLUE
         // Blu per USA/Comics
       }
