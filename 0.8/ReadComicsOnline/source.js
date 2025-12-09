@@ -751,11 +751,11 @@ var _Sources = (() => {
             if (label) arrayTags.push(App.createTag({ id, label }));
           });
         } else if (text.includes("Writer:")) {
-          author = $p.find("a").text().trim();
+          author = $p.find("a").text().trim() || "Unknown";
         } else if (text.includes("Status:")) {
           if (text.includes("Completed")) status = "Completed";
-        } else if (!text.includes("Artist:") && !text.includes("Publication date:")) {
-          if (text.length > 20) desc += text + "\n";
+        } else if (!text.includes("Artist:") && !text.includes("Publication date:") && text.length > 5) {
+          desc += text + "\n";
         }
       });
       const tagSections = [
@@ -805,11 +805,14 @@ var _Sources = (() => {
     }
     parseChapterDetails(html, mangaId, chapterId) {
       const pages = [];
-      const scriptMatch = html.match(/var lstImages = new Array\((.*?)\);/);
+      let scriptMatch = html.match(/var lstImages = new Array\((.*?)\);/);
+      if (!scriptMatch) {
+        scriptMatch = html.match(/new Array\((.*?)\);/);
+      }
       if (scriptMatch && scriptMatch[1]) {
         const rawUrls = scriptMatch[1].split(",");
         for (const rawUrl of rawUrls) {
-          const url = rawUrl.trim().replace(/^"|"$/g, "");
+          const url = rawUrl.trim().replace(/^"|"$/g, "").replace(/^'|'$/g, "");
           if (url.startsWith("http")) {
             pages.push(url);
           }
@@ -827,7 +830,8 @@ var _Sources = (() => {
         const link = $("a", item).first();
         const title = $("span.title", link).text().trim() || link.text().trim();
         let id = link.attr("href") ?? "";
-        if (id.startsWith("/Comic/")) id = id.replace("/Comic/", "");
+        id = id.replace(/^\/Comic\//, "");
+        id = id.replace(/^\//, "");
         let image = $("img", link).attr("src") ?? "";
         if (image.startsWith("/")) image = BASE_URL + image;
         if (id && title) {
@@ -851,13 +855,14 @@ var _Sources = (() => {
       const latestItems = [];
       $(".bigBarContainer .items a").each((_, a) => {
         const href = $(a).attr("href");
-        if (href && href.startsWith("Comic/") && !href.includes("?id=")) {
-          const id = href.replace("Comic/", "");
+        if (href && href.includes("Comic/") && !href.includes("?id=")) {
+          let id = href.replace(/^\/Comic\//, "").replace(/^\//, "");
           let title = $(a).text().trim();
-          if (title.includes("\n")) title = title.split("\n")[0].trim();
-          let image = $("img", a).attr("src") ?? "";
-          if (!image || image.includes("loader") || image === "") {
-            image = $("img", a).attr("srcTemp") ?? "";
+          if (title.includes("Issue")) title = title.split("Issue")[0].trim();
+          const img = $("img", a);
+          let image = img.attr("src") ?? "";
+          if (!image || image.includes("loader") || image.startsWith("data:")) {
+            image = img.attr("srcTemp") ?? "";
           }
           if (image.startsWith("/")) image = BASE_URL + image;
           if (id && !latestItems.some((x) => x.mangaId === id)) {
@@ -870,8 +875,10 @@ var _Sources = (() => {
           }
         }
       });
-      latestSection.items = latestItems;
-      sectionCallback(latestSection);
+      if (latestItems.length > 0) {
+        latestSection.items = latestItems;
+        sectionCallback(latestSection);
+      }
       const newSection = App.createHomeSection({
         id: "newest",
         title: "New Series",
@@ -879,12 +886,14 @@ var _Sources = (() => {
         type: import_types.HomeSectionType.singleRowNormal
       });
       const newItems = [];
-      $('#tab-newest div[style*="position:relative"]').each((_, div) => {
-        const link = $("a", div).first();
+      $("#tab-newest > div").each((_, div) => {
+        const titleLink = $("a.title", div);
+        const link = titleLink.length > 0 ? titleLink : $("a", div).first();
         const href = link.attr("href");
-        const id = href?.replace("Comic/", "") ?? "";
-        const title = $("a.title", div).text().trim();
-        let image = $("img", link).attr("src") ?? "";
+        if (!href || !href.includes("Comic/")) return;
+        let id = href.replace(/^\/Comic\//, "").replace(/^\//, "");
+        const title = link.text().trim();
+        let image = $("img", div).attr("src") ?? "";
         if (image.startsWith("/")) image = BASE_URL + image;
         if (id && title) {
           newItems.push(App.createPartialSourceManga({
@@ -895,8 +904,10 @@ var _Sources = (() => {
           }));
         }
       });
-      newSection.items = newItems;
-      sectionCallback(newSection);
+      if (newItems.length > 0) {
+        newSection.items = newItems;
+        sectionCallback(newSection);
+      }
       const popularSection = App.createHomeSection({
         id: "popular",
         title: "Most Popular",
@@ -904,12 +915,14 @@ var _Sources = (() => {
         type: import_types.HomeSectionType.singleRowNormal
       });
       const popularItems = [];
-      $('#tab-mostview div[style*="position:relative"]').each((_, div) => {
-        const link = $("a", div).first();
+      $("#tab-mostview > div").each((_, div) => {
+        const titleLink = $("a.title", div);
+        const link = titleLink.length > 0 ? titleLink : $("a", div).first();
         const href = link.attr("href");
-        const id = href?.replace("Comic/", "") ?? "";
-        const title = $("a.title", div).text().trim();
-        let image = $("img", link).attr("src") ?? "";
+        if (!href || !href.includes("Comic/")) return;
+        let id = href.replace(/^\/Comic\//, "").replace(/^\//, "");
+        const title = link.text().trim();
+        let image = $("img", div).attr("src") ?? "";
         if (image.startsWith("/")) image = BASE_URL + image;
         if (id && title) {
           popularItems.push(App.createPartialSourceManga({
@@ -920,15 +933,17 @@ var _Sources = (() => {
           }));
         }
       });
-      popularSection.items = popularItems;
-      sectionCallback(popularSection);
+      if (popularItems.length > 0) {
+        popularSection.items = popularItems;
+        sectionCallback(popularSection);
+      }
     }
   };
 
   // src/ReadComicsOnline/ReadComicsOnline.ts
   var DOMAIN = "https://readcomiconline.li";
   var ReadComicsOnlineInfo = {
-    version: "2.0.0",
+    version: "2.0.1",
     name: "ReadComicsOnline",
     icon: "icon.png",
     author: "DarkDragonkz",
