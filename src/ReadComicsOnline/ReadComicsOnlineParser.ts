@@ -43,7 +43,7 @@ export class ReadComicsOnlineParser {
             } else if (text.includes('Status:')) {
                 if (text.includes('Completed')) status = 'Completed'
             } else if (!text.includes('Artist:') && !text.includes('Publication date:')) {
-                // Descrizione (spesso è un paragrafo senza label)
+                // Descrizione
                 if (text.length > 20) desc += text + '\n'
             }
         })
@@ -71,7 +71,7 @@ export class ReadComicsOnlineParser {
         // La tabella dei capitoli ha classe .listing
         const rows = $('table.listing tr').toArray()
 
-        // Saltiamo la prima riga (intestazione) con i > 1
+        // Saltiamo la prima riga (intestazione)
         for (let i = 1; i < rows.length; i++) {
             const row = rows[i]
             const link = $(row).find('a').first()
@@ -80,7 +80,7 @@ export class ReadComicsOnlineParser {
             
             if (!href) continue
 
-            // ID Capitolo: l'URL relativo (es: /Comic/Nome/Issue-1?id=...)
+            // ID Capitolo: es: /Comic/Batman-Year-One/Issue-1?id=49806
             const chapterId = href
 
             // Data (seconda colonna)
@@ -93,7 +93,6 @@ export class ReadComicsOnlineParser {
             if (numMatch) {
                 chapNum = parseFloat(numMatch[1])
             } else {
-                // Fallback se non c'è #
                 const looseMatch = title.match(/(\d+)/)
                 if (looseMatch) chapNum = parseFloat(looseMatch[1])
             }
@@ -113,14 +112,13 @@ export class ReadComicsOnlineParser {
     parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
         
-        // RCO carica le immagini via JS. Cerchiamo la variabile lstImages
+        // Cerca la variabile lstImages (presente nel Server 2)
         const scriptMatch = html.match(/var lstImages = new Array\((.*?)\);/)
         
         if (scriptMatch && scriptMatch[1]) {
             // Pulisce la stringa: "url1", "url2" -> [url1, url2]
             const rawUrls = scriptMatch[1].split(',')
             for (const rawUrl of rawUrls) {
-                // Rimuovi virgolette e spazi
                 const url = rawUrl.trim().replace(/^"|"$/g, '')
                 if (url.startsWith('http')) {
                     pages.push(url)
@@ -138,15 +136,16 @@ export class ReadComicsOnlineParser {
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         
-        // La ricerca RCO (POST) restituisce una lista in .list-comic
+        // Selettore basato sull'HTML "Find comic" che mi hai mandato
         $('.list-comic .item').each((_: any, item: any) => {
             const link = $('a', item).first()
-            const title = link.text().trim()
-            // Rimuoviamo /Comic/ dall'inizio per avere l'ID pulito
+            const title = $('span.title', link).text().trim() || link.text().trim()
+            
+            // Rimuoviamo /Comic/ dall'inizio
             let id = link.attr('href') ?? ''
             if (id.startsWith('/Comic/')) id = id.replace('/Comic/', '')
 
-            let image = $('img', item).attr('src') ?? ''
+            let image = $('img', link).attr('src') ?? ''
             if (image.startsWith('/')) image = BASE_URL + image
 
             if (id && title) {
@@ -173,20 +172,21 @@ export class ReadComicsOnlineParser {
         })
         const latestItems: PartialSourceManga[] = []
         
-        // Selettore specifico per l'HTML fornito
-        $('.bigBarContainer .items div').each((_: any, container: any) => {
-            // Ogni div contiene più link, il primo è il fumetto, i successivi sono capitoli o info
-            const linkComic = $('a', container).first()
-            const href = linkComic.attr('href')
-            
-            if (href && href.includes('Comic/')) {
-                const id = href.split('Comic/')[1] // Prendi solo lo slug
-                const title = linkComic.text().split('Issue')[0].trim() // Pulisci titolo
-                
-                // RCO usa srcTemp per lazy loading!
-                let image = $('img', linkComic).attr('src') ?? ''
-                if (!image || image.includes('loader')) {
-                    image = $('img', linkComic).attr('srcTemp') ?? ''
+        // Iteriamo su TUTTI i link dentro .items
+        $('.bigBarContainer .items a').each((_: any, a: any) => {
+            const href = $(a).attr('href')
+            // I link ai fumetti iniziano con Comic/, i capitoli hanno ?id=...
+            // Nell'HTML fornito: <a href="Comic/Titolo"> è il fumetto
+            if (href && href.startsWith('Comic/') && !href.includes('?id=')) {
+                const id = href.replace('Comic/', '')
+                let title = $(a).text().trim()
+                // A volte il titolo è seguito da <br>, prendiamo solo il testo diretto se possibile o puliamo
+                if (title.includes('\n')) title = title.split('\n')[0].trim()
+
+                let image = $('img', a).attr('src') ?? ''
+                // Supporto lazy loading (srcTemp)
+                if (!image || image.includes('loader') || image === '') {
+                     image = $('img', a).attr('srcTemp') ?? ''
                 }
                 if (image.startsWith('/')) image = BASE_URL + image
 
