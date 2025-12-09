@@ -43,6 +43,7 @@ export class ReadAllComicsParser {
                      'Unknown'
         }
 
+        // --- FIX ERRORE TAGS ---
         const genreLabel = context.find('b:contains("Genres:"), strong:contains("Genres:")')
         if (genreLabel.length > 0) {
             let genreContainer = genreLabel.parent()
@@ -50,6 +51,8 @@ export class ReadAllComicsParser {
                 const label = $(a).text().trim()
                 const href = $(a).attr('href')
                 const id = href?.split('/').filter(Boolean).pop() ?? label
+                
+                // Controllo rigoroso per evitare crash
                 if (id && label) {
                     arrayTags.push(App.createTag({ id: String(id), label: String(label) }))
                 }
@@ -74,7 +77,6 @@ export class ReadAllComicsParser {
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
         
-        // Selettore per la lista capitoli
         $('.list-story li').each((_: any, li: any) => {
             const link = $('a', li)
             const title = link.text().trim()
@@ -83,17 +85,17 @@ export class ReadAllComicsParser {
 
             const chapterId = href
 
-            // --- FIX CAPITOLI (Ch. 0) ---
+            // --- FIX CAPITOLI (Ch. 0 e Ordine) ---
             let chapNum = 0
             
-            // 1. Rimuovi l'anno (es. "(2025)") per non confonderlo col numero
+            // 1. Rimuovi l'anno tra parentesi es. "(2025)" o "(2024)"
             const titleClean = title.replace(/\(\d{4}\)/g, '').trim()
             
-            // 2. Cerca numeri (interi o decimali)
+            // 2. Cerca numeri nel titolo pulito (es. "Werewolf... 006")
             const numMatch = titleClean.match(/(\d+(\.\d+)?)/g)
             
             if (numMatch && numMatch.length > 0) {
-                 // Prendi l'ultimo numero trovato. Es: "Batman 006" -> 6
+                 // Prendi l'ultimo numero trovato. Es: "Vol 2 006" -> prende 6
                  chapNum = parseFloat(numMatch[numMatch.length - 1]!)
             }
 
@@ -137,7 +139,7 @@ export class ReadAllComicsParser {
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
 
-        // --- CASO 1: Griglia con immagini (Standard) ---
+        // Caso 1: Griglia immagini (se presente)
         if ($('#post-area .post').length > 0) {
             $('#post-area .post').each((_: any, item: any) => {
                 const link = $('.pinbin-copy a', item).first()
@@ -161,8 +163,7 @@ export class ReadAllComicsParser {
                 }))
             })
         } 
-        // --- CASO 2: Lista testuale (Il tuo caso specifico) ---
-        // Basato sull'HTML che hai inviato: <ul class="list-story categories">
+        // Caso 2: Lista testuale (Come da tuo screenshot)
         else if ($('.list-story li').length > 0) {
             $('.list-story li').each((_: any, li: any) => {
                 const link = $('a', li).first()
@@ -171,11 +172,10 @@ export class ReadAllComicsParser {
                 
                 if (!href || !title) return
 
-                // Estrai slug dall'URL: https://readallcomics.com/category/batman/ -> batman
                 const urlParts = href.split('/').filter(Boolean)
                 const id = urlParts[urlParts.length - 1]
 
-                // NON ci sono immagini in questo HTML, usiamo un placeholder
+                // Immagine FALLBACK per la lista testuale
                 const image = 'https://readallcomics.com/wp-content/uploads/2020/09/logo.png'
 
                 if (id) {

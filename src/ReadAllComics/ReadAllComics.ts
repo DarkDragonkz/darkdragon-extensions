@@ -20,7 +20,7 @@ import { ReadAllComicsParser } from './ReadAllComicsParser'
 const DOMAIN = 'https://readallcomics.com'
 
 export const ReadAllComicsInfo: SourceInfo = {
-    version: '1.4.1',
+    version: '1.5.0',
     name: 'ReadAllComics',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -97,9 +97,6 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        // Usiamo i parametri visti nel tuo HTML per forzare la ricerca funzionante
-        // Nota: Questo tipo di ricerca restituisce solo testo (niente immagini), 
-        // ma è quella che il sito fornisce in questo momento.
         const searchUrl = `${this.baseUrl}/?story=${encodeURIComponent(query.title ?? '')}&s=&type=comic`
 
         const request = App.createRequest({
