@@ -5,22 +5,20 @@ import {
     HomeSectionType,
     SourceManga,
     PartialSourceManga,
+    Tag,
     TagSection,
 } from '@paperback/types'
 
 export class ReadAllComicsParser {
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
-        // In questo sito, ogni pagina è un "Issue" singolo.
-        // Usiamo il titolo della pagina come titolo del manga.
         const title = $('h1').first().text().trim() || $('.front-link').first().text().trim() || 'Unknown'
         
-        // Cerchiamo l'immagine principale
         let image = $('#post-area img').first().attr('src') ?? ''
         if (!image) image = 'https://paperback.moe/icons/logo-alt.svg'
 
         const desc = 'Read comic online at ReadAllComics'
-        const status = 'Completed' // Essendo un singolo albo, è sempre "completo"
+        const status = 'Completed' 
 
         return App.createSourceManga({
             id: mangaId,
@@ -35,8 +33,6 @@ export class ReadAllComicsParser {
     }
 
     parseChapters($: any, mangaId: string): Chapter[] {
-        // Poiché ogni pagina è un albo unico, creiamo un unico "Capitolo 1"
-        // che punta alla stessa pagina dell'ID manga.
         const chapters: Chapter[] = []
         
         const title = $('h1').first().text().trim() || 'Full Issue'
@@ -44,7 +40,7 @@ export class ReadAllComicsParser {
         const time = timeStr ? new Date(timeStr) : new Date()
 
         chapters.push(App.createChapter({
-            id: mangaId, // L'ID del capitolo è lo stesso della pagina
+            id: mangaId, 
             name: title,
             chapNum: 1,
             time: time,
@@ -57,17 +53,28 @@ export class ReadAllComicsParser {
     parseChapterDetails($: any, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
         
-        // ReadAllComics di solito mette tutte le immagini nel div principale
-        // Cerchiamo tutte le immagini nel contenitore del post
-        // Escludiamo logo e icone note
-        $('#post-area img, .entry-content img').each((_: any, img: any) => {
-            const src = $(img).attr('src')
-            if (src && !src.includes('logo') && !src.includes('banner')) {
-                // A volte usano immagini molto piccole come spaziatori, filtriamo per sicurezza se possibile,
-                // ma per ora prendiamo tutto ciò che sembra una pagina.
-                pages.push(src)
+        // FIX: Sostituito .each() con ciclo for per evitare crash
+        // Cerca immagini nel post-area o entry-content (comuni in WordPress)
+        const images = $('#post-area img, .entry-content img, .post img').toArray()
+
+        for (const img of images) {
+            const $img = $(img)
+            let src = $img.attr('src')
+            
+            // Gestione lazy load se presente
+            if (!src || src.includes('data:image')) {
+                src = $img.attr('data-src') || $img.attr('data-lazy-src')
             }
-        })
+
+            if (src && !src.includes('logo') && !src.includes('banner') && !src.includes('button')) {
+                // Assicurati che sia un URL valido
+                if (!src.startsWith('http')) {
+                    // A volte i link sono relativi, ma su questo sito di solito sono assoluti. 
+                    // Se necessario, aggiungi logica qui.
+                }
+                pages.push(src.trim())
+            }
+        }
 
         return App.createChapterDetails({
             id: chapterId,
@@ -79,17 +86,20 @@ export class ReadAllComicsParser {
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         
-        // Analizza la griglia dei post
-        $('#post-area .post').each((_: any, item: any) => {
-            const titleLink = $(item).find('h2 a').first()
+        // FIX: Sostituito .each() con ciclo for
+        const items = $('#post-area .post').toArray()
+
+        for (const item of items) {
+            const $item = $(item)
+            const titleLink = $item.find('h2 a').first()
             const title = titleLink.text().trim()
             const href = titleLink.attr('href')
             
-            // L'ID è l'URL completo in questo caso
+            // L'ID è l'URL completo
             const id = href ?? ''
 
-            let image = $(item).find('img').first().attr('src') ?? ''
-            const date = $(item).find('span').last().text().trim()
+            let image = $item.find('img').first().attr('src') ?? ''
+            const date = $item.find('.pinbin-date').text().trim()
 
             if (id && title) {
                 results.push(App.createPartialSourceManga({
@@ -99,7 +109,7 @@ export class ReadAllComicsParser {
                     subtitle: date
                 }))
             }
-        })
+        }
         
         return results
     }
