@@ -22,7 +22,7 @@ import { ReadComicsOnlineParser } from './ReadComicsOnlineParser'
 const DOMAIN = 'https://readcomiconline.li'
 
 export const ReadComicsOnlineInfo: SourceInfo = {
-    version: '2.0.5',
+    version: '2.0.6',
     name: 'ReadComicsOnline',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -65,13 +65,13 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
         }
     })
 
-    // Funzione MIGLIORATA per rilevare Cloudflare anche se lo status è 200
+    // Controlla se la pagina ricevuta è un blocco Cloudflare
     checkCloudflareStatus(status: number, data: any): void {
         if (status === 503 || status === 403) {
             throw new Error(`CLOUDFLARE PROTECTION: Please click the Cloud icon in the top right corner.`)
         }
-        if (typeof data === 'string' && (data.includes('Just a moment...') || data.includes('Attention Required! | Cloudflare'))) {
-             throw new Error(`CLOUDFLARE PROTECTION: Site loaded the Captcha page. Please click the Cloud icon in the top right corner.`)
+        if (typeof data === 'string' && (data.includes('Just a moment...') || data.includes('Attention Required! | Cloudflare') || data.includes('security check'))) {
+             throw new Error(`CLOUDFLARE PROTECTION: Captcha detected. Please click the Cloud icon in the top right corner to solve it.`)
         }
     }
 
@@ -104,7 +104,7 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // Usa il Server 2 per evitare protezioni complesse sulle immagini
+        // FORZA IL SERVER 2 per evitare protezioni complesse sulle immagini
         const separator = chapterId.includes('?') ? '&' : '?'
         const url = `${this.baseUrl}${chapterId}${separator}quality=hq&s=s2`
 
@@ -119,6 +119,7 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
+        // La ricerca usa POST su questo sito
         const request = App.createRequest({
             url: `${this.baseUrl}/Search/Comic`,
             method: 'POST',
