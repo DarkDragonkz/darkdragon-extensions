@@ -9,7 +9,6 @@ import {
     TagSection,
 } from '@paperback/types'
 
-// IMPORTANTE: Mancava questa riga che causava l'errore!
 import * as cheerio from 'cheerio'
 
 const BASE_URL = 'https://readcomicsonline.ru'
@@ -19,7 +18,9 @@ export class ReadComicsOnlineParser {
     parseMangaDetails($: any, mangaId: string): SourceManga {
         const title = $('h2.listmanga-header').first().text().trim() || 'Unknown'
         
-        let image = $('img', 'div.boxed').attr('src') ?? ''
+        // Cerca data-src prima, poi src
+        const img = $('img', 'div.boxed').first()
+        let image = img.attr('data-src') ?? img.attr('src') ?? ''
         if (image.startsWith('/')) image = BASE_URL + image
         
         const author = $('dd', 'dt:contains("Type")').parent().text().replace('Type', '').trim() || 'Unknown'
@@ -59,9 +60,7 @@ export class ReadComicsOnlineParser {
             const title = $('h5.chapter-title-rtl', li).text().trim()
             const link = $('a', li).attr('href')
             
-            // Estrazione ID pulita
             let chapterId = link?.split('/').pop() ?? ''
-            // Rimuove eventuali query params o ancore
             if (chapterId.includes('?')) chapterId = chapterId.split('?')[0]
             if (chapterId.includes('#')) chapterId = chapterId.split('#')[0]
 
@@ -87,13 +86,12 @@ export class ReadComicsOnlineParser {
 
     parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
-        // Qui usiamo cheerio, quindi l'import in alto è fondamentale
         const $ = cheerio.load(html)
         
         $('img', 'div#all').each((_: any, img: any) => {
-            let url = $(img).attr('data-src')?.trim()
+            // Qui usano spesso data-src per il lazy loading
+            let url = $(img).attr('data-src')?.trim() ?? $(img).attr('src')?.trim()
             if (url) {
-                // Rimuove spazi bianchi all'inizio/fine URL
                 url = url.trim();
                 if (url.startsWith('/')) url = BASE_URL + url
                 pages.push(url)
@@ -143,7 +141,11 @@ export class ReadComicsOnlineParser {
         $('li.schedule-item', 'div.carousel').each((_: any, item: any) => {
             const id = $('div.schedule-name a', item).attr('href')?.split('/').pop()
             const title = $('div.schedule-name', item).text().trim()
-            let image = $('div.schedule-avatar img', item).attr('src') ?? ''
+            
+            // Cerca data-src per sicurezza anche qui
+            const img = $('div.schedule-avatar img', item)
+            let image = img.attr('data-src') ?? img.attr('src') ?? ''
+            
             if (image.startsWith('/')) image = BASE_URL + image
 
             if (id && title) {
@@ -171,7 +173,11 @@ export class ReadComicsOnlineParser {
             const link = $('h5.media-heading a', item)
             const id = link.attr('href')?.split('/').pop()
             const title = link.text().trim()
-            let image = $('div.media-left img', item).attr('src') ?? ''
+            
+            // FIX: Cerca data-src primario, poi src
+            const img = $('div.media-left img', item)
+            let image = img.attr('data-src') ?? img.attr('src') ?? ''
+            
             if (image.startsWith('/')) image = BASE_URL + image
 
             if (id && title) {
