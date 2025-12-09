@@ -16,7 +16,6 @@ import {
 } from '@paperback/types'
 
 import { ReadComicsOnlineParser } from './ReadComicsOnlineParser'
-import { URLBuilder } from '../helper'
 
 const DOMAIN = 'https://readcomiconline.li'
 
@@ -53,7 +52,6 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
                     ...(request.headers ?? {}),
                     'referer': `${DOMAIN}/`,
                     'user-agent': await this.requestManager.getDefaultUserAgent(),
-                    // Header importanti per RCO
                     'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                     'upgrade-insecure-requests': '1'
                 }
@@ -90,20 +88,19 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // chapterId è l'URL relativo (es: /Comic/Batman/Issue-1)
+        // chapterId è un URL relativo, es: /Comic/Batman/Issue-1?id=123
+        // È importante mantenere i parametri query originali (come ?id=...)
         const request = App.createRequest({
-            url: `${this.baseUrl}${chapterId}&quality=hq`, // Forziamo alta qualità
+            url: `${this.baseUrl}${chapterId}&quality=hq`, // Forza alta qualità
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        // Passiamo i dati grezzi perché dobbiamo estrarre lo script JS
+        // Passiamo response.data (HTML string) direttamente al parser per usare regex
         return this.parser.parseChapterDetails(response.data ?? '', mangaId, chapterId)
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        const page = metadata?.page ?? 1
-        
-        // RCO usa POST per la ricerca
+        // RCO usa una richiesta POST per la ricerca
         const request = App.createRequest({
             url: `${this.baseUrl}/Search/Comic`,
             method: 'POST',
@@ -119,7 +116,7 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
 
         return App.createPagedResults({
             results: manga,
-            metadata: undefined // La ricerca di RCO è spesso in una pagina sola o difficile da paginare via POST semplice
+            metadata: undefined // Paginazione difficile su ricerca POST di RCO
         })
     }
 
@@ -135,8 +132,7 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
     }
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
-        // RCO non ha una pagina "View More" semplice che corrisponda esattamente alle tab.
-        // Implementazione placeholder
+        // Implementazione base vuota per ora, dato che il sito usa layout complessi
         return App.createPagedResults({ results: [] })
     }
     

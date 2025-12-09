@@ -27,23 +27,24 @@ export class ReadComicsOnlineParser {
         let desc = ''
         const arrayTags: Tag[] = []
 
-        // Parsing dei metadati
+        // Parsing dei metadati dai paragrafi <p>
         $('.barContent p').each((_: any, p: any) => {
             const text = $(p).text().trim()
+            const $p = $(p)
             
             if (text.includes('Genres:')) {
-                $('a', p).each((__: any, a: any) => {
+                $p.find('a').each((__: any, a: any) => {
                     const label = $(a).text().trim()
                     const id = $(a).attr('href')?.split('/').pop() ?? label
                     if (label) arrayTags.push(App.createTag({ id, label }))
                 })
             } else if (text.includes('Writer:')) {
-                author = $('a', p).text().trim()
+                author = $p.find('a').text().trim()
             } else if (text.includes('Status:')) {
                 if (text.includes('Completed')) status = 'Completed'
             } else if (!text.includes('Artist:') && !text.includes('Publication date:')) {
-                // Assumiamo che il resto sia descrizione
-                desc += text + '\n'
+                // Descrizione (spesso è un paragrafo senza label)
+                if (text.length > 20) desc += text + '\n'
             }
         })
 
@@ -67,10 +68,10 @@ export class ReadComicsOnlineParser {
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
         
-        // RCO usa una tabella con classe "listing" per i capitoli
+        // La tabella dei capitoli ha classe .listing
         const rows = $('table.listing tr').toArray()
 
-        // Salta la prima riga (intestazione)
+        // Saltiamo la prima riga (intestazione) con i > 1
         for (let i = 1; i < rows.length; i++) {
             const row = rows[i]
             const link = $(row).find('a').first()
@@ -79,19 +80,22 @@ export class ReadComicsOnlineParser {
             
             if (!href) continue
 
-            // ID Capitolo: l'URL completo relativo
-            // es: /Comic/Batman-2016/Issue-1?id=12345
+            // ID Capitolo: l'URL relativo (es: /Comic/Nome/Issue-1?id=...)
             const chapterId = href
 
-            // Data
+            // Data (seconda colonna)
             const dateText = $(row).find('td').eq(1).text().trim()
             const time = dateText ? new Date(dateText) : new Date()
 
-            // Numero capitolo (estratto dal titolo se possibile)
+            // Numero capitolo
             let chapNum = 0
             const numMatch = title.match(/#(\d+(\.\d+)?)/)
             if (numMatch) {
                 chapNum = parseFloat(numMatch[1])
+            } else {
+                // Fallback se non c'è #
+                const looseMatch = title.match(/(\d+)/)
+                if (looseMatch) chapNum = parseFloat(looseMatch[1])
             }
 
             chapters.push(App.createChapter({
@@ -109,29 +113,20 @@ export class ReadComicsOnlineParser {
     parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
         
-        // RCO carica le immagini tramite uno script "lstImages"
-        // Dobbiamo estrarre l'array dal testo dello script
+        // RCO carica le immagini via JS. Cerchiamo la variabile lstImages
         const scriptMatch = html.match(/var lstImages = new Array\((.*?)\);/)
         
         if (scriptMatch && scriptMatch[1]) {
-            // Divide la stringa per virgole e pulisce le virgolette
-            const urls = scriptMatch[1].split(',').map((url: string) => {
-                return url.trim().replace(/^"|"$/g, '') // Rimuove virgolette inizio/fine
-            })
-            
-            for (const url of urls) {
+            // Pulisce la stringa: "url1", "url2" -> [url1, url2]
+            const rawUrls = scriptMatch[1].split(',')
+            for (const rawUrl of rawUrls) {
+                // Rimuovi virgolette e spazi
+                const url = rawUrl.trim().replace(/^"|"$/g, '')
                 if (url.startsWith('http')) {
                     pages.push(url)
                 }
             }
-        } else {
-            // Fallback: se non trova lo script, prova a cercare immagini dirette (raro su RCO)
-            const $ = cheerio.load(html)
-            $('img').each((_: any, img: any) => {
-                const src = $(img).attr('src')
-                if (src && src.includes('blogspot')) pages.push(src)
-            })
-        }
+        } 
 
         return App.createChapterDetails({
             id: chapterId,
@@ -143,18 +138,21 @@ export class ReadComicsOnlineParser {
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         
-        // La ricerca di RCO è solitamente una lista
+        // La ricerca RCO (POST) restituisce una lista in .list-comic
         $('.list-comic .item').each((_: any, item: any) => {
             const link = $('a', item).first()
             const title = link.text().trim()
-            // Rimuovi /Comic/ dall'inizio per avere l'ID pulito
-            const id = link.attr('href')?.replace(/^\/Comic\//, '') ?? ''
-            const image = $('img', item).attr('src') ?? ''
+            // Rimuoviamo /Comic/ dall'inizio per avere l'ID pulito
+            let id = link.attr('href') ?? ''
+            if (id.startsWith('/Comic/')) id = id.replace('/Comic/', '')
+
+            let image = $('img', item).attr('src') ?? ''
+            if (image.startsWith('/')) image = BASE_URL + image
 
             if (id && title) {
                 results.push(App.createPartialSourceManga({
                     mangaId: id,
-                    image: image.startsWith('/') ? BASE_URL + image : image,
+                    image: image,
                     title: title,
                     subtitle: undefined
                 }))
@@ -166,7 +164,7 @@ export class ReadComicsOnlineParser {
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
         
-        // 1. Latest Update (Barra scorrevole in alto nell'HTML fornito)
+        // 1. Latest Update
         const latestSection = App.createHomeSection({ 
             id: 'latest', 
             title: 'Latest Updates', 
@@ -175,18 +173,24 @@ export class ReadComicsOnlineParser {
         })
         const latestItems: PartialSourceManga[] = []
         
-        $('.bigBarContainer .items div a').each((_: any, a: any) => {
-            const href = $(a).attr('href')
-            // Salta i link ai capitoli specifici, prendi solo link ai fumetti se possibile
-            // Nell'HTML fornito: <a href="Comic/Titolo" ...> è il fumetto
-            if (href && href.startsWith('Comic/')) {
-                const id = href.replace('Comic/', '')
-                const title = $(a).text().trim().split('Issue')[0].trim() // Pulisce "Issue #7" dal titolo
-                let image = $('img', a).attr('src') ?? ''
+        // Selettore specifico per l'HTML fornito
+        $('.bigBarContainer .items div').each((_: any, container: any) => {
+            // Ogni div contiene più link, il primo è il fumetto, i successivi sono capitoli o info
+            const linkComic = $('a', container).first()
+            const href = linkComic.attr('href')
+            
+            if (href && href.includes('Comic/')) {
+                const id = href.split('Comic/')[1] // Prendi solo lo slug
+                const title = linkComic.text().split('Issue')[0].trim() // Pulisci titolo
+                
+                // RCO usa srcTemp per lazy loading!
+                let image = $('img', linkComic).attr('src') ?? ''
+                if (!image || image.includes('loader')) {
+                    image = $('img', linkComic).attr('srcTemp') ?? ''
+                }
                 if (image.startsWith('/')) image = BASE_URL + image
 
-                // Evita duplicati
-                if (!latestItems.some(x => x.mangaId === id)) {
+                if (id && !latestItems.some(x => x.mangaId === id)) {
                     latestItems.push(App.createPartialSourceManga({
                         mangaId: id,
                         image: image,
@@ -199,7 +203,7 @@ export class ReadComicsOnlineParser {
         latestSection.items = latestItems
         sectionCallback(latestSection)
 
-        // 2. Newest Comics (Tab)
+        // 2. Newest Comics
         const newSection = App.createHomeSection({ 
             id: 'newest', 
             title: 'New Series', 
@@ -213,6 +217,7 @@ export class ReadComicsOnlineParser {
             const href = link.attr('href')
             const id = href?.replace('Comic/', '') ?? ''
             const title = $('a.title', div).text().trim()
+            
             let image = $('img', link).attr('src') ?? ''
             if (image.startsWith('/')) image = BASE_URL + image
 
@@ -228,7 +233,7 @@ export class ReadComicsOnlineParser {
         newSection.items = newItems
         sectionCallback(newSection)
 
-        // 3. Most Popular (Tab)
+        // 3. Most Popular
         const popularSection = App.createHomeSection({ 
             id: 'popular', 
             title: 'Most Popular', 
@@ -242,6 +247,7 @@ export class ReadComicsOnlineParser {
             const href = link.attr('href')
             const id = href?.replace('Comic/', '') ?? ''
             const title = $('a.title', div).text().trim()
+            
             let image = $('img', link).attr('src') ?? ''
             if (image.startsWith('/')) image = BASE_URL + image
 
