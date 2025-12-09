@@ -449,8 +449,8 @@ var _Sources = (() => {
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.urlEncodeObject = exports.convertTime = exports.Source = void 0;
       var Source = class {
-        constructor(cheerio2) {
-          this.cheerio = cheerio2;
+        constructor(cheerio) {
+          this.cheerio = cheerio;
         }
         /**
          * @deprecated use {@link Source.getSearchResults getSearchResults} instead
@@ -743,18 +743,19 @@ var _Sources = (() => {
       const arrayTags = [];
       $(".barContent p").each((_, p) => {
         const text = $(p).text().trim();
+        const $p = $(p);
         if (text.includes("Genres:")) {
-          $("a", p).each((__, a) => {
+          $p.find("a").each((__, a) => {
             const label = $(a).text().trim();
             const id = $(a).attr("href")?.split("/").pop() ?? label;
             if (label) arrayTags.push(App.createTag({ id, label }));
           });
         } else if (text.includes("Writer:")) {
-          author = $("a", p).text().trim();
+          author = $p.find("a").text().trim();
         } else if (text.includes("Status:")) {
           if (text.includes("Completed")) status = "Completed";
         } else if (!text.includes("Artist:") && !text.includes("Publication date:")) {
-          desc += text + "\n";
+          if (text.length > 20) desc += text + "\n";
         }
       });
       const tagSections = [
@@ -788,6 +789,9 @@ var _Sources = (() => {
         const numMatch = title.match(/#(\d+(\.\d+)?)/);
         if (numMatch) {
           chapNum = parseFloat(numMatch[1]);
+        } else {
+          const looseMatch = title.match(/(\d+)/);
+          if (looseMatch) chapNum = parseFloat(looseMatch[1]);
         }
         chapters.push(App.createChapter({
           id: chapterId,
@@ -803,20 +807,13 @@ var _Sources = (() => {
       const pages = [];
       const scriptMatch = html.match(/var lstImages = new Array\((.*?)\);/);
       if (scriptMatch && scriptMatch[1]) {
-        const urls = scriptMatch[1].split(",").map((url) => {
-          return url.trim().replace(/^"|"$/g, "");
-        });
-        for (const url of urls) {
+        const rawUrls = scriptMatch[1].split(",");
+        for (const rawUrl of rawUrls) {
+          const url = rawUrl.trim().replace(/^"|"$/g, "");
           if (url.startsWith("http")) {
             pages.push(url);
           }
         }
-      } else {
-        const $ = cheerio.load(html);
-        $("img").each((_, img) => {
-          const src = $(img).attr("src");
-          if (src && src.includes("blogspot")) pages.push(src);
-        });
       }
       return App.createChapterDetails({
         id: chapterId,
@@ -829,12 +826,14 @@ var _Sources = (() => {
       $(".list-comic .item").each((_, item) => {
         const link = $("a", item).first();
         const title = link.text().trim();
-        const id = link.attr("href")?.replace(/^\/Comic\//, "") ?? "";
-        const image = $("img", item).attr("src") ?? "";
+        let id = link.attr("href") ?? "";
+        if (id.startsWith("/Comic/")) id = id.replace("/Comic/", "");
+        let image = $("img", item).attr("src") ?? "";
+        if (image.startsWith("/")) image = BASE_URL + image;
         if (id && title) {
           results.push(App.createPartialSourceManga({
             mangaId: id,
-            image: image.startsWith("/") ? BASE_URL + image : image,
+            image,
             title,
             subtitle: void 0
           }));
@@ -850,14 +849,18 @@ var _Sources = (() => {
         type: import_types.HomeSectionType.singleRowNormal
       });
       const latestItems = [];
-      $(".bigBarContainer .items div a").each((_, a) => {
-        const href = $(a).attr("href");
-        if (href && href.startsWith("Comic/")) {
-          const id = href.replace("Comic/", "");
-          const title = $(a).text().trim().split("Issue")[0].trim();
-          let image = $("img", a).attr("src") ?? "";
+      $(".bigBarContainer .items div").each((_, container) => {
+        const linkComic = $("a", container).first();
+        const href = linkComic.attr("href");
+        if (href && href.includes("Comic/")) {
+          const id = href.split("Comic/")[1];
+          const title = linkComic.text().split("Issue")[0].trim();
+          let image = $("img", linkComic).attr("src") ?? "";
+          if (!image || image.includes("loader")) {
+            image = $("img", linkComic).attr("srcTemp") ?? "";
+          }
           if (image.startsWith("/")) image = BASE_URL + image;
-          if (!latestItems.some((x) => x.mangaId === id)) {
+          if (id && !latestItems.some((x) => x.mangaId === id)) {
             latestItems.push(App.createPartialSourceManga({
               mangaId: id,
               image,
@@ -942,8 +945,8 @@ var _Sources = (() => {
     intents: import_types2.SourceIntents.MANGA_CHAPTERS | import_types2.SourceIntents.HOMEPAGE_SECTIONS | import_types2.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
   };
   var ReadComicsOnline = class {
-    constructor(cheerio2) {
-      this.cheerio = cheerio2;
+    constructor(cheerio) {
+      this.cheerio = cheerio;
       this.baseUrl = DOMAIN;
       this.parser = new ReadComicsOnlineParser();
       this.requestManager = App.createRequestManager({
@@ -955,7 +958,6 @@ var _Sources = (() => {
               ...request.headers ?? {},
               "referer": `${DOMAIN}/`,
               "user-agent": await this.requestManager.getDefaultUserAgent(),
-              // Header importanti per RCO
               "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
               "upgrade-insecure-requests": "1"
             };
@@ -991,14 +993,13 @@ var _Sources = (() => {
     async getChapterDetails(mangaId, chapterId) {
       const request = App.createRequest({
         url: `${this.baseUrl}${chapterId}&quality=hq`,
-        // Forziamo alta qualità
+        // Forza alta qualità
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
       return this.parser.parseChapterDetails(response.data ?? "", mangaId, chapterId);
     }
     async getSearchResults(query, metadata) {
-      const page = metadata?.page ?? 1;
       const request = App.createRequest({
         url: `${this.baseUrl}/Search/Comic`,
         method: "POST",
@@ -1013,7 +1014,7 @@ var _Sources = (() => {
       return App.createPagedResults({
         results: manga,
         metadata: void 0
-        // La ricerca di RCO è spesso in una pagina sola o difficile da paginare via POST semplice
+        // Paginazione difficile su ricerca POST di RCO
       });
     }
     async getHomePageSections(sectionCallback) {
