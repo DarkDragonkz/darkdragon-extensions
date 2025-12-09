@@ -854,7 +854,7 @@ var _Sources = (() => {
       const latestItems = [];
       $(".bigBarContainer .items a").each((_, a) => {
         const href = $(a).attr("href");
-        if (href && href.indexOf("Comic/") !== -1 && href.indexOf("?id=") === -1) {
+        if (href && href.includes("Comic/") && !href.includes("?id=")) {
           let id = href.replace(/^\/Comic\//, "").replace(/^Comic\//, "").replace(/^\//, "");
           let title = $(a).text().trim();
           if (title.includes("Issue")) title = title.split("Issue")[0].trim();
@@ -879,69 +879,47 @@ var _Sources = (() => {
         latestSection.items = latestItems;
         sectionCallback(latestSection);
       }
-      const newSection = App.createHomeSection({
-        id: "newest",
-        title: "New Series",
-        containsMoreItems: false,
-        type: import_types.HomeSectionType.singleRowNormal
-      });
-      const newItems = [];
-      $("#tab-newest > div").each((_, div) => {
-        const link = $("a", div).first();
-        const href = link.attr("href");
-        if (!href) return;
-        let id = href.replace(/^\/Comic\//, "").replace(/^Comic\//, "").replace(/^\//, "");
-        const title = $(div).find(".title").text().trim() || link.text().trim();
-        let image = $("img", div).attr("src") ?? "";
-        if (image.startsWith("/")) image = BASE_URL + image;
-        if (id && title) {
-          newItems.push(App.createPartialSourceManga({
-            mangaId: id,
-            image,
-            title,
-            subtitle: void 0
-          }));
+      const parseTab = (tabId, sectionTitle) => {
+        const section = App.createHomeSection({
+          id: tabId,
+          title: sectionTitle,
+          containsMoreItems: false,
+          type: import_types.HomeSectionType.singleRowNormal
+        });
+        const items = [];
+        $(`#${tabId} > div`).each((_, div) => {
+          const link = $("a", div).first();
+          const href = link.attr("href");
+          if (!href) return;
+          let id = href.replace(/^\/Comic\//, "").replace(/^Comic\//, "").replace(/^\//, "");
+          let title = $(div).find("a.title").text().trim();
+          if (!title) title = link.text().trim();
+          let image = $("img", div).attr("src") ?? "";
+          if (image.startsWith("/")) image = BASE_URL + image;
+          if (id && title) {
+            items.push(App.createPartialSourceManga({
+              mangaId: id,
+              image,
+              title,
+              subtitle: void 0
+            }));
+          }
+        });
+        if (items.length > 0) {
+          section.items = items;
+          sectionCallback(section);
         }
-      });
-      if (newItems.length > 0) {
-        newSection.items = newItems;
-        sectionCallback(newSection);
-      }
-      const popularSection = App.createHomeSection({
-        id: "popular",
-        title: "Most Popular",
-        containsMoreItems: false,
-        type: import_types.HomeSectionType.singleRowNormal
-      });
-      const popularItems = [];
-      $("#tab-mostview > div").each((_, div) => {
-        const link = $("a", div).first();
-        const href = link.attr("href");
-        if (!href) return;
-        let id = href.replace(/^\/Comic\//, "").replace(/^Comic\//, "").replace(/^\//, "");
-        const title = $(div).find(".title").text().trim() || link.text().trim();
-        let image = $("img", div).attr("src") ?? "";
-        if (image.startsWith("/")) image = BASE_URL + image;
-        if (id && title) {
-          popularItems.push(App.createPartialSourceManga({
-            mangaId: id,
-            image,
-            title,
-            subtitle: void 0
-          }));
-        }
-      });
-      if (popularItems.length > 0) {
-        popularSection.items = popularItems;
-        sectionCallback(popularSection);
-      }
+      };
+      parseTab("tab-newest", "New Series");
+      parseTab("tab-mostview", "Most Popular");
+      parseTab("tab-top-day", "Top Day");
     }
   };
 
   // src/ReadComicsOnline/ReadComicsOnline.ts
   var DOMAIN = "https://readcomiconline.li";
   var ReadComicsOnlineInfo = {
-    version: "2.0.2",
+    version: "2.0.5",
     name: "ReadComicsOnline",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -982,11 +960,13 @@ var _Sources = (() => {
         }
       });
     }
-    // Funzione per controllare se siamo bloccati da Cloudflare
-    checkCloudflareStatus(status) {
+    // Funzione MIGLIORATA per rilevare Cloudflare anche se lo status è 200
+    checkCloudflareStatus(status, data) {
       if (status === 503 || status === 403) {
-        throw new Error(`CLOUDFLARE PROTECTION:
-Please click the Cloud icon in the top right corner and solve the CAPTCHA to access the site.`);
+        throw new Error(`CLOUDFLARE PROTECTION: Please click the Cloud icon in the top right corner.`);
+      }
+      if (typeof data === "string" && (data.includes("Just a moment...") || data.includes("Attention Required! | Cloudflare"))) {
+        throw new Error(`CLOUDFLARE PROTECTION: Site loaded the Captcha page. Please click the Cloud icon in the top right corner.`);
       }
     }
     getMangaShareUrl(mangaId) {
@@ -998,7 +978,7 @@ Please click the Cloud icon in the top right corner and solve the CAPTCHA to acc
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      this.checkCloudflareStatus(response.status);
+      this.checkCloudflareStatus(response.status, response.data);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseMangaDetails($, mangaId);
     }
@@ -1008,7 +988,7 @@ Please click the Cloud icon in the top right corner and solve the CAPTCHA to acc
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      this.checkCloudflareStatus(response.status);
+      this.checkCloudflareStatus(response.status, response.data);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseChapters($, mangaId);
     }
@@ -1020,7 +1000,7 @@ Please click the Cloud icon in the top right corner and solve the CAPTCHA to acc
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      this.checkCloudflareStatus(response.status);
+      this.checkCloudflareStatus(response.status, response.data);
       return this.parser.parseChapterDetails(response.data ?? "", mangaId, chapterId);
     }
     async getSearchResults(query, metadata) {
@@ -1033,7 +1013,7 @@ Please click the Cloud icon in the top right corner and solve the CAPTCHA to acc
         data: `keyword=${encodeURIComponent(query.title ?? "")}`
       });
       const response = await this.requestManager.schedule(request, 1);
-      this.checkCloudflareStatus(response.status);
+      this.checkCloudflareStatus(response.status, response.data);
       const $ = this.cheerio.load(response.data);
       const manga = this.parser.parseSearchResults($);
       return App.createPagedResults({
@@ -1047,7 +1027,7 @@ Please click the Cloud icon in the top right corner and solve the CAPTCHA to acc
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      this.checkCloudflareStatus(response.status);
+      this.checkCloudflareStatus(response.status, response.data);
       const $ = this.cheerio.load(response.data);
       this.parser.parseHomeSections($, sectionCallback);
     }
