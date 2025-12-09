@@ -744,25 +744,23 @@ var _Sources = (() => {
       let status = "Ongoing";
       let desc = "";
       const arrayTags = [];
-      let rawDesc = $(".description-archive").clone();
-      rawDesc.find("div, img, script, style, b, strong").remove();
-      desc = rawDesc.text().trim();
-      $(".description-archive b, .description-archive strong").each((_, el) => {
-        const label = $(el).text().trim();
-        const value = $(el)[0].nextSibling?.nodeType === 3 ? $(el)[0].nextSibling.nodeValue.trim() : $(el).next().text().trim();
-        if (label.includes("Publisher")) {
-          author = value;
-        } else if (label.includes("Genres")) {
-          const parent = $(el).parent();
-          parent.find("a").each((__, a) => {
-            const tagLabel = $(a).text().trim();
-            const tagId = $(a).attr("href")?.split("/").filter(Boolean).pop() ?? tagLabel;
-            if (tagLabel) arrayTags.push(App.createTag({ id: tagId, label: tagLabel }));
-          });
-        } else if (label.includes("Status")) {
-          if (value.includes("Completed")) status = "Completed";
-        }
-      });
+      const context = $(".description-archive");
+      let tempDesc = context.clone();
+      tempDesc.find("b, strong, div, img").remove();
+      desc = tempDesc.text().trim();
+      const publisherLabel = context.find('b:contains("Publisher:"), strong:contains("Publisher:")');
+      if (publisherLabel.length > 0) {
+        author = publisherLabel[0].nextSibling?.nodeValue?.trim() || publisherLabel.next().text().trim() || "Unknown";
+      }
+      const genreLabel = context.find('b:contains("Genres:"), strong:contains("Genres:")');
+      if (genreLabel.length > 0) {
+        let genreContainer = genreLabel.parent();
+        genreContainer.find("a").each((_, a) => {
+          const label = $(a).text().trim();
+          const id = $(a).attr("href")?.split("/").filter(Boolean).pop() ?? label;
+          if (label) arrayTags.push(App.createTag({ id, label }));
+        });
+      }
       const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })];
       return App.createSourceManga({
         id: mangaId,
@@ -783,12 +781,14 @@ var _Sources = (() => {
         const title = link.text().trim();
         const href = link.attr("href");
         if (!href) return;
-        const chapterId = href;
+        const urlParts = href.split("/").filter(Boolean);
+        const chapterId = urlParts[urlParts.length - 1];
+        if (!chapterId) return;
         let chapNum = 0;
         const numMatch = title.match(/(\d+(\.\d+)?)/g);
         if (numMatch && numMatch.length > 0) {
           const lastNum = parseFloat(numMatch[numMatch.length - 1]);
-          chapNum = lastNum < 2e3 ? lastNum : 0;
+          chapNum = lastNum < 1900 ? lastNum : 0;
         }
         chapters.push(App.createChapter({
           id: chapterId,
@@ -812,7 +812,7 @@ var _Sources = (() => {
           } else if (!url.startsWith("http")) {
             url = url.startsWith("//") ? `https:${url}` : BASE_URL + url;
           }
-          pages.push(url);
+          pages.push(url.trim());
         }
       }
       return App.createChapterDetails({
@@ -828,22 +828,22 @@ var _Sources = (() => {
         const href = link.attr("href");
         const title = link.text().trim() || link.attr("title");
         if (!href || !title) return;
-        const id = href;
+        const urlParts = href.split("/").filter(Boolean);
+        const id = urlParts[urlParts.length - 1];
         const img = $("img", item).first();
         let image = img.attr("src") ?? img.attr("data-src") ?? "";
         if (image.startsWith("/")) {
           image = `https://2.bp.blogspot.com${image}`;
         }
-        if (image && !image.startsWith("http")) {
-          image = BASE_URL + image;
-        }
         if (!image) image = "https://readallcomics.com/wp-content/uploads/2020/09/logo.png";
-        results.push(App.createPartialSourceManga({
-          mangaId: id,
-          image,
-          title,
-          subtitle: void 0
-        }));
+        if (id) {
+          results.push(App.createPartialSourceManga({
+            mangaId: id,
+            image,
+            title,
+            subtitle: void 0
+          }));
+        }
       });
       return results;
     }
@@ -860,18 +860,22 @@ var _Sources = (() => {
         const href = link.attr("href");
         const title = link.text().trim() || link.attr("title");
         if (!href || !title) return;
+        const urlParts = href.split("/").filter(Boolean);
+        const id = urlParts[urlParts.length - 1];
         const img = $("img", item).first();
         let image = img.attr("src") ?? img.attr("data-src") ?? "";
         if (image.startsWith("/")) {
           image = `https://2.bp.blogspot.com${image}`;
         }
         const dateText = $(".pinbin-copy span", item).text().trim();
-        items.push(App.createPartialSourceManga({
-          mangaId: href,
-          image,
-          title,
-          subtitle: dateText
-        }));
+        if (id) {
+          items.push(App.createPartialSourceManga({
+            mangaId: id,
+            image,
+            title,
+            subtitle: dateText
+          }));
+        }
       });
       latestSection.items = items;
       sectionCallback(latestSection);
@@ -881,7 +885,7 @@ var _Sources = (() => {
   // src/ReadAllComics/ReadAllComics.ts
   var DOMAIN = "https://readallcomics.com";
   var ReadAllComicsInfo = {
-    version: "1.2.2",
+    version: "1.2.5",
     name: "ReadAllComics",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -923,11 +927,11 @@ var _Sources = (() => {
       });
     }
     getMangaShareUrl(mangaId) {
-      return mangaId;
+      return `${this.baseUrl}/category/${mangaId}`;
     }
     async getMangaDetails(mangaId) {
       const request = App.createRequest({
-        url: mangaId,
+        url: `${this.baseUrl}/category/${mangaId}`,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
@@ -936,7 +940,7 @@ var _Sources = (() => {
     }
     async getChapters(mangaId) {
       const request = App.createRequest({
-        url: mangaId,
+        url: `${this.baseUrl}/category/${mangaId}`,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
@@ -945,7 +949,7 @@ var _Sources = (() => {
     }
     async getChapterDetails(mangaId, chapterId) {
       const request = App.createRequest({
-        url: chapterId,
+        url: `${this.baseUrl}/${chapterId}`,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
@@ -983,6 +987,7 @@ var _Sources = (() => {
         method: "GET",
         headers: {
           "referer": `${this.baseUrl}/`,
+          "origin": this.baseUrl,
           "user-agent": await this.requestManager.getDefaultUserAgent()
         }
       });
