@@ -825,10 +825,10 @@ var _Sources = (() => {
       const results = [];
       $(".list-comic .item").each((_, item) => {
         const link = $("a", item).first();
-        const title = link.text().trim();
+        const title = $("span.title", link).text().trim() || link.text().trim();
         let id = link.attr("href") ?? "";
         if (id.startsWith("/Comic/")) id = id.replace("/Comic/", "");
-        let image = $("img", item).attr("src") ?? "";
+        let image = $("img", link).attr("src") ?? "";
         if (image.startsWith("/")) image = BASE_URL + image;
         if (id && title) {
           results.push(App.createPartialSourceManga({
@@ -849,15 +849,15 @@ var _Sources = (() => {
         type: import_types.HomeSectionType.singleRowNormal
       });
       const latestItems = [];
-      $(".bigBarContainer .items div").each((_, container) => {
-        const linkComic = $("a", container).first();
-        const href = linkComic.attr("href");
-        if (href && href.includes("Comic/")) {
-          const id = href.split("Comic/")[1];
-          const title = linkComic.text().split("Issue")[0].trim();
-          let image = $("img", linkComic).attr("src") ?? "";
-          if (!image || image.includes("loader")) {
-            image = $("img", linkComic).attr("srcTemp") ?? "";
+      $(".bigBarContainer .items a").each((_, a) => {
+        const href = $(a).attr("href");
+        if (href && href.startsWith("Comic/") && !href.includes("?id=")) {
+          const id = href.replace("Comic/", "");
+          let title = $(a).text().trim();
+          if (title.includes("\n")) title = title.split("\n")[0].trim();
+          let image = $("img", a).attr("src") ?? "";
+          if (!image || image.includes("loader") || image === "") {
+            image = $("img", a).attr("srcTemp") ?? "";
           }
           if (image.startsWith("/")) image = BASE_URL + image;
           if (id && !latestItems.some((x) => x.mangaId === id)) {
@@ -928,7 +928,7 @@ var _Sources = (() => {
   // src/ReadComicsOnline/ReadComicsOnline.ts
   var DOMAIN = "https://readcomiconline.li";
   var ReadComicsOnlineInfo = {
-    version: "1.0.0",
+    version: "2.0.0",
     name: "ReadComicsOnline",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -991,9 +991,10 @@ var _Sources = (() => {
       return this.parser.parseChapters($, mangaId);
     }
     async getChapterDetails(mangaId, chapterId) {
+      const separator = chapterId.includes("?") ? "&" : "?";
+      const url = `${this.baseUrl}${chapterId}${separator}quality=hq&s=s2`;
       const request = App.createRequest({
-        url: `${this.baseUrl}${chapterId}&quality=hq`,
-        // Forza alta qualità
+        url,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
@@ -1014,7 +1015,6 @@ var _Sources = (() => {
       return App.createPagedResults({
         results: manga,
         metadata: void 0
-        // Paginazione difficile su ricerca POST di RCO
       });
     }
     async getHomePageSections(sectionCallback) {
