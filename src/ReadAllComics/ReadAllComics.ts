@@ -16,11 +16,12 @@ import {
 } from '@paperback/types'
 
 import { ReadAllComicsParser } from './ReadAllComicsParser'
+import { URLBuilder } from '../helper'
 
 const DOMAIN = 'https://readallcomics.com'
 
 export const ReadAllComicsInfo: SourceInfo = {
-    version: '1.0.2',
+    version: '1.0.3',
     name: 'ReadAllComics',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -44,7 +45,7 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 4,
+        requestsPerSecond: 3,
         requestTimeout: 20000,
         interceptor: {
             interceptRequest: async (request: any) => {
@@ -56,7 +57,6 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
                     'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                     'accept-language': 'en-US,en;q=0.5'
                 }
-                // Forza HTTPS
                 request.url = request.url.replace(/^http:/, 'https:')
                 return request
             },
@@ -67,12 +67,12 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     })
 
     getMangaShareUrl(mangaId: string): string {
-        return `${this.baseUrl}/category/${mangaId}`
+        return mangaId
     }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
         const request = App.createRequest({
-            url: `${this.baseUrl}/category/${mangaId}`,
+            url: mangaId,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
@@ -82,7 +82,7 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
         const request = App.createRequest({
-            url: `${this.baseUrl}/category/${mangaId}`,
+            url: mangaId,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
@@ -91,9 +91,8 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // chapterId qui è lo slug dell'albo (es: batman-2016-001)
         const request = App.createRequest({
-            url: `${this.baseUrl}/${chapterId}`,
+            url: chapterId, 
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
@@ -102,21 +101,11 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        const page = metadata?.page ?? 1
-        const searchTerm = query.title ?? ''
-        let url = ''
-        let isSearch = false
+        // FIX: Usiamo la ricerca standard di WP (?s=) che restituisce la griglia con immagini
+        const url = new URLBuilder(this.baseUrl)
+            .addQueryParameter('s', query.title ?? '')
+            .buildUrl()
 
-        if (searchTerm.trim().length > 0) {
-            // Ricerca testuale
-            url = `${this.baseUrl}/?story=${encodeURIComponent(searchTerm)}&s=&type=comic`
-            isSearch = true
-        } else {
-            // Browse / Paginazione Home
-            url = page > 1 ? `${this.baseUrl}/page/${page}/` : this.baseUrl
-            isSearch = false
-        }
-        
         const request = App.createRequest({
             url: url,
             method: 'GET'
@@ -124,15 +113,12 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
 
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
-        const manga = this.parser.parseSearchResults($, isSearch)
+        // Usiamo il parser della home (griglia) anche per la ricerca
+        const manga = this.parser.parseSearchResults($)
         
-        // Se è ricerca testuale, non c'è paginazione semplice (il sito la gestisce male), quindi stop
-        // Se è browse, incrementa pagina
-        const nextPage = isSearch ? undefined : { page: page + 1 }
-
         return App.createPagedResults({
             results: manga,
-            metadata: manga.length > 0 ? nextPage : undefined
+            metadata: undefined 
         })
     }
 
@@ -148,18 +134,21 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     }
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
-        // Usa la stessa logica di getSearchResults senza query
-        return this.getSearchResults({ title: '' }, metadata)
-    }
-    
-    async getCloudflareBypassRequestAsync() {
-        return App.createRequest({
-            url: this.baseUrl,
-            method: 'GET',
-            headers: {
-                'referer': `${this.baseUrl}/`,
-                'user-agent': await this.requestManager.getDefaultUserAgent()
-            }
+        const page = metadata?.page ?? 1
+        const url = `${this.baseUrl}/page/${page}/`
+        
+        const request = App.createRequest({
+            url: url,
+            method: 'GET'
+        })
+
+        const response = await this.requestManager.schedule(request, 1)
+        const $ = this.cheerio.load(response.data)
+        const manga = this.parser.parseSearchResults($)
+        
+        return App.createPagedResults({
+            results: manga,
+            metadata: manga.length > 0 ? { page: page + 1 } : undefined
         })
     }
 }

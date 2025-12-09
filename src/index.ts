@@ -3,7 +3,6 @@ import { NineMangaIT, NineMangaITInfo } from './NineMangaIT/NineMangaIT'
 import { WeebCentral, WeebCentralInfo } from './WeebCentral/WeebCentral'
 import { MangaDex, MangaDexInfo } from './MangaDex/MangaDex'
 import { ReadAllComics, ReadAllComicsInfo } from './ReadAllComics/ReadAllComics'
-import { MangaParkIT, MangaParkITInfo } from './MangaParkIT/MangaParkIT'
 import * as cheerio from 'cheerio'
 
 export const MangaWorldSource = new MangaWorld(cheerio)
