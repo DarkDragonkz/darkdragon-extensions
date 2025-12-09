@@ -786,12 +786,9 @@ var _Sources = (() => {
         const dateText = $(row).find("td").eq(1).text().trim();
         const time = dateText ? new Date(dateText) : /* @__PURE__ */ new Date();
         let chapNum = 0;
-        const numMatch = title.match(/#(\d+(\.\d+)?)/);
+        const numMatch = title.match(/#(\d+(\.\d+)?)/) ?? title.match(/(\d+(\.\d+)?)/);
         if (numMatch) {
           chapNum = parseFloat(numMatch[1]);
-        } else {
-          const looseMatch = title.match(/(\d+)/);
-          if (looseMatch) chapNum = parseFloat(looseMatch[1]);
         }
         chapters.push(App.createChapter({
           id: chapterId,
@@ -806,9 +803,7 @@ var _Sources = (() => {
     parseChapterDetails(html, mangaId, chapterId) {
       const pages = [];
       let scriptMatch = html.match(/var lstImages = new Array\((.*?)\);/);
-      if (!scriptMatch) {
-        scriptMatch = html.match(/new Array\((.*?)\);/);
-      }
+      if (!scriptMatch) scriptMatch = html.match(/new Array\((.*?)\);/);
       if (scriptMatch && scriptMatch[1]) {
         const rawUrls = scriptMatch[1].split(",");
         for (const rawUrl of rawUrls) {
@@ -858,13 +853,14 @@ var _Sources = (() => {
           let id = href.replace(/^\/Comic\//, "").replace(/^Comic\//, "").replace(/^\//, "");
           let title = $(a).text().trim();
           if (title.includes("Issue")) title = title.split("Issue")[0].trim();
+          if (title.includes("\n")) title = title.split("\n")[0].trim();
           if (!title) return;
           const img = $("img", a);
           let image = img.attr("src") ?? "";
-          if (!image || image.includes("loader") || image.startsWith("data:")) {
+          if (!image || image.includes("blank") || image.includes("loader")) {
             image = img.attr("srcTemp") ?? "";
           }
-          if (image.startsWith("/")) image = BASE_URL + image;
+          if (image && image.startsWith("/")) image = BASE_URL + image;
           if (id && !latestItems.some((x) => x.mangaId === id)) {
             latestItems.push(App.createPartialSourceManga({
               mangaId: id,
@@ -879,10 +875,10 @@ var _Sources = (() => {
         latestSection.items = latestItems;
         sectionCallback(latestSection);
       }
-      const parseTab = (tabId, sectionTitle) => {
+      const parseTab = (tabId, sectionId, titleSection) => {
         const section = App.createHomeSection({
-          id: tabId,
-          title: sectionTitle,
+          id: sectionId,
+          title: titleSection,
           containsMoreItems: false,
           type: import_types.HomeSectionType.singleRowNormal
         });
@@ -893,8 +889,10 @@ var _Sources = (() => {
           if (!href) return;
           let id = href.replace(/^\/Comic\//, "").replace(/^Comic\//, "").replace(/^\//, "");
           let title = $(div).find("a.title").text().trim();
+          if (!title) title = link.next("a").text().trim();
           if (!title) title = link.text().trim();
           let image = $("img", div).attr("src") ?? "";
+          if (!image || image.includes("blank")) image = $("img", div).attr("srcTemp") ?? "";
           if (image.startsWith("/")) image = BASE_URL + image;
           if (id && title) {
             items.push(App.createPartialSourceManga({
@@ -910,16 +908,16 @@ var _Sources = (() => {
           sectionCallback(section);
         }
       };
-      parseTab("tab-newest", "New Series");
-      parseTab("tab-mostview", "Most Popular");
-      parseTab("tab-top-day", "Top Day");
+      parseTab("tab-newest", "newest", "New Series");
+      parseTab("tab-mostview", "popular", "Most Popular");
+      parseTab("tab-top-day", "topday", "Top Day");
     }
   };
 
   // src/ReadComicsOnline/ReadComicsOnline.ts
   var DOMAIN = "https://readcomiconline.li";
   var ReadComicsOnlineInfo = {
-    version: "2.0.5",
+    version: "2.0.6",
     name: "ReadComicsOnline",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -960,13 +958,13 @@ var _Sources = (() => {
         }
       });
     }
-    // Funzione MIGLIORATA per rilevare Cloudflare anche se lo status è 200
+    // Controlla se la pagina ricevuta è un blocco Cloudflare
     checkCloudflareStatus(status, data) {
       if (status === 503 || status === 403) {
         throw new Error(`CLOUDFLARE PROTECTION: Please click the Cloud icon in the top right corner.`);
       }
-      if (typeof data === "string" && (data.includes("Just a moment...") || data.includes("Attention Required! | Cloudflare"))) {
-        throw new Error(`CLOUDFLARE PROTECTION: Site loaded the Captcha page. Please click the Cloud icon in the top right corner.`);
+      if (typeof data === "string" && (data.includes("Just a moment...") || data.includes("Attention Required! | Cloudflare") || data.includes("security check"))) {
+        throw new Error(`CLOUDFLARE PROTECTION: Captcha detected. Please click the Cloud icon in the top right corner to solve it.`);
       }
     }
     getMangaShareUrl(mangaId) {
