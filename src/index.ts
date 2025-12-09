@@ -11,7 +11,6 @@ export const MangaWorldSource = new MangaWorld(cheerio)
 export const NineMangaITSource = new NineMangaIT(cheerio)
 export const WeebCentralSource = new WeebCentral(cheerio)
 export const MangaDexSource = new MangaDex(cheerio)
-export const MangaParkITSource = new MangaParkIT(cheerio)
 export const ReadAllComicsSource = new ReadAllComics(cheerio)
 
 export const MangaWorldExtensionInfo = MangaWorldInfo
@@ -19,4 +18,3 @@ export const NineMangaITExtensionInfo = NineMangaITInfo
 export const WeebCentralExtensionInfo = WeebCentralInfo
 export const MangaDexExtensionInfo = MangaDexInfo
 export const ReadAllComicsExtensionInfo = ReadAllComicsInfo
-export const MangaParkITExtensionInfo = MangaParkITInfo
