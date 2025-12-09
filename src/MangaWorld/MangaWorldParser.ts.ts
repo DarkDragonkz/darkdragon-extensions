@@ -9,9 +9,12 @@ import {
     TagSection,
 } from '@paperback/types'
 
-export class Parser {
+import * as cheerio from 'cheerio'
 
-    // HELPER: Pulisce i titoli duplicati (es "One PieceOne Piece" -> "One Piece")
+const BASE_URL = 'https://www.mangaworld.mx'
+
+export class MangaWorldParser {
+
     private cleanTitle(title: string): string {
         if (!title) return 'Unknown'
         title = title.trim()
@@ -31,12 +34,13 @@ export class Parser {
         const imgElement = $('.thumb.mb-3.text-center img')
         let image = imgElement.attr('src') ?? ''
         
+        // Fix Lazy Loading: Cerca data-src o data-original se src è vuoto
         if (!image || image.includes('loading') || image.startsWith('data:')) {
             image = imgElement.attr('data-src') ?? imgElement.attr('data-original') ?? ''
         }
         
         if (image && image.startsWith('/')) {
-            image = 'https://www.mangaworld.mx' + image
+            image = BASE_URL + image
         }
         if (!image) image = 'https://paperback.moe/icons/logo-alt.svg'
 
@@ -46,8 +50,9 @@ export class Parser {
         let artist = ''
         const id_arr: Array<string> = []
         const label_arr: Array<string> = []
-        let i = 0
-        for (const obj of $('.meta-data.row.px-1 .col-12').toArray()) {
+        
+        // Parsing metadati
+        $('.meta-data.row.px-1 .col-12').each((i: number, obj: any) => {
             switch (i) {
                 case 1:
                     $(obj)
@@ -64,8 +69,7 @@ export class Parser {
                     artist = $(obj).text().trim().replace('Artista: ', '')
                     break
             }
-            i++
-        }
+        })
 
         const status = 'Ongoing'
         const arrayTags: Tag[] = []
@@ -79,6 +83,7 @@ export class Parser {
         }
 
         const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags.map((x) => App.createTag(x)) })]
+        
         return App.createSourceManga({
             id: mangaId,
             mangaInfo: App.createMangaInfo({
@@ -95,21 +100,24 @@ export class Parser {
         })
     }
 
-    parseChapters($: any, mangaId: string, source: any): Chapter[] {
+    parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
-        const arrChapters = $('.chapter').toArray().reverse()
+        // Inverte per avere il capitolo 1 per primo
+        const arrChapters = $('.chapter').toArray().reverse() 
         for (const item of arrChapters) {
-            const id = $('a', item).attr('href')?.replace(`${source.baseUrl}/manga/${mangaId}/read/`, '') ?? ''
+            // L'ID del capitolo è lo slug finale
+            const id = $('a', item).attr('href')?.replace(`${BASE_URL}/manga/${mangaId}/read/`, '') ?? ''
 
             const name = $('a', item).attr('title') ?? ''
+            // Estrae il numero del capitolo. Se fallisce, usa -1 per forzare l'ordinamento alla fine.
             const chapNum = Number($('.d-inline-block', item).text().split(' ')[1]) ?? -1
 
             chapters.push(
                 App.createChapter({
                     id,
                     name,
-                    chapNum,
-                    time: new Date(Date.now()),
+                    chapNum: chapNum >= 0 ? chapNum : 0, // Imposta a 0 se negativo
+                    time: new Date(),
                     langCode: 'it',
                 })
             )
@@ -121,14 +129,15 @@ export class Parser {
         const pages: string[] = []
         for (const item of $('.col-12.text-center.position-relative img').toArray()) {
             let imageUrl = $(item).attr('src')
-            if (!imageUrl || imageUrl.includes('loading')) {
+            // Fix Lazy Loading
+            if (!imageUrl || imageUrl.includes('loading') || imageUrl.startsWith('data:')) {
                 imageUrl = $(item).attr('data-src') ?? $(item).attr('data-original')
             }
             
             if (!imageUrl) continue
             
             if (imageUrl.startsWith('/')) {
-                imageUrl = 'https://www.mangaworld.mx' + imageUrl
+                imageUrl = BASE_URL + imageUrl
             }
             
             pages.push(imageUrl.trim())
@@ -140,7 +149,7 @@ export class Parser {
         })
     }
 
-    parseTags($: any, baseUrl: any): TagSection[] {
+    parseTags($: any, baseUrl: string): TagSection[] {
         const genres: Tag[] = []
         let first_label = ''
         let i = 0
@@ -160,18 +169,20 @@ export class Parser {
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         for (const item of $('.comics-grid .entry').toArray()) {
-            const id = (($('a', item).attr('href') ?? '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ['null'])[0] ?? ''
+            const href = $('a', item).attr('href') ?? ''
+            const id = href.match(/[0-9]+\/[a-zA-Z0-9\-]+/i)?.[0] ?? ''
 
             let title = $('a', item).attr('title') ?? ''
             title = this.cleanTitle(title)
             
             const imgElement = $('a img', item)
             let image = imgElement.attr('src') ?? ''
+            // Fix Lazy Loading
             if (image.includes('loading') || !image || image.startsWith('data:')) {
                 image = imgElement.attr('data-src') ?? imgElement.attr('data-original') ?? ''
             }
             if (image && image.startsWith('/')) {
-                image = 'https://www.mangaworld.mx' + image
+                image = BASE_URL + image
             }
             
             results.push(
@@ -196,13 +207,13 @@ export class Parser {
         const section2 = App.createHomeSection({
             id: '2',
             title: 'Manga del mese',
-            containsMoreItems: true, // Abilitato expand
+            containsMoreItems: true,
             type: HomeSectionType.singleRowNormal,
         })
         const section3 = App.createHomeSection({
             id: '3',
             title: 'Capitoli di tendenza',
-            containsMoreItems: true, // Abilitato expand
+            containsMoreItems: true,
             type: HomeSectionType.singleRowNormal,
         })
 
@@ -214,87 +225,53 @@ export class Parser {
         const arrHotTitle = $('.col-12 .top-wrapper .entry').toArray()
         const arrTrending = $('.entry.vertical').toArray()
 
-        for (const obj of arrLatest) {
-            const id = (($('a', obj).attr('href') ?? '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ['null'])[0] ?? ''
-            let title = $('a', obj).attr('title') ?? ''
-            title = this.cleanTitle(title)
+        const processEntry = (obj: any, source: string) => {
+            const href = $('a', obj).attr('href') ?? ''
+            const id = href.match(/[0-9]+\/[a-zA-Z0-9\-]+/i)?.[0] ?? ''
             
             const imgElement = $('a img', obj)
             let image = imgElement.attr('src') ?? ''
+            // Fix Lazy Loading
             if (image.includes('loading') || !image || image.startsWith('data:')) {
                 image = imgElement.attr('data-src') ?? imgElement.attr('data-original') ?? ''
             }
             if (image && image.startsWith('/')) {
-                image = 'https://www.mangaworld.mx' + image
-            }
-
-            const sub = $('.d-flex.flex-wrap.flex-row a', obj).first().attr('title') ?? ''
-            latestManga.push(
-                App.createPartialSourceManga({
-                    image,
-                    title: title,
-                    mangaId: id,
-                    subtitle: sub,
-                })
-            )
-        }
-        section1.items = latestManga
-        sectionCallback(section1)
-
-        let i = 0
-        for (const obj of arrHotTitle) {
-            const id = (($('a', obj).attr('href') ?? '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ['null'])[0] ?? ''
-            
-            const imgElement = $('.img-fluid', obj)
-            let image = imgElement.attr('src') ?? ''
-            if (image.includes('loading') || !image || image.startsWith('data:')) {
-                image = imgElement.attr('data-src') ?? imgElement.attr('data-original') ?? ''
-            }
-            if (image && image.startsWith('/')) {
-                image = 'https://www.mangaworld.mx' + image
+                image = BASE_URL + image
             }
 
             let title = $('a', obj).attr('title') 
             if (!title) title = $('.name', obj).text().trim()
+            if (!title) title = $('.manga-title', obj).text().trim() // Per il trending
             title = this.cleanTitle(title ?? 'Unknown')
 
-            if (i == 10) break
-            i++
-            hotTitles.push(
-                App.createPartialSourceManga({
-                    image,
-                    title: title,
-                    mangaId: id,
-                    subtitle: undefined,
-                })
-            )
+            let sub = ''
+            if (source === 'latest') {
+                sub = $('.d-flex.flex-wrap.flex-row a', obj).first().attr('title') ?? ''
+            }
+            
+            return App.createPartialSourceManga({
+                image,
+                title: title,
+                mangaId: id,
+                subtitle: sub,
+            })
+        }
+
+        for (const obj of arrLatest) {
+            latestManga.push(processEntry(obj, 'latest'))
+        }
+        section1.items = latestManga
+        sectionCallback(section1)
+
+        for (const obj of arrHotTitle) {
+            hotTitles.push(processEntry(obj, 'hot'))
         }
 
         section2.items = hotTitles
         sectionCallback(section2)
+
         for (const obj of arrTrending) {
-            const id = (($('a', obj).attr('href') ?? '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ['null'])[0] ?? ''
-            
-            const imgElement = $('a img', obj)
-            let image = imgElement.attr('src') ?? ''
-            if (image.includes('loading') || !image || image.startsWith('data:')) {
-                image = imgElement.attr('data-src') ?? imgElement.attr('data-original') ?? ''
-            }
-            if (image && image.startsWith('/')) {
-                image = 'https://www.mangaworld.mx' + image
-            }
-
-            let title = $('.manga-title', obj).text().trim()
-            title = this.cleanTitle(title)
-
-            trending.push(
-                App.createPartialSourceManga({
-                    image,
-                    title: title,
-                    mangaId: id,
-                    subtitle: undefined,
-                })
-            )
+            trending.push(processEntry(obj, 'trending'))
         }
         section3.items = trending
         sectionCallback(section3)
@@ -302,22 +279,23 @@ export class Parser {
 
     parseViewMore($: any): PartialSourceManga[] {
         const more: PartialSourceManga[] = []
-        // Selettore generico che funziona sia in Home che in Archivio
         const arrLatest = $('.comics-grid .entry').toArray()
         
         for (const obj of arrLatest) {
-            const id = (($('a', obj).attr('href') ?? '').match(/[0-9]+\/[a-zA-Z0-9\-]+/i) ?? ['null'])[0] ?? ''
+            const href = $('a', obj).attr('href') ?? ''
+            const id = href.match(/[0-9]+\/[a-zA-Z0-9\-]+/i)?.[0] ?? ''
 
             let title = $('a', obj).attr('title') ?? ''
             title = this.cleanTitle(title)
             
             const imgElement = $('a img', obj)
             let image = imgElement.attr('src') ?? ''
+            // Fix Lazy Loading
             if (image.includes('loading') || !image || image.startsWith('data:')) {
                 image = imgElement.attr('data-src') ?? imgElement.attr('data-original') ?? ''
             }
             if (image && image.startsWith('/')) {
-                image = 'https://www.mangaworld.mx' + image
+                image = BASE_URL + image
             }
 
             const sub = $('.d-flex.flex-wrap.flex-row a', obj).first().attr('title') ?? ''

@@ -125,6 +125,8 @@ export class ReadComicsOnlineParser {
     }
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
+        
+        // 1. Hot Comics (Visualizzazione Grande)
         const hotSection = App.createHomeSection({ 
             id: 'hot', 
             title: 'Hot Comics', 
@@ -138,8 +140,8 @@ export class ReadComicsOnlineParser {
             const title = $('div.schedule-name', item).text().trim()
             
             const img = $('div.schedule-avatar img', item)
+            // Cerca ovunque: src, data-src, o style background
             let image = img.attr('data-src') ?? img.attr('src') ?? ''
-            
             if (image.startsWith('/')) image = BASE_URL + image
 
             if (id && title) {
@@ -154,6 +156,7 @@ export class ReadComicsOnlineParser {
         hotSection.items = hotItems
         sectionCallback(hotSection)
 
+        // 2. Latest Comics (Lista normale)
         const latestSection = App.createHomeSection({ 
             id: 'latest', 
             title: 'Latest Comics', 
@@ -168,9 +171,16 @@ export class ReadComicsOnlineParser {
             const title = link.text().trim()
             
             const img = $('div.media-left img', item)
-            let image = img.attr('data-src') ?? img.attr('src') ?? ''
+            // FIX AGGRESSIVO: Cerca src, data-src, original, data-original
+            let image = img.attr('src') ?? img.attr('data-src') ?? img.attr('original') ?? img.attr('data-original') ?? ''
             
-            if (image.startsWith('/')) image = BASE_URL + image
+            // Se l'immagine è un placeholder o vuota, prova a costruirla dall'ID
+            if (!image || image.includes('no-image') || image.includes('placeholder')) {
+                // Tentativo di costruzione manuale url cover (spesso funzionante su questi siti)
+                image = `${BASE_URL}/uploads/manga/${id}/cover/cover_250x350.jpg`
+            } else if (image.startsWith('/')) {
+                image = BASE_URL + image
+            }
 
             if (id && title) {
                 latestItems.push(App.createPartialSourceManga({

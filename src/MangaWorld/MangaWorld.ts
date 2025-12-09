@@ -17,13 +17,13 @@ import {
     PartialSourceManga,
 } from '@paperback/types'
 
-import { Parser } from './parser'
+import { MangaWorldParser } from './MangaWorldParser' // Rinominato in MangaWorldParser
 import { URLBuilder } from '../helper'
 
 const MW_DOMAIN = 'https://www.mangaworld.mx'
 
 export const MangaWorldInfo: SourceInfo = {
-    version: '3.0.8',
+    version: '3.1.0',
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld.',
     author: 'NmN',
@@ -47,7 +47,7 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
     constructor(private cheerio: any) {}
     
     RETRIES = 10
-    parser = new Parser()
+    parser = new MangaWorldParser() // Rinominato
 
     requestManager = App.createRequestManager({
         requestsPerSecond: 8,
@@ -116,7 +116,10 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         let page = metadata?.page ?? 1
         if (page == -1) return App.createPagedResults({ results: [], metadata: { page: -1 } })
+        
+        // Uso la funzione helper per costruire l'URL
         const request = this.constructSearchRequest(page, query)
+        
         const data = await this.requestManager.schedule(request, this.RETRIES)
         const $ = this.cheerio.load(data.data)
         const manga = this.parser.parseSearchResults($)
@@ -138,7 +141,6 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
         this.parser.parseHomeSections($, sectionCallback)
     }
 
-    // FIX: Gestione corretta delle sezioni "View More"
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
         let url = ''
@@ -150,8 +152,7 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
             case '2': // Manga del mese (Popolari)
                 url = `${this.baseUrl}/archive?sort=most_read&page=${page}`
                 break
-            case '3': // Capitoli di tendenza
-                // Usiamo i più letti o popolari per il trending
+            case '3': // Capitoli di tendenza (Popolari)
                 url = `${this.baseUrl}/archive?sort=most_read&page=${page}`
                 break
             default:
@@ -166,28 +167,13 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
         const $ = this.cheerio.load(response.data)
         const manga: PartialSourceManga[] = this.parser.parseViewMore($)
         
+        // Determina se c'è una pagina successiva in modo semplice
+        const hasMore = manga.length > 0
+        
         return App.createPagedResults({
             results: manga,
-            metadata: manga.length > 0 ? { page: page + 1 } : undefined,
+            metadata: hasMore ? { page: page + 1 } : undefined,
         })
-    }
-
-    protected convertTime(timeAgo: string): Date {
-        let time: Date
-        let trimmed = Number((/\d*/.exec(timeAgo) ?? [])[0])
-        trimmed = trimmed == 0 && timeAgo.includes('a') ? 1 : trimmed
-        if (timeAgo.includes('mins') || timeAgo.includes('minutes') || timeAgo.includes('minute')) {
-            time = new Date(Date.now() - trimmed * 60000)
-        } else if (timeAgo.includes('hours') || timeAgo.includes('hour')) {
-            time = new Date(Date.now() - trimmed * 3600000)
-        } else if (timeAgo.includes('days') || timeAgo.includes('day')) {
-            time = new Date(Date.now() - trimmed * 86400000)
-        } else if (timeAgo.includes('year') || timeAgo.includes('years')) {
-            time = new Date(Date.now() - trimmed * 31556952000)
-        } else {
-            time = new Date(timeAgo)
-        }
-        return time
     }
 
     async getCloudflareBypassRequestAsync() {
