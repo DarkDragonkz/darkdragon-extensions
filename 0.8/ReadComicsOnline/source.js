@@ -754,8 +754,8 @@ var _Sources = (() => {
           author = $p.find("a").text().trim() || "Unknown";
         } else if (text.includes("Status:")) {
           if (text.includes("Completed")) status = "Completed";
-        } else if (!text.includes("Artist:") && !text.includes("Publication date:") && text.length > 5) {
-          desc += text + "\n";
+        } else if (!text.includes("Artist:") && !text.includes("Publication date:")) {
+          if (text.length > 20) desc += text + "\n";
         }
       });
       const tagSections = [
@@ -830,8 +830,7 @@ var _Sources = (() => {
         const link = $("a", item).first();
         const title = $("span.title", link).text().trim() || link.text().trim();
         let id = link.attr("href") ?? "";
-        id = id.replace(/^\/Comic\//, "");
-        id = id.replace(/^\//, "");
+        id = id.replace(/^\/Comic\//, "").replace(/^\//, "");
         let image = $("img", link).attr("src") ?? "";
         if (image.startsWith("/")) image = BASE_URL + image;
         if (id && title) {
@@ -855,10 +854,11 @@ var _Sources = (() => {
       const latestItems = [];
       $(".bigBarContainer .items a").each((_, a) => {
         const href = $(a).attr("href");
-        if (href && href.includes("Comic/") && !href.includes("?id=")) {
-          let id = href.replace(/^\/Comic\//, "").replace(/^\//, "");
+        if (href && href.indexOf("Comic/") !== -1 && href.indexOf("?id=") === -1) {
+          let id = href.replace(/^\/Comic\//, "").replace(/^Comic\//, "").replace(/^\//, "");
           let title = $(a).text().trim();
           if (title.includes("Issue")) title = title.split("Issue")[0].trim();
+          if (!title) return;
           const img = $("img", a);
           let image = img.attr("src") ?? "";
           if (!image || image.includes("loader") || image.startsWith("data:")) {
@@ -887,12 +887,11 @@ var _Sources = (() => {
       });
       const newItems = [];
       $("#tab-newest > div").each((_, div) => {
-        const titleLink = $("a.title", div);
-        const link = titleLink.length > 0 ? titleLink : $("a", div).first();
+        const link = $("a", div).first();
         const href = link.attr("href");
-        if (!href || !href.includes("Comic/")) return;
-        let id = href.replace(/^\/Comic\//, "").replace(/^\//, "");
-        const title = link.text().trim();
+        if (!href) return;
+        let id = href.replace(/^\/Comic\//, "").replace(/^Comic\//, "").replace(/^\//, "");
+        const title = $(div).find(".title").text().trim() || link.text().trim();
         let image = $("img", div).attr("src") ?? "";
         if (image.startsWith("/")) image = BASE_URL + image;
         if (id && title) {
@@ -916,12 +915,11 @@ var _Sources = (() => {
       });
       const popularItems = [];
       $("#tab-mostview > div").each((_, div) => {
-        const titleLink = $("a.title", div);
-        const link = titleLink.length > 0 ? titleLink : $("a", div).first();
+        const link = $("a", div).first();
         const href = link.attr("href");
-        if (!href || !href.includes("Comic/")) return;
-        let id = href.replace(/^\/Comic\//, "").replace(/^\//, "");
-        const title = link.text().trim();
+        if (!href) return;
+        let id = href.replace(/^\/Comic\//, "").replace(/^Comic\//, "").replace(/^\//, "");
+        const title = $(div).find(".title").text().trim() || link.text().trim();
         let image = $("img", div).attr("src") ?? "";
         if (image.startsWith("/")) image = BASE_URL + image;
         if (id && title) {
@@ -943,7 +941,7 @@ var _Sources = (() => {
   // src/ReadComicsOnline/ReadComicsOnline.ts
   var DOMAIN = "https://readcomiconline.li";
   var ReadComicsOnlineInfo = {
-    version: "2.0.1",
+    version: "2.0.2",
     name: "ReadComicsOnline",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -984,6 +982,13 @@ var _Sources = (() => {
         }
       });
     }
+    // Funzione per controllare se siamo bloccati da Cloudflare
+    checkCloudflareStatus(status) {
+      if (status === 503 || status === 403) {
+        throw new Error(`CLOUDFLARE PROTECTION:
+Please click the Cloud icon in the top right corner and solve the CAPTCHA to access the site.`);
+      }
+    }
     getMangaShareUrl(mangaId) {
       return `${this.baseUrl}/Comic/${mangaId}`;
     }
@@ -993,6 +998,7 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
+      this.checkCloudflareStatus(response.status);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseMangaDetails($, mangaId);
     }
@@ -1002,6 +1008,7 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
+      this.checkCloudflareStatus(response.status);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseChapters($, mangaId);
     }
@@ -1013,6 +1020,7 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
+      this.checkCloudflareStatus(response.status);
       return this.parser.parseChapterDetails(response.data ?? "", mangaId, chapterId);
     }
     async getSearchResults(query, metadata) {
@@ -1025,6 +1033,7 @@ var _Sources = (() => {
         data: `keyword=${encodeURIComponent(query.title ?? "")}`
       });
       const response = await this.requestManager.schedule(request, 1);
+      this.checkCloudflareStatus(response.status);
       const $ = this.cheerio.load(response.data);
       const manga = this.parser.parseSearchResults($);
       return App.createPagedResults({
@@ -1038,6 +1047,7 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
+      this.checkCloudflareStatus(response.status);
       const $ = this.cheerio.load(response.data);
       this.parser.parseHomeSections($, sectionCallback);
     }
