@@ -824,25 +824,43 @@ var _Sources = (() => {
     }
     parseSearchResults($) {
       const results = [];
-      $("#post-area .post").each((_, item) => {
-        const link = $(".pinbin-copy a", item).first();
-        const title = link.text().trim() || link.attr("title");
-        const classAttr = $(item).attr("class") ?? "";
-        const categoryMatch = classAttr.match(/category-([^\s]+)/);
-        const id = categoryMatch ? categoryMatch[1] : null;
-        if (!id || !title) return;
-        const img = $("img", item).first();
-        let image = img.attr("src") ?? img.attr("data-src") ?? "";
-        if (image.startsWith("/")) {
-          image = `https://2.bp.blogspot.com${image}`;
-        }
-        results.push(App.createPartialSourceManga({
-          mangaId: id,
-          image,
-          title,
-          subtitle: void 0
-        }));
-      });
+      if ($("#post-area .post").length > 0) {
+        $("#post-area .post").each((_, item) => {
+          const link = $(".pinbin-copy a", item).first();
+          const title = link.text().trim() || link.attr("title");
+          const classAttr = $(item).attr("class") ?? "";
+          const categoryMatch = classAttr.match(/category-([^\s]+)/);
+          const id = categoryMatch ? categoryMatch[1] : null;
+          if (!id || !title) return;
+          const img = $("img", item).first();
+          let image = img.attr("src") ?? img.attr("data-src") ?? "";
+          if (image.startsWith("/")) image = `https://2.bp.blogspot.com${image}`;
+          results.push(App.createPartialSourceManga({
+            mangaId: id,
+            image,
+            title,
+            subtitle: void 0
+          }));
+        });
+      } else if ($(".list-story li").length > 0) {
+        $(".list-story li").each((_, li) => {
+          const link = $("a", li).first();
+          const title = link.text().trim();
+          const href = link.attr("href");
+          if (!href || !title) return;
+          const urlParts = href.split("/").filter(Boolean);
+          const id = urlParts[urlParts.length - 1];
+          const image = "https://readallcomics.com/wp-content/uploads/2020/09/logo.png";
+          if (id) {
+            results.push(App.createPartialSourceManga({
+              mangaId: id,
+              image,
+              title,
+              subtitle: void 0
+            }));
+          }
+        });
+      }
       return results;
     }
     parseHomeSections($, sectionCallback) {
@@ -881,7 +899,7 @@ var _Sources = (() => {
   // src/ReadAllComics/ReadAllComics.ts
   var DOMAIN = "https://readallcomics.com";
   var ReadAllComicsInfo = {
-    version: "1.4.0",
+    version: "1.4.1",
     name: "ReadAllComics",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -952,7 +970,7 @@ var _Sources = (() => {
       return this.parser.parseChapterDetails(response.data ?? "", mangaId, chapterId);
     }
     async getSearchResults(query, metadata) {
-      const searchUrl = `${this.baseUrl}/?s=${encodeURIComponent(query.title ?? "")}`;
+      const searchUrl = `${this.baseUrl}/?story=${encodeURIComponent(query.title ?? "")}&s=&type=comic`;
       const request = App.createRequest({
         url: searchUrl,
         method: "GET"
