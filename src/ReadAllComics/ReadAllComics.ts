@@ -20,7 +20,7 @@ import { ReadAllComicsParser } from './ReadAllComicsParser'
 const DOMAIN = 'https://readallcomics.com'
 
 export const ReadAllComicsInfo: SourceInfo = {
-    version: '1.2.2',
+    version: '1.2.5',
     name: 'ReadAllComics',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -64,12 +64,13 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     })
 
     getMangaShareUrl(mangaId: string): string {
-        return mangaId
+        return `${this.baseUrl}/category/${mangaId}`
     }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
+        // COSTRUZIONE URL CRITICA: Usa /category/ + slug
         const request = App.createRequest({
-            url: mangaId,
+            url: `${this.baseUrl}/category/${mangaId}`,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
@@ -79,7 +80,7 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
         const request = App.createRequest({
-            url: mangaId,
+            url: `${this.baseUrl}/category/${mangaId}`,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
@@ -88,8 +89,9 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
+        // I capitoli sono link diretti (non category), quindi: DOMAIN/chapter-slug
         const request = App.createRequest({
-            url: chapterId,
+            url: `${this.baseUrl}/${chapterId}`,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
@@ -97,7 +99,7 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        // Utilizziamo la ricerca standard ?s= che restituisce la griglia con immagini
+        // Usiamo la ricerca standard ?s= che restituisce la griglia con immagini
         const searchUrl = `${this.baseUrl}/?s=${encodeURIComponent(query.title ?? '')}`
 
         const request = App.createRequest({
@@ -136,6 +138,7 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
             method: 'GET',
             headers: {
                 'referer': `${this.baseUrl}/`,
+                'origin': this.baseUrl,
                 'user-agent': await this.requestManager.getDefaultUserAgent()
             }
         })
