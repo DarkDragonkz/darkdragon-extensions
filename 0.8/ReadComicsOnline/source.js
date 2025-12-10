@@ -733,10 +733,48 @@ var _Sources = (() => {
   var import_types = __toESM(require_lib());
   var BASE_URL = "https://readcomicsonline.ru";
   var ReadComicsOnlineParser = class {
+    /**
+     * Tenta di ottenere l'immagine alla massima risoluzione.
+     * Rimuove suffissi tipo '_250x350' se presenti.
+     */
+    getHighResImage(url) {
+      if (!url) return "https://paperback.moe/icons/logo-alt.svg";
+      if (url.startsWith("//")) url = `https:${url}`;
+      else if (url.startsWith("/")) url = `${BASE_URL}${url}`;
+      return url.replace(/_\d+x\d+(?=\.[a-z]+$)/i, "");
+    }
+    /**
+     * Helper centralizzato per estrarre l'immagine da un elemento.
+     * Prova vari attributi di lazy loading e fallback.
+     */
+    getImageSrc(element, id) {
+      let src = element.attr("data-src") ?? element.attr("src") ?? element.attr("original") ?? element.attr("data-original") ?? "";
+      if ((!src || src.includes("no-image") || src.includes("placeholder")) && id) {
+        return `${BASE_URL}/uploads/manga/${id}/cover/cover_250x350.jpg`;
+      }
+      return this.getHighResImage(src);
+    }
+    /**
+     * Helper per parsare un singolo elemento lista/griglia
+     */
+    parseMangaItem($, element) {
+      const link = $("a", element).first() || $(element).find("h5 a").first();
+      const href = link.attr("href");
+      const id = href?.split("/").pop();
+      if (!id) return null;
+      const title = link.text().trim() || $(element).find("h5").text().trim() || "Unknown";
+      const imgEl = $("img", element).first();
+      const image = this.getImageSrc(imgEl, id);
+      return App.createPartialSourceManga({
+        mangaId: id,
+        image,
+        title,
+        subtitle: void 0
+      });
+    }
     parseMangaDetails($, mangaId) {
       const title = $("h2.listmanga-header").first().text().trim() || "Unknown";
-      let image = $("img", "div.boxed").attr("src") ?? "";
-      if (image.startsWith("/")) image = BASE_URL + image;
+      const image = this.getImageSrc($("img", "div.boxed").first(), mangaId);
       const author = $("dd", 'dt:contains("Type")').parent().text().replace("Type", "").trim() || "Unknown";
       const statusText = $("span.label").text().trim().toLowerCase();
       const status = statusText.includes("completed") ? "Completed" : "Ongoing";
@@ -785,7 +823,6 @@ var _Sources = (() => {
       });
       return chapters;
     }
-    // MODIFICA QUI: Aggiunto il parametro 'cheerio'
     parseChapterDetails(cheerio, html, mangaId, chapterId) {
       const pages = [];
       const $ = cheerio.load(html);
@@ -794,7 +831,10 @@ var _Sources = (() => {
         if (url) {
           url = url.trim();
           if (url.startsWith("/")) url = BASE_URL + url;
-          pages.push(url);
+          if (!url.startsWith("http")) url = url.trim();
+          if (!pages.includes(url)) {
+            pages.push(url);
+          }
         }
       });
       return App.createChapterDetails({
@@ -825,7 +865,7 @@ var _Sources = (() => {
     parseHomeSections($, sectionCallback) {
       const hotSection = App.createHomeSection({
         id: "hot",
-        title: "Hot Comics",
+        title: "Hot Comics \u{1F525}",
         containsMoreItems: false,
         type: import_types.HomeSectionType.singleRowLarge
       });
@@ -833,9 +873,8 @@ var _Sources = (() => {
       $("li.schedule-item", "div.carousel").each((_, item) => {
         const id = $("div.schedule-name a", item).attr("href")?.split("/").pop();
         const title = $("div.schedule-name", item).text().trim();
-        const img = $("div.schedule-avatar img", item);
-        let image = img.attr("data-src") ?? img.attr("src") ?? "";
-        if (image.startsWith("/")) image = BASE_URL + image;
+        const imgEl = $("div.schedule-avatar img", item);
+        const image = this.getImageSrc(imgEl, id);
         if (id && title) {
           hotItems.push(App.createPartialSourceManga({
             mangaId: id,
@@ -849,40 +888,43 @@ var _Sources = (() => {
       sectionCallback(hotSection);
       const latestSection = App.createHomeSection({
         id: "latest",
-        title: "Latest Comics",
+        title: "Latest Comics \u{1F195}",
         containsMoreItems: true,
-        type: import_types.HomeSectionType.singleRowNormal
+        type: import_types.HomeSectionType.continuous
+        // UI MIGLIORATA
       });
-      const latestItems = [];
+      const latestItems = this.parseGridItems($);
+      latestSection.items = latestItems;
+      sectionCallback(latestSection);
+    }
+    // Usato sia per Home Latest che per View More
+    parseGridItems($) {
+      const items = [];
       $("div.media", "div.list-container > div.row").each((_, item) => {
         const link = $("h5.media-heading a", item);
         const id = link.attr("href")?.split("/").pop();
         const title = link.text().trim();
-        const img = $("div.media-left img", item);
-        let image = img.attr("src") ?? img.attr("data-src") ?? img.attr("original") ?? img.attr("data-original") ?? "";
-        if (!image || image.includes("no-image") || image.includes("placeholder")) {
-          image = `${BASE_URL}/uploads/manga/${id}/cover/cover_250x350.jpg`;
-        } else if (image.startsWith("/")) {
-          image = BASE_URL + image;
-        }
+        const imgEl = $("div.media-left img", item);
+        const image = this.getImageSrc(imgEl, id);
+        const subtitle = void 0;
         if (id && title) {
-          latestItems.push(App.createPartialSourceManga({
+          items.push(App.createPartialSourceManga({
             mangaId: id,
             image,
             title,
-            subtitle: void 0
+            subtitle
           }));
         }
       });
-      latestSection.items = latestItems;
-      sectionCallback(latestSection);
+      return items;
     }
   };
 
   // src/ReadComicsOnline/ReadComicsOnline.ts
   var DOMAIN = "https://readcomicsonline.ru";
   var ReadComicsOnlineInfo = {
-    version: "2.2.3",
+    version: "2.3.0",
+    // Major Bump per UI/UX
     name: "ReadComicsOnline",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -977,7 +1019,25 @@ var _Sources = (() => {
       this.parser.parseHomeSections($, sectionCallback);
     }
     async getViewMoreItems(homepageSectionId, metadata) {
-      return App.createPagedResults({ results: [] });
+      const page = metadata?.page ?? 1;
+      let url = "";
+      if (homepageSectionId === "latest") {
+        url = `${this.baseUrl}/filterList?page=${page}&cat=&alpha=&sortBy=last_release&asc=false`;
+      } else {
+        return App.createPagedResults({ results: [] });
+      }
+      const request = App.createRequest({
+        url,
+        method: "GET"
+      });
+      const response = await this.requestManager.schedule(request, 1);
+      const $ = this.cheerio.load(response.data);
+      const manga = this.parser.parseGridItems($);
+      const nextPage = manga.length > 0 ? page + 1 : void 0;
+      return App.createPagedResults({
+        results: manga,
+        metadata: nextPage ? { page: nextPage } : void 0
+      });
     }
     async getCloudflareBypassRequestAsync() {
       return App.createRequest({
