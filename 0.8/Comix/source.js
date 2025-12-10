@@ -910,8 +910,8 @@ var _Sources = (() => {
   var BASE_URL = "https://comix.to";
   var API_URL = "https://comix.to/api/v2";
   var ComixInfo = {
-    version: "2.0.6",
-    // Bump version
+    version: "2.0.7",
+    // Bump version per fix ricerca
     name: "Comix",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -935,7 +935,6 @@ var _Sources = (() => {
       this.parser = new ComixParser();
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 4,
-        // 4 è un buon compromesso tra velocità e sicurezza anti-ban
         requestTimeout: 2e4,
         interceptor: {
           interceptRequest: async (request) => {
@@ -1011,12 +1010,26 @@ var _Sources = (() => {
       const page = metadata?.page ?? 1;
       let url = `${this.apiUrl}/manga?page=${page}&limit=20`;
       if (query.title) {
-        url += `&keyword=${encodeURIComponent(query.title)}`;
+        url += `&q=${encodeURIComponent(query.title)}`;
       }
       const request = App.createRequest({ url, method: "GET" });
       const response = await this.requestManager.schedule(request, 1);
       const data = JSON.parse(response.data ?? "{}");
-      const manga = this.parser.parseSearchResults(data);
+      let manga = this.parser.parseSearchResults(data);
+      if (query.title && manga.length > 0) {
+        const q = query.title.toLowerCase();
+        manga.sort((a, b) => {
+          const titleA = a.title.toLowerCase();
+          const titleB = b.title.toLowerCase();
+          if (titleA === q && titleB !== q) return -1;
+          if (titleB === q && titleA !== q) return 1;
+          const aStarts = titleA.startsWith(q);
+          const bStarts = titleB.startsWith(q);
+          if (aStarts && !bStarts) return -1;
+          if (bStarts && !aStarts) return 1;
+          return 0;
+        });
+      }
       const nextPage = manga.length >= 20 ? page + 1 : void 0;
       return App.createPagedResults({
         results: manga,
@@ -1043,7 +1056,6 @@ var _Sources = (() => {
         },
         {
           request: App.createRequest({ url: `${this.apiUrl}/manga?order[chapter_updated_at]=desc&page=1&limit=20&scope=new`, method: "GET" }),
-          // UX Change: 'continuous' permette lo scroll verticale infinito direttamente dalla home
           section: App.createHomeSection({ id: "updatesNew", title: "Latest Updates \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.continuous })
         }
       ];
