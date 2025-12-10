@@ -731,23 +731,47 @@ var _Sources = (() => {
 
   // src/Comix/ComixParser.ts
   var import_types = __toESM(require_lib());
+  var BASE_URL = "https://comix.to";
   var ComixParser = class {
     parseMangaDetails($, mangaId) {
-      const title = $("h1.title").text().trim() || "Unknown";
-      const image = $('img[itemprop="image"]').attr("src") ?? "";
-      const desc = $(".description .content").text().trim() ?? "No description";
+      let jsonManga = null;
+      const scripts = $("script").toArray();
+      for (const script of scripts) {
+        const content = $(script).html() || "";
+        if (content.includes("self.__next_f.push")) {
+          const match = content.match(/"manga":({.*?})/);
+          if (match) {
+            try {
+              jsonManga = JSON.parse(match[1]);
+              break;
+            } catch (e) {
+            }
+          }
+        }
+      }
+      const title = jsonManga?.title || $("h1.title").text().trim() || "Unknown";
+      let image = jsonManga?.poster?.large || jsonManga?.poster?.medium || "";
+      if (!image) image = $('img[itemprop="image"]').attr("src") ?? "";
+      const desc = jsonManga?.synopsis || $(".description .content").text().trim() || "No description";
       let status = "Ongoing";
-      const statusText = $(".status").text().trim().toLowerCase();
-      if (statusText.includes("finished") || statusText.includes("completed")) status = "Completed";
+      if (jsonManga?.status === "finished") status = "Completed";
       const arrayTags = [];
-      $('ul#metadata a[href*="genres="], ul#metadata a[href*="demographics="]').each((_, a) => {
-        const label = $(a).text().trim();
-        const id = $(a).attr("href")?.split("=").pop() ?? label;
-        arrayTags.push(App.createTag({ id, label }));
-      });
+      if (jsonManga?.genre) {
+        for (const g of jsonManga.genre) {
+          arrayTags.push(App.createTag({ id: g.slug, label: g.title }));
+        }
+      } else {
+        $('ul#metadata a[href*="genres="]').each((_, a) => {
+          const label = $(a).text().trim();
+          const id = $(a).attr("href")?.split("=").pop() ?? label;
+          arrayTags.push(App.createTag({ id, label }));
+        });
+      }
       const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })];
-      const author = $('a[href*="authors="]').text().trim() ?? "Unknown";
-      const artist = $('a[href*="artists="]').text().trim() ?? "Unknown";
+      let author = "Unknown";
+      let artist = "Unknown";
+      if (jsonManga?.author && jsonManga.author.length > 0) author = jsonManga.author.map((a) => a.title).join(", ");
+      if (jsonManga?.artist && jsonManga.artist.length > 0) artist = jsonManga.artist.map((a) => a.title).join(", ");
       return App.createSourceManga({
         id: mangaId,
         mangaInfo: App.createMangaInfo({
@@ -761,18 +785,33 @@ var _Sources = (() => {
         })
       });
     }
-    parseChapters(html) {
+    async parseChapters(html, requestManager) {
       const chapters = [];
-      const chapterDataRegex = /"chapters":(\[{.*?}\])/;
-      const match = html.match(chapterDataRegex);
-      if (match) {
-        try {
-          const jsonChapters = JSON.parse(match[1]);
-          for (const chap of jsonChapters) {
-            const id = String(chap.chapter_id ?? chap.id);
-            const title = chap.title || `Chapter ${chap.number}`;
+      const idMatch = html.match(/"manga_id":(\d+)/);
+      const mangaId = idMatch ? idMatch[1] : null;
+      if (!mangaId) {
+        console.error("Comix: Manga ID not found in HTML");
+        return [];
+      }
+      const apiUrl = `${BASE_URL}/api/manga/${mangaId}/chapters?source=detail`;
+      try {
+        const request = App.createRequest({
+          url: apiUrl,
+          method: "GET",
+          headers: {
+            "Referer": BASE_URL,
+            "X-Requested-With": "XMLHttpRequest"
+            // Importante per alcune API
+          }
+        });
+        const response = await requestManager.schedule(request, 1);
+        const data = JSON.parse(response.data ?? "[]");
+        if (Array.isArray(data)) {
+          for (const chap of data) {
+            const id = `${chap.id}-chapter-${chap.number}`;
+            const title = chap.title ? `${chap.number} - ${chap.title}` : `Chapter ${chap.number}`;
             const num = parseFloat(chap.number) || 0;
-            const date = new Date(chap.updated_at ? chap.updated_at * 1e3 : Date.now());
+            const date = new Date(chap.created_at ? chap.created_at * 1e3 : Date.now());
             chapters.push(App.createChapter({
               id,
               name: title,
@@ -781,9 +820,9 @@ var _Sources = (() => {
               langCode: "en"
             }));
           }
-        } catch (e) {
-          console.error("Error parsing chapters JSON", e);
         }
+      } catch (e) {
+        console.error(`Comix: Error fetching chapters API: ${e}`);
       }
       return chapters;
     }
@@ -816,11 +855,11 @@ var _Sources = (() => {
       while ((match = itemsRegex.exec(html)) !== null) {
         try {
           const items = JSON.parse(match[1]);
-          if (items.length > 0 && (items[0].manga_id || items[0].hash_id)) {
+          if (items.length > 0 && items[0].manga_id) {
             for (const item of items) {
               const id = `${item.hash_id}-${item.slug}`;
               const title = item.title;
-              const image = item.poster?.medium || item.poster?.large || item.poster?.small || "";
+              const image = item.poster?.medium || item.poster?.large || "";
               results.push(App.createPartialSourceManga({
                 mangaId: id,
                 image,
@@ -835,7 +874,6 @@ var _Sources = (() => {
       }
       return results;
     }
-    // FIX: Aggiunto parametro 'cheerio'
     parseHomeSections(cheerio, html, sectionCallback) {
       const popularSection = App.createHomeSection({ id: "popular", title: "Most Popular \u{1F525}", containsMoreItems: false, type: import_types.HomeSectionType.singleRowLarge });
       const trendingSection = App.createHomeSection({ id: "trending", title: "Trending New \u{1F31F}", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
@@ -844,6 +882,20 @@ var _Sources = (() => {
       const trendingItems = [];
       const latestItems = [];
       const $ = cheerio.load(html);
+      const scripts = $("script").toArray();
+      let foundJson = false;
+      for (const script of scripts) {
+        const content = $(script).html() || "";
+        const matches = content.matchAll(/"items":(\[\{.*?\}\])/g);
+        for (const match of matches) {
+          try {
+            const items = JSON.parse(match[1]);
+            if (items.length > 0 && items[0].manga_id) {
+            }
+          } catch (e) {
+          }
+        }
+      }
       $(".popular .swiper-slide").each((_, slide) => {
         const title = $(".title", slide).text().trim();
         const link = $(".poster", slide).attr("href");
@@ -877,13 +929,13 @@ var _Sources = (() => {
         const title = $(".title", item).text().trim();
         const id = titleLink?.split("/title/")[1];
         const img = $("img", item).attr("src") || $("img", item).attr("data-src") || "";
-        const chapter = $(".metadata span", item).first().text().trim();
+        const meta = $(".metadata", item).text().trim();
         if (id && title) {
           latestItems.push(App.createPartialSourceManga({
             mangaId: id,
             image: img,
             title,
-            subtitle: chapter
+            subtitle: meta
           }));
         }
       });
@@ -905,7 +957,7 @@ var _Sources = (() => {
   // src/Comix/Comix.ts
   var DOMAIN = "https://comix.to";
   var ComixInfo = {
-    version: "1.0.1",
+    version: "1.0.2",
     name: "Comix",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -963,12 +1015,12 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      return this.parser.parseChapters(response.data ?? "");
+      return this.parser.parseChapters(response.data ?? "", this.requestManager);
     }
     async getChapterDetails(mangaId, chapterId) {
       let url = chapterId;
       if (!url.startsWith("http")) {
-        url = `${this.baseUrl}${url.startsWith("/") ? "" : "/"}${url}`;
+        url = `${this.baseUrl}/title/${mangaId}/${chapterId}`;
       }
       const request = App.createRequest({
         url,
