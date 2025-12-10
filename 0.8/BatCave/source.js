@@ -735,9 +735,10 @@ var _Sources = (() => {
   var BatCaveParser = class {
     parseMangaDetails($, mangaId) {
       const title = $("h1.main-page-title").text().trim() || $("h1").first().text().trim() || "Unknown";
-      let image = $(".page__poster img").attr("src") ?? "";
+      let image = $(".page__poster img").attr("src") || $(".page__poster img").attr("data-src") || "";
       if (image.startsWith("/")) image = BASE_URL + image;
       let desc = $(".page__text").text().trim();
+      if (!desc) desc = "No description available";
       let author = "Unknown";
       let artist = "Unknown";
       let status = "Ongoing";
@@ -819,7 +820,10 @@ var _Sources = (() => {
           if (data.images && Array.isArray(data.images)) {
             for (const img of data.images) {
               if (img && !img.includes("logo") && !img.includes("icon")) {
-                pages.push(img);
+                let cleanImg = img;
+                if (cleanImg.startsWith("//")) cleanImg = "https:" + cleanImg;
+                else if (cleanImg.startsWith("/")) cleanImg = BASE_URL + cleanImg;
+                pages.push(cleanImg);
               }
             }
           }
@@ -858,6 +862,26 @@ var _Sources = (() => {
         id: "hot",
         title: "Hot New Releases \u{1F525}",
         containsMoreItems: false,
+        type: import_types.HomeSectionType.featured
+        // Immagini grandi
+      });
+      const topRatedSection = App.createHomeSection({
+        id: "top_rated",
+        title: "Top Rated \u2B50",
+        containsMoreItems: false,
+        type: import_types.HomeSectionType.singleRowNormal
+        // Copertina intera ma più piccola
+      });
+      const justAddedSection = App.createHomeSection({
+        id: "just_added",
+        title: "Just Added \u{1F195}",
+        containsMoreItems: false,
+        type: import_types.HomeSectionType.singleRowNormal
+      });
+      const latestSection = App.createHomeSection({
+        id: "latest",
+        title: "Latest Updates \u{1F199}",
+        containsMoreItems: true,
         type: import_types.HomeSectionType.singleRowNormal
       });
       const hotItems = [];
@@ -867,8 +891,6 @@ var _Sources = (() => {
         const title = $(".poster__title", item).text().trim();
         let image = $("img", item).attr("data-src") ?? $("img", item).attr("src") ?? "";
         if (image.startsWith("/")) image = BASE_URL + image;
-        image = image.replace("/mini/64x96/", "/mini/142x212/");
-        image = image.replace("/mini/131x196/", "/mini/142x212/");
         if (id && title) {
           hotItems.push(App.createPartialSourceManga({
             mangaId: id,
@@ -880,12 +902,44 @@ var _Sources = (() => {
       });
       hotSection.items = hotItems;
       sectionCallback(hotSection);
-      const latestSection = App.createHomeSection({
-        id: "latest",
-        title: "Newest Releases \u{1F199}",
-        containsMoreItems: true,
-        type: import_types.HomeSectionType.singleRowNormal
+      const topItems = [];
+      $('div.side-block:has(h2:contains("Top-rated")) a.popular').each((_, item) => {
+        const href = $(item).attr("href");
+        const id = href?.split("/").pop();
+        const title = $(".popular__title", item).text().trim();
+        let image = $("img", item).attr("data-src") ?? $("img", item).attr("src") ?? "";
+        if (image.startsWith("/")) image = BASE_URL + image;
+        image = image.replace("64x96", "142x212");
+        if (id && title) {
+          topItems.push(App.createPartialSourceManga({
+            mangaId: id,
+            image,
+            title,
+            subtitle: void 0
+          }));
+        }
       });
+      topRatedSection.items = topItems;
+      sectionCallback(topRatedSection);
+      const addedItems = [];
+      $('div.side-block:has(h2:contains("Just added")) a.popular').each((_, item) => {
+        const href = $(item).attr("href");
+        const id = href?.split("/").pop();
+        const title = $(".popular__title", item).text().trim();
+        let image = $("img", item).attr("data-src") ?? $("img", item).attr("src") ?? "";
+        if (image.startsWith("/")) image = BASE_URL + image;
+        image = image.replace("64x96", "142x212");
+        if (id && title) {
+          addedItems.push(App.createPartialSourceManga({
+            mangaId: id,
+            image,
+            title,
+            subtitle: void 0
+          }));
+        }
+      });
+      justAddedSection.items = addedItems;
+      sectionCallback(justAddedSection);
       const latestItems = [];
       $(".sect--latest .latest").each((_, item) => {
         const link = $("a.latest__img", item);
@@ -893,7 +947,7 @@ var _Sources = (() => {
         const id = href?.split("/").pop();
         let image = $("img", link).attr("src") ?? "";
         if (image.startsWith("/")) image = BASE_URL + image;
-        image = image.replace("/mini/64x96/", "/mini/142x212/");
+        image = image.replace("64x96", "142x212");
         const title = $(".latest__title a", item).text().trim();
         const chapter = $(".latest__chapter a", item).text().trim().split("-")[1]?.trim() ?? "";
         if (id && title) {
@@ -913,7 +967,8 @@ var _Sources = (() => {
   // src/BatCave/BatCave.ts
   var DOMAIN = "https://batcave.biz";
   var BatCaveInfo = {
-    version: "1.0.5",
+    version: "1.0.6",
+    // Updated version
     name: "BatCave",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -934,7 +989,7 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.baseUrl = DOMAIN;
       this.parser = new BatCaveParser();
-      // User-Agent Mobile Android: Spesso risolve i blocchi "silenziosi" dei siti DLE
+      // User-Agent Mobile Android: Cruciale per evitare redirect strani o blocchi
       this.userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 4,
@@ -943,11 +998,14 @@ var _Sources = (() => {
           interceptRequest: async (request) => {
             request.headers = {
               ...request.headers ?? {},
-              "referer": `${DOMAIN}/`,
-              "user-agent": this.userAgent,
-              // Usiamo quello fisso mobile
+              "Referer": `${DOMAIN}/`,
+              // Referer con la maiuscola per sicurezza
+              "User-Agent": this.userAgent,
+              // Header per forzare contenuto fresco
               "Cache-Control": "no-cache",
-              "Pragma": "no-cache"
+              "Pragma": "no-cache",
+              // Importante per le immagini se sono su sottodomini
+              "Origin": DOMAIN
             };
             return request;
           },
@@ -1018,8 +1076,8 @@ var _Sources = (() => {
         url: this.baseUrl,
         method: "GET",
         headers: {
-          "referer": `${this.baseUrl}/`,
-          "user-agent": this.userAgent
+          "Referer": `${this.baseUrl}/`,
+          "User-Agent": this.userAgent
         }
       });
     }
