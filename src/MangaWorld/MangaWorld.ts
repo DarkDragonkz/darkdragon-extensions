@@ -23,10 +23,10 @@ import { URLBuilder } from '../helper'
 const MW_DOMAIN = 'https://www.mangaworld.mx'
 
 export const MangaWorldInfo: SourceInfo = {
-    version: '3.3.1', // Bump versione per UI update
+    version: '3.4.0', // Major bump per refactoring e UI
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld.',
-    author: 'NmN',
+    author: 'NmN & DarkDragonkz',
     authorWebsite: 'http://github.com/pandeynmm',
     icon: 'icon.png',
     contentRating: ContentRating.EVERYONE,
@@ -46,20 +46,19 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
     
     constructor(private cheerio: any) {}
     
-    RETRIES = 10
+    // RIDOTTO A 2: 10 retry causano blocchi infiniti se il sito è down
+    RETRIES = 2
     parser = new MangaWorldParser()
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 8,
+        requestsPerSecond: 5, // Abbassato leggermente per sicurezza
         requestTimeout: 20000,
         interceptor: {
             interceptRequest: async (request: any) => {
                 request.headers = {
                     ...(request.headers ?? {}),
-                    ...{
-                        'referer': `${this.baseUrl}/`,
-                        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    }
+                    'referer': `${this.baseUrl}/`,
+                    'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 }
                 return request
             },
@@ -115,18 +114,21 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         let page = metadata?.page ?? 1
-        if (page == -1) return App.createPagedResults({ results: [], metadata: { page: -1 } })
+        // Se page è -1, abbiamo finito i risultati
+        if (page === -1) return App.createPagedResults({ results: [], metadata: undefined })
         
         const request = this.constructSearchRequest(page, query)
         
-        const data = await this.requestManager.schedule(request, this.RETRIES)
-        const $ = this.cheerio.load(data.data)
+        const response = await this.requestManager.schedule(request, this.RETRIES)
+        const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($)
-        page++
-        if (manga.length < 16) page = -1
+        
+        // Logica paginazione
+        const nextPage = manga.length > 0 ? page + 1 : undefined
+
         return App.createPagedResults({
             results: manga,
-            metadata: { page: page },
+            metadata: nextPage ? { page: nextPage } : undefined,
         })
     }
 
@@ -145,17 +147,17 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
         let url = ''
 
         switch (homepageSectionId) {
-            case '1': // Ultimi capitoli
+            case '1': // Ultimi capitoli (corrisponde alla home paginata)
                 url = `${this.baseUrl}/?page=${page}`
                 break
-            case '2': // Manga del mese
+            case '2': // Manga del mese (archivio most_read)
                 url = `${this.baseUrl}/archive?sort=most_read&page=${page}`
                 break
-            case '3': // Capitoli di tendenza
+            case '3': // In tendenza (archivio most_read fallback)
                 url = `${this.baseUrl}/archive?sort=most_read&page=${page}`
                 break
             default:
-                return App.createPagedResults({ results: [], metadata: { page: -1 } })
+                return App.createPagedResults({ results: [] })
         }
 
         const request = App.createRequest({
@@ -166,11 +168,11 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
         const $ = this.cheerio.load(response.data)
         const manga: PartialSourceManga[] = this.parser.parseViewMore($)
         
-        const hasMore = manga.length > 0
+        const nextPage = manga.length > 0 ? page + 1 : undefined
         
         return App.createPagedResults({
             results: manga,
-            metadata: hasMore ? { page: page + 1 } : undefined,
+            metadata: nextPage ? { page: nextPage } : undefined,
         })
     }
 
@@ -187,19 +189,24 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
     }
 
     constructSearchRequest(page: number, query: SearchRequest): any {
-        const request = App.createRequest({
-            url: new URLBuilder(this.baseUrl)
-                .addPathComponent('archive')
-                .addQueryParameter('keyword', encodeURIComponent(query?.title ?? ''))
-                .addQueryParameter(
-                    'genre',
-                    query?.includedTags?.map((x: any) => x.id)
-                )
-                .addQueryParameter('sort', 'most_read')
-                .addQueryParameter('page', page.toString())
-                .buildUrl({ addTrailingSlash: true, includeUndefinedParameters: false }),
+        const builder = new URLBuilder(this.baseUrl)
+            .addPathComponent('archive')
+            .addQueryParameter('page', page.toString())
+
+        if (query.title) {
+            builder.addQueryParameter('keyword', encodeURIComponent(query.title))
+        }
+
+        if (query.includedTags && query.includedTags.length > 0) {
+            // Seleziona il primo tag per filtrare (MangaWorld solitamente supporta 1 filtro genere alla volta via GET semplice)
+            builder.addQueryParameter('genre', query.includedTags[0]?.id)
+        }
+
+        builder.addQueryParameter('sort', 'most_read')
+
+        return App.createRequest({
+            url: builder.buildUrl({ addTrailingSlash: true, includeUndefinedParameters: false }),
             method: 'GET',
         })
-        return request
     }
 }
