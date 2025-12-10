@@ -17,13 +17,13 @@ import {
     PartialSourceManga,
 } from '@paperback/types'
 
-import { MangaWorldParser } from './MangaWorldParser' // Rinominato in MangaWorldParser
+import { MangaWorldParser } from './MangaWorldParser'
 import { URLBuilder } from '../helper'
 
 const MW_DOMAIN = 'https://www.mangaworld.mx'
 
 export const MangaWorldInfo: SourceInfo = {
-    version: '3.1.0',
+    version: '3.2.0', // Bump versione per UI update
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld.',
     author: 'NmN',
@@ -47,7 +47,7 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
     constructor(private cheerio: any) {}
     
     RETRIES = 10
-    parser = new MangaWorldParser() // Rinominato
+    parser = new MangaWorldParser()
 
     requestManager = App.createRequestManager({
         requestsPerSecond: 8,
@@ -90,7 +90,7 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
         })
         const response = await this.requestManager.schedule(request, this.RETRIES)
         const $ = this.cheerio.load(response.data)
-        return this.parser.parseChapters($, mangaId, this)
+        return this.parser.parseChapters($, mangaId)
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
@@ -117,7 +117,6 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
         let page = metadata?.page ?? 1
         if (page == -1) return App.createPagedResults({ results: [], metadata: { page: -1 } })
         
-        // Uso la funzione helper per costruire l'URL
         const request = this.constructSearchRequest(page, query)
         
         const data = await this.requestManager.schedule(request, this.RETRIES)
@@ -149,10 +148,10 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
             case '1': // Ultimi capitoli
                 url = `${this.baseUrl}/?page=${page}`
                 break
-            case '2': // Manga del mese (Popolari)
+            case '2': // Manga del mese
                 url = `${this.baseUrl}/archive?sort=most_read&page=${page}`
                 break
-            case '3': // Capitoli di tendenza (Popolari)
+            case '3': // Capitoli di tendenza
                 url = `${this.baseUrl}/archive?sort=most_read&page=${page}`
                 break
             default:
@@ -167,7 +166,6 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
         const $ = this.cheerio.load(response.data)
         const manga: PartialSourceManga[] = this.parser.parseViewMore($)
         
-        // Determina se c'è una pagina successiva in modo semplice
         const hasMore = manga.length > 0
         
         return App.createPagedResults({
