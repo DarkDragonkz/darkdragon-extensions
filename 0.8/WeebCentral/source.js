@@ -850,7 +850,8 @@ var _Sources = (() => {
         id: "hot_updates",
         title: "Hot Updates \u{1F525}",
         containsMoreItems: false,
-        type: import_types.HomeSectionType.featured
+        type: import_types.HomeSectionType.singleRowLarge
+        // <-- CAMBIATO DA featured A singleRowLarge
       });
       const recSection = App.createHomeSection({
         id: "recommendations",
@@ -972,7 +973,8 @@ var _Sources = (() => {
   // src/WeebCentral/WeebCentral.ts
   var DOMAIN = "https://weebcentral.com";
   var WeebCentralInfo = {
-    version: "1.0.18",
+    version: "1.0.19",
+    // Bump version
     name: "WeebCentral",
     icon: "icon.png",
     author: "DarkDragonkzz",
