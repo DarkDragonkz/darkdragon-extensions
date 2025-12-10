@@ -872,7 +872,6 @@ var _Sources = (() => {
         title: "Popolari in Italia \u{1F525}",
         containsMoreItems: true,
         type: import_types.HomeSectionType.featured
-        // <-- Cambiato in Featured
       });
       const latestSection = App.createHomeSection({
         id: "latest",
@@ -927,8 +926,7 @@ var _Sources = (() => {
   // src/MangaParkIT/MangaParkIT.ts
   var MP_DOMAIN = "https://mangapark.io";
   var MangaParkITInfo = {
-    version: "1.0.4",
-    // Bump versione
+    version: "1.0.5",
     name: "MangaPark IT",
     description: "Estensione per MangaPark (Solo Italiano)",
     author: "DarkDragonkz",
@@ -1034,7 +1032,7 @@ var _Sources = (() => {
       const sectionPopular = App.createHomeSection({ id: "popular", title: "Popolari in Italia \u{1F525}", containsMoreItems: true, type: import_types2.HomeSectionType.featured });
       sectionPopular.items = popularManga;
       sectionCallback(sectionPopular);
-      const sectionLatest = App.createHomeSection({ id: "latest", title: "Aggiornamenti Recenti (IT) \u{1F199}", containsMoreItems: true, type: import_types2.HomeSectionType.singleRowNormal });
+      const sectionLatest = App.createHomeSection({ id: "latest", title: "Recenti (IT) \u{1F199}", containsMoreItems: true, type: import_types2.HomeSectionType.singleRowNormal });
       sectionLatest.items = latestManga;
       sectionCallback(sectionLatest);
     }
@@ -1053,6 +1051,17 @@ var _Sources = (() => {
       return App.createPagedResults({
         results: manga,
         metadata: manga.length > 0 ? { page: page + 1 } : void 0
+      });
+    }
+    // QUESTA E' LA FUNZIONE CHE MANCAVA
+    async getCloudflareBypassRequest() {
+      return App.createRequest({
+        url: this.baseUrl,
+        method: "GET",
+        headers: {
+          "referer": `${this.baseUrl}/`,
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+        }
       });
     }
   };
