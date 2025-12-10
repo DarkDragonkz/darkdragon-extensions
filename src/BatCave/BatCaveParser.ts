@@ -81,7 +81,6 @@ export class BatCaveParser {
                         }
                     }
 
-                    // Ordine basato sulla posizione nel sito
                     let chapNum = 0
                     if (chap.posi) {
                         chapNum = parseFloat(chap.posi)
@@ -164,38 +163,70 @@ export class BatCaveParser {
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
         
-        // Tutte le sezioni ora usano singleRowNormal per mostrare la copertina intera (formato poster)
-        // senza tagliarla come fa 'featured' e senza deformarla.
-        
+        // 1. Featured Comics (Il riquadro rosso in alto) - GRANDE
+        const featuredSection = App.createHomeSection({ 
+            id: 'featured', 
+            title: 'Featured Comics 🔥', 
+            containsMoreItems: false, 
+            type: HomeSectionType.singleRowLarge // <-- Grande come richiesto
+        })
+
+        // 2. Hot New Releases - PICCOLO
         const hotSection = App.createHomeSection({ 
             id: 'hot', 
-            title: 'Hot New Releases 🔥', 
+            title: 'Hot New Releases ⚡', 
             containsMoreItems: false, 
-            type: HomeSectionType.singleRowNormal 
+            type: HomeSectionType.singleRowNormal // <-- Piccola
         })
         
+        // 3. Top Rated - PICCOLO
         const topRatedSection = App.createHomeSection({ 
             id: 'top_rated', 
             title: 'Top Rated ⭐', 
             containsMoreItems: false, 
-            type: HomeSectionType.singleRowNormal 
+            type: HomeSectionType.singleRowNormal // <-- Piccola
         })
 
+        // 4. Just Added - PICCOLO
         const justAddedSection = App.createHomeSection({ 
             id: 'just_added', 
             title: 'Just Added 🆕', 
             containsMoreItems: false, 
-            type: HomeSectionType.singleRowNormal 
+            type: HomeSectionType.singleRowNormal // <-- Piccola
         })
 
+        // 5. Latest Updates - PICCOLO
         const latestSection = App.createHomeSection({ 
             id: 'latest', 
             title: 'Latest Updates 🆙', 
             containsMoreItems: true, 
-            type: HomeSectionType.singleRowNormal
+            type: HomeSectionType.singleRowNormal // <-- Piccola
         })
 
-        // --- Hot ---
+        // --- Parsing FEATURED (Il box rosso) ---
+        const featuredItems: PartialSourceManga[] = []
+        // Selettore per il carosello principale (sect--popular)
+        $('.sect--popular .poster').each((_: any, item: any) => {
+            const href = $(item).attr('href')
+            const id = href?.split('/').pop()
+            const title = $('.poster__title', item).text().trim()
+            
+            let image = $('img', item).attr('data-src') ?? $('img', item).attr('src') ?? ''
+            if (image.startsWith('/')) image = BASE_URL + image
+
+            if (id && title) {
+                featuredItems.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image,
+                    title: title,
+                    subtitle: undefined
+                }))
+            }
+        })
+        featuredSection.items = featuredItems
+        sectionCallback(featuredSection)
+
+        // --- Parsing HOT (Hot new releases in comics) ---
         const hotItems: PartialSourceManga[] = []
         $('.sect--hot .poster').each((_: any, item: any) => {
             const href = $(item).attr('href')
@@ -204,7 +235,6 @@ export class BatCaveParser {
             
             let image = $('img', item).attr('data-src') ?? $('img', item).attr('src') ?? ''
             if (image.startsWith('/')) image = BASE_URL + image
-            // Nessun replace della risoluzione, usiamo quella del sito
 
             if (id && title) {
                 hotItems.push(App.createPartialSourceManga({
@@ -218,7 +248,7 @@ export class BatCaveParser {
         hotSection.items = hotItems
         sectionCallback(hotSection)
 
-        // --- Top Rated ---
+        // --- Parsing Top Rated ---
         const topItems: PartialSourceManga[] = []
         $('div.side-block:has(h2:contains("Top-rated")) a.popular').each((_: any, item: any) => {
             const href = $(item).attr('href')
@@ -240,7 +270,7 @@ export class BatCaveParser {
         topRatedSection.items = topItems
         sectionCallback(topRatedSection)
 
-        // --- Just Added ---
+        // --- Parsing Just Added ---
         const addedItems: PartialSourceManga[] = []
         $('div.side-block:has(h2:contains("Just added")) a.popular').each((_: any, item: any) => {
             const href = $(item).attr('href')
@@ -262,7 +292,7 @@ export class BatCaveParser {
         justAddedSection.items = addedItems
         sectionCallback(justAddedSection)
 
-        // --- Latest ---
+        // --- Parsing Latest ---
         const latestItems: PartialSourceManga[] = []
         $('.sect--latest .latest').each((_: any, item: any) => {
             const link = $('a.latest__img', item)
