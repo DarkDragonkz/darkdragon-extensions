@@ -739,7 +739,8 @@ var _Sources = (() => {
       for (const script of scripts) {
         const content = $(script).html() || "";
         if (content.includes("self.__next_f.push")) {
-          const match = content.match(/"manga":({.*?})/);
+          const cleanContent = content.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+          const match = cleanContent.match(/"manga":({.*?})/);
           if (match) {
             try {
               jsonManga = JSON.parse(match[1]);
@@ -787,7 +788,7 @@ var _Sources = (() => {
     }
     async parseChapters(html, requestManager) {
       const chapters = [];
-      const idMatch = html.match(/"manga_id":(\d+)/);
+      const idMatch = html.match(/"manga_id":\s*(\d+)/) || html.match(/\\"manga_id\\":\s*(\d+)/);
       const mangaId = idMatch ? idMatch[1] : null;
       if (!mangaId) {
         console.error("Comix: Manga ID not found in HTML");
@@ -801,19 +802,20 @@ var _Sources = (() => {
           headers: {
             "Referer": BASE_URL,
             "X-Requested-With": "XMLHttpRequest"
-            // Importante per alcune API
           }
         });
         const response = await requestManager.schedule(request, 1);
         const data = JSON.parse(response.data ?? "[]");
         if (Array.isArray(data)) {
           for (const chap of data) {
-            const id = `${chap.id}-chapter-${chap.number}`;
+            const chapSlug = `${chap.id}-chapter-${chap.number}`;
+            const fullUrl = `/title/${mangaId}-${chap.slug || "unknown"}/${chapSlug}`;
             const title = chap.title ? `${chap.number} - ${chap.title}` : `Chapter ${chap.number}`;
             const num = parseFloat(chap.number) || 0;
             const date = new Date(chap.created_at ? chap.created_at * 1e3 : Date.now());
             chapters.push(App.createChapter({
-              id,
+              id: fullUrl,
+              // Salviamo l'URL relativo come ID
               name: title,
               chapNum: num,
               time: date,
@@ -828,18 +830,35 @@ var _Sources = (() => {
     }
     parseChapterDetails(html, mangaId, chapterId) {
       const pages = [];
-      const imagesRegex = /"images":(\[\{.*?\}\])/;
-      const match = html.match(imagesRegex);
-      if (match) {
-        try {
-          const imagesJson = JSON.parse(match[1]);
-          for (const img of imagesJson) {
-            if (img.url) {
-              pages.push(img.url);
+      const nextDataRegex = /self\.__next_f\.push\(\[1,"(.*?)"\]\)/g;
+      let match;
+      while ((match = nextDataRegex.exec(html)) !== null) {
+        let data = match[1];
+        data = data.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+        if (data.includes('"images":[')) {
+          try {
+            const imgMatch = data.match(/"images":(\[\{.*?\}\])/);
+            if (imgMatch) {
+              const images = JSON.parse(imgMatch[1]);
+              for (const img of images) {
+                if (img.url) {
+                  pages.push(img.url);
+                }
+              }
+              if (pages.length > 0) break;
             }
+          } catch (e) {
+            console.log("Comix: Error parsing images JSON segment");
           }
-        } catch (e) {
-          console.error("Error parsing images JSON", e);
+        }
+      }
+      if (pages.length === 0) {
+        const fallbackRegex = /"url":"(https:\/\/[^"]+)"/g;
+        let m;
+        while ((m = fallbackRegex.exec(html)) !== null) {
+          if (m[1] && (m[1].includes(".webp") || m[1].includes(".jpg")) && !m[1].includes("poster") && !m[1].includes("logo")) {
+            pages.push(m[1]);
+          }
         }
       }
       return App.createChapterDetails({
@@ -850,26 +869,32 @@ var _Sources = (() => {
     }
     parseSearchResults(html) {
       const results = [];
-      const itemsRegex = /"items":(\[\{.*?\}\])/g;
+      const nextDataRegex = /self\.__next_f\.push\(\[1,"(.*?)"\]\)/g;
       let match;
-      while ((match = itemsRegex.exec(html)) !== null) {
-        try {
-          const items = JSON.parse(match[1]);
-          if (items.length > 0 && items[0].manga_id) {
-            for (const item of items) {
-              const id = `${item.hash_id}-${item.slug}`;
-              const title = item.title;
-              const image = item.poster?.medium || item.poster?.large || "";
-              results.push(App.createPartialSourceManga({
-                mangaId: id,
-                image,
-                title,
-                subtitle: void 0
-              }));
+      while ((match = nextDataRegex.exec(html)) !== null) {
+        let data = match[1];
+        data = data.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+        if (data.includes('"items":[')) {
+          const itemsMatch = data.match(/"items":(\[\{.*?\}\])/);
+          if (itemsMatch) {
+            try {
+              const items = JSON.parse(itemsMatch[1]);
+              if (items.length > 0 && (items[0].manga_id || items[0].hash_id)) {
+                for (const item of items) {
+                  const id = `${item.hash_id}-${item.slug}`;
+                  const title = item.title;
+                  const image = item.poster?.medium || item.poster?.large || "";
+                  results.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image,
+                    title,
+                    subtitle: void 0
+                  }));
+                }
+              }
+            } catch (e) {
             }
-            if (results.length > 0) break;
           }
-        } catch (e) {
         }
       }
       return results;
@@ -882,20 +907,6 @@ var _Sources = (() => {
       const trendingItems = [];
       const latestItems = [];
       const $ = cheerio.load(html);
-      const scripts = $("script").toArray();
-      let foundJson = false;
-      for (const script of scripts) {
-        const content = $(script).html() || "";
-        const matches = content.matchAll(/"items":(\[\{.*?\}\])/g);
-        for (const match of matches) {
-          try {
-            const items = JSON.parse(match[1]);
-            if (items.length > 0 && items[0].manga_id) {
-            }
-          } catch (e) {
-          }
-        }
-      }
       $(".popular .swiper-slide").each((_, slide) => {
         const title = $(".title", slide).text().trim();
         const link = $(".poster", slide).attr("href");
@@ -929,13 +940,13 @@ var _Sources = (() => {
         const title = $(".title", item).text().trim();
         const id = titleLink?.split("/title/")[1];
         const img = $("img", item).attr("src") || $("img", item).attr("data-src") || "";
-        const meta = $(".metadata", item).text().trim();
+        const chapter = $(".metadata span", item).first().text().trim();
         if (id && title) {
           latestItems.push(App.createPartialSourceManga({
             mangaId: id,
             image: img,
             title,
-            subtitle: meta
+            subtitle: chapter
           }));
         }
       });
