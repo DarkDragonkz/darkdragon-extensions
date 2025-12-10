@@ -9,7 +9,6 @@ import {
     TagSection,
 } from '@paperback/types'
 
-// Mappatura ID -> Label
 const GENRES = [
     { id: "6", value: "Action" }, { id: "87264", value: "Adult" }, { id: "7", value: "Adventure" },
     { id: "8", value: "Boys Love" }, { id: "9", value: "Comedy" }, { id: "10", value: "Crime" },
@@ -115,7 +114,7 @@ export class ComixParser {
                 time: time,
                 langCode: chap.language || 'en',
                 group: chap.scanlation_group?.name || undefined,
-                sortingIndex: i // FIX: Assegna un indice basato sull'ordine dell'API
+                sortingIndex: i // FIX: Ordine forzato basato sulla lista (0 = primo/più recente)
             }))
         }
         

@@ -24,7 +24,7 @@ const BASE_URL = 'https://comix.to'
 const API_URL = 'https://comix.to/api/v2'
 
 export const ComixInfo: SourceInfo = {
-    version: '2.0.4', // Bump version (Order Fix)
+    version: '2.0.5', // Bump version (Fix Ordine Capitoli)
     name: 'Comix',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -82,43 +82,49 @@ export class Comix implements SearchResultsProviding, MangaProviding, ChapterPro
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        // FIX ORDINE: Rimosso &order[number]=desc
-        // Lasciamo che sia il sito a darci l'ordine corretto (solitamente per data/inserimento)
+        // 1. Scarica la prima pagina
         const limit = 100 
         const request = App.createRequest({
-            url: `${this.apiUrl}/manga/${mangaId}/chapters?page=1&limit=${limit}`,
+            url: `${this.apiUrl}/manga/${mangaId}/chapters?page=1&limit=${limit}&order[number]=desc`,
             method: 'GET'
         })
         
         const response = await this.requestManager.schedule(request, 1)
         const data = JSON.parse(response.data ?? '{}')
         
-        let allChaptersData = data.result?.items || []
-        const pagination = data.result?.pagination
-        const lastPage = pagination?.last_page || 1
+        const firstPageItems = data.result?.items || []
+        const lastPage = data.result?.pagination?.last_page || 1
 
+        // Array che conterrà tutte le pagine ordinate
+        const allPagesData: { page: number, items: any[] }[] = []
+        allPagesData.push({ page: 1, items: firstPageItems })
+
+        // 2. Se ci sono altre pagine, scaricale in parallelo
         if (lastPage > 1) {
             const promises = []
             for (let page = 2; page <= lastPage; page++) {
                 const req = App.createRequest({
-                    // Rimosso ordinamento anche qui
-                    url: `${this.apiUrl}/manga/${mangaId}/chapters?page=${page}&limit=${limit}`,
+                    url: `${this.apiUrl}/manga/${mangaId}/chapters?page=${page}&limit=${limit}&order[number]=desc`,
                     method: 'GET'
                 })
-                promises.push(this.requestManager.schedule(req, 1))
+                // Passiamo il numero di pagina nella promise per poter riordinare dopo
+                promises.push(
+                    this.requestManager.schedule(req, 1).then(res => ({
+                        page: page,
+                        items: JSON.parse(res.data ?? '{}').result?.items || []
+                    }))
+                )
             }
 
-            const responses = await Promise.all(promises)
-            
-            for (const res of responses) {
-                const pageData = JSON.parse(res.data ?? '{}')
-                if (pageData.result?.items) {
-                    allChaptersData = allChaptersData.concat(pageData.result.items)
-                }
-            }
+            const results = await Promise.all(promises)
+            allPagesData.push(...results)
         }
 
-        return this.parser.parseChapters(allChaptersData)
+        // 3. Ordina le pagine (fondamentale!) e unisci i capitoli
+        allPagesData.sort((a, b) => a.page - b.page)
+        const allChapters = allPagesData.flatMap(p => p.items)
+
+        return this.parser.parseChapters(allChapters)
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
