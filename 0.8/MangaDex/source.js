@@ -871,8 +871,8 @@ ${desc}`;
   // src/MangaDex/MangaDex.ts
   var MD_API = "https://api.mangadex.org";
   var MangaDexInfo = {
-    version: "2.1.2",
-    // Versione aggiornata con Smart Search
+    version: "2.1.3",
+    // Bump per fix capitoli nascosti
     name: "MangaDex (EN)",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -923,7 +923,8 @@ ${desc}`;
       return this.parser.parseMangaDetails(data, mangaId);
     }
     async getChapters(mangaId) {
-      const url = `${MD_API}/manga/${mangaId}/feed?limit=500&translatedLanguage[]=en&order[chapter]=desc&includeFutureUpdates=0&includes[]=scanlation_group`;
+      let url = `${MD_API}/manga/${mangaId}/feed?limit=500&translatedLanguage[]=en&order[chapter]=desc&includeFutureUpdates=0&includes[]=scanlation_group`;
+      url += "&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic";
       const request = App.createRequest({
         url,
         method: "GET"
