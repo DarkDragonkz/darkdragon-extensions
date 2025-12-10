@@ -24,7 +24,7 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '1.1.5',
+    version: '1.2.5', // Aggiornata versione
     name: 'NineMangaIT',
     description: 'Extension that pulls manga from it.ninemanga.com',
     author: 'DarkDragonkzz',
@@ -45,12 +45,13 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     baseUrl = IT_DOMAIN
     parser = new NineMangaITParser()
 
-    readonly userAgent = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
+    // TRUCCO: User Agent Desktop per evitare il sito mobile che rompe tutto
+    readonly userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
 
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 3,
+        requestsPerSecond: 5,
         requestTimeout: 25000,
         interceptor: {
             interceptRequest: async (request: any) => {
@@ -62,7 +63,8 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                         'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
                         'Connection': 'keep-alive',
-                        'Cookie': 'is_warning=1; my_limit=1'
+                        // Cookie per forzare la visualizzazione corretta
+                        'Cookie': 'is_warning=1; my_limit=1; ninemanga_ninemanga_image_list=1'
                     }
                 }
                 return request
@@ -112,8 +114,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         }
         if (!url.endsWith('.html')) url += '.html'
 
-        // FIX CRITICO: Aggiungi ?style=list per forzare il caricamento di tutte le immagini
-        // Questo risolve sia il problema delle pagine mancanti che i crash da parsing degli script
+        // Aggiungiamo ?style=list che ora funzionerà grazie allo UserAgent desktop
         url += '?style=list'
 
         const request = App.createRequest({
@@ -124,9 +125,8 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         const response = await this.requestManager.schedule(request, 1)
         this.checkResponseError(response)
         
-        const $ = this.cheerio.load(response.data)
-        
-        return this.parser.parseChapterDetails($, mangaId, chapterId, this.requestManager, this.baseUrl, this.cheerio)
+        // Passiamo l'HTML grezzo al parser
+        return this.parser.parseChapterDetails(response.data ?? '', mangaId, chapterId)
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
