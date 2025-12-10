@@ -886,8 +886,8 @@ var _Sources = (() => {
         id: "2",
         title: "Manga del Mese \u{1F31F}",
         containsMoreItems: true,
-        type: import_types.HomeSectionType.featured
-        // <--- CAMBIATO IN FEATURED (Carosello grande)
+        type: import_types.HomeSectionType.singleRowLarge
+        // <--- CAMBIATO: Ora le copertine sono intere e grandi
       });
       const section1 = App.createHomeSection({
         id: "1",
@@ -1021,7 +1021,7 @@ var _Sources = (() => {
   // src/MangaWorld/MangaWorld.ts
   var MW_DOMAIN = "https://www.mangaworld.mx";
   var MangaWorldInfo = {
-    version: "3.3.0",
+    version: "3.3.1",
     // Bump versione per UI update
     name: "MangaWorld",
     description: "Extension that pulls manga from MangaWorld.",
