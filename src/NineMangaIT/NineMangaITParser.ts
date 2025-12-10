@@ -145,66 +145,75 @@ export class NineMangaITParser {
     ): Promise<ChapterDetails> {
         const pages: string[] = []
         
-        // 1. Estrai le prime 10 immagini (o meno) dalla pagina corrente
-        $('img.manga_pic').each((_: any, img: any) => {
-            const src = $(img).attr('src')
-            if (src) pages.push(src)
-        })
+        // 1. Estrai immagine dalla pagina corrente (Pagina 1)
+        const firstImg = $('img.manga_pic').attr('src')
+        if (firstImg) pages.push(firstImg)
 
-        // 2. Controlla il menu a tendina per vedere se ci sono altre pagine
-        // Grazie al parametro -10-1, le pagine saranno in blocchi da 10 (es. 1, 11, 21...)
-        // L'HTML avrà una select con classe 'sl-page' o id 'page'
-        const otherPages: string[] = []
+        // 2. Trova le altre pagine nel menu a tendina
+        // IMPLEMENTAZIONE LOGICA ANTILOOP DELL'ALTRO AUTORE
+        const otherPagesSet = new Set<string>() // Set per evitare duplicati
+        const options = $('select.sl-page option').toArray()
         
-        $('select.sl-page option').each((i: number, option: any) => {
-            if (i === 0) return // La prima è quella corrente
-            
+        let firstPageValue = ''
+        
+        for (let i = 0; i < options.length; i++) {
+            const option = options[i]
             let pageUrl = $(option).attr('value')
-            if (pageUrl) {
-                if (pageUrl.startsWith('/')) pageUrl = baseUrl + pageUrl
-                otherPages.push(pageUrl)
+            
+            if (!pageUrl) continue
+            
+            // Normalizza URL
+            if (pageUrl.startsWith('/')) pageUrl = baseUrl + pageUrl
+            
+            // Logica Anti-Loop ispirata all'altro autore:
+            // Salva il valore della prima opzione. Se lo incontriamo di nuovo, STOP.
+            if (i === 0) {
+                firstPageValue = pageUrl
+                continue // Saltiamo la prima pagina perché l'abbiamo già processata (step 1)
+            }
+            
+            if (pageUrl === firstPageValue) break // Loop rilevato!
+            
+            // Aggiungi solo se non è già presente
+            if (!otherPagesSet.has(pageUrl)) {
+                otherPagesSet.add(pageUrl)
+            }
+        }
+        
+        const otherPages = Array.from(otherPagesSet)
+
+        // 3. Scarica le altre pagine in parallelo
+        const promises = otherPages.map(async (url) => {
+            try {
+                const request = App.createRequest({
+                    url: url,
+                    method: 'GET',
+                    headers: {
+                        'Referer': baseUrl,
+                        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
+                    }
+                })
+                
+                const response = await requestManager.schedule(request, 1)
+                const $page = cheerio.load(response.data)
+                const imgSrc = $page('img.manga_pic').attr('src')
+                
+                return imgSrc
+            } catch (e) {
+                return null
             }
         })
 
-        // 3. Se ci sono altre pagine, scaricale in parallelo
-        if (otherPages.length > 0) {
-            const promises = otherPages.map(async (url) => {
-                try {
-                    const request = App.createRequest({
-                        url: url,
-                        method: 'GET',
-                        headers: {
-                            'Referer': baseUrl,
-                            // User Agent Mobile coerente
-                            'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
-                        }
-                    })
-                    
-                    const response = await requestManager.schedule(request, 1)
-                    const $page = cheerio.load(response.data)
-                    const batchImages: string[] = []
-                    
-                    $page('img.manga_pic').each((_: any, img: any) => {
-                        const src = $(img).attr('src')
-                        if (src) batchImages.push(src)
-                    })
-                    
-                    return batchImages
-                } catch (e) {
-                    return []
-                }
-            })
-
-            const results = await Promise.all(promises)
-            for (const batch of results) {
-                if (batch) pages.push(...batch)
-            }
+        const results = await Promise.all(promises)
+        
+        for (const img of results) {
+            if (img) pages.push(img)
         }
 
         return App.createChapterDetails({
             id: chapterId,
             mangaId: mangaId,
-            pages: [...new Set(pages)] // Rimuove duplicati
+            pages: [...new Set(pages)] // Doppia sicurezza contro duplicati
         })
     }
 
