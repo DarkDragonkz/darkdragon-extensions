@@ -14,30 +14,50 @@ const BASE_URL = 'https://batcave.biz'
 export class BatCaveParser {
 
     /**
+     * Tenta di trasformare l'URL di una miniatura (thumb) nell'URL dell'immagine originale HD.
+     * Rimuove segmenti tipici come '/thumbs/' o suffissi di ridimensionamento.
+     */
+    private getHighResImage(url: string | undefined): string {
+        if (!url) return ''
+
+        // Gestione path relativi
+        if (url.startsWith('/')) {
+            url = BASE_URL + url
+        }
+
+        // FIX QUALITÀ:
+        // I siti DLE mettono le miniature in cartelle "/thumbs/". 
+        // L'immagine originale è solitamente allo stesso percorso ma senza "/thumbs/".
+        // Es: .../uploads/posts/2023-12/thumbs/cover.jpg -> .../uploads/posts/2023-12/cover.jpg
+        if (url.includes('/thumbs/')) {
+            return url.replace('/thumbs/', '/')
+        }
+
+        return url
+    }
+
+    /**
      * Helper per parsare le liste di manga (Grid/List items).
-     * Riduce drasticamente la duplicazione del codice.
      */
     parseGridItems($: any, selector: string, subtitleSelector?: string): PartialSourceManga[] {
         const items: PartialSourceManga[] = []
         
         $(selector).each((_: any, item: any) => {
-            // Gestione ibrida: a volte l'item è il link stesso, a volte è un container
             const link = $(item).is('a') ? $(item) : $('a', item).first()
             const href = link.attr('href')
             const id = href?.split('/').pop()
             
-            // Gestione titolo: prova selettori comuni o fallback
             const title = $('.poster__title, .latest__title a, .readed__title a, .popular__title', item).first().text().trim() || link.text().trim()
 
-            // Gestione Immagine: data-src (lazyload) ha priorità
-            let image = $('img', item).attr('data-src') ?? $('img', item).attr('src') ?? ''
-            if (image.startsWith('/')) image = BASE_URL + image
+            // Recupera l'URL grezzo (data-src o src)
+            const rawImage = $('img', item).attr('data-src') ?? $('img', item).attr('src')
 
-            // Gestione Sottotitolo (es. Capitolo o update)
+            // Usa la funzione helper per ottenere la versione HD
+            const image = this.getHighResImage(rawImage)
+
             let subtitle: string | undefined = undefined
             if (subtitleSelector) {
                 const subText = $(subtitleSelector, item).text().trim()
-                // Pulisce "Chapter 5" -> "5" o mantiene testo breve
                 subtitle = subText.replace(/chapter\s*/i, '').trim()
             }
 
@@ -57,8 +77,9 @@ export class BatCaveParser {
     parseMangaDetails($: any, mangaId: string): SourceManga {
         const title = $('h1.main-page-title').text().trim() || $('h1').first().text().trim() || 'Unknown'
         
-        let image = $('.page__poster img').attr('src') ?? ''
-        if (image.startsWith('/')) image = BASE_URL + image
+        // Anche nei dettagli usiamo la logica HD per sicurezza
+        const rawImage = $('.page__poster img').attr('src')
+        const image = this.getHighResImage(rawImage)
 
         const desc = $('.page__text').text().trim()
         
@@ -100,8 +121,6 @@ export class BatCaveParser {
 
     parseChapters(html: string): Chapter[] {
         const chapters: Chapter[] = []
-        
-        // Estrazione JSON dai dati globali (Ottimo approccio!)
         const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s)
         if (!scriptData) return []
 
@@ -114,23 +133,16 @@ export class BatCaveParser {
                     
                     let time = new Date()
                     if (chap.date) {
-                        // Formato atteso: dd.mm.yyyy
                         const parts = chap.date.split('.')
-                        if (parts.length === 3) {
-                            time = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
-                        }
+                        if (parts.length === 3) time = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
                     }
 
-                    // Logica recupero numero capitolo robusta
                     let chapNum = 0
                     if (chap.posi) {
                         chapNum = parseFloat(chap.posi)
                     } else {
-                        // Regex per catturare numeri anche in "Vol.2 Ch.10.5"
                         const numMatch = titleRaw.match(/(\d+(\.\d+)?)/g)
-                        if (numMatch) {
-                            chapNum = parseFloat(numMatch[numMatch.length - 1] ?? '0')
-                        }
+                        if (numMatch) chapNum = parseFloat(numMatch[numMatch.length - 1] ?? '0')
                     }
 
                     chapters.push(App.createChapter({
@@ -179,8 +191,6 @@ export class BatCaveParser {
     }
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
-        
-        // 1. Featured - Large
         const featuredSection = App.createHomeSection({ 
             id: 'featured', 
             title: 'Featured Comics 🔥', 
@@ -190,7 +200,6 @@ export class BatCaveParser {
         featuredSection.items = this.parseGridItems($, '.sect--popular .poster')
         sectionCallback(featuredSection)
 
-        // 2. Hot New Releases - Normal
         const hotSection = App.createHomeSection({ 
             id: 'hot', 
             title: 'Hot New Releases ⚡', 
@@ -200,18 +209,15 @@ export class BatCaveParser {
         hotSection.items = this.parseGridItems($, '.sect--hot .poster')
         sectionCallback(hotSection)
         
-        // 3. Top Rated - Normal
         const topRatedSection = App.createHomeSection({ 
             id: 'top_rated', 
             title: 'Top Rated ⭐', 
             containsMoreItems: false, 
             type: HomeSectionType.singleRowNormal 
         })
-        // Selettore specifico basato sul contenitore genitore
         topRatedSection.items = this.parseGridItems($, 'div.side-block:has(h2:contains("Top-rated")) a.popular')
         sectionCallback(topRatedSection)
 
-        // 4. Just Added - Normal
         const justAddedSection = App.createHomeSection({ 
             id: 'just_added', 
             title: 'Just Added 🆕', 
@@ -221,23 +227,17 @@ export class BatCaveParser {
         justAddedSection.items = this.parseGridItems($, 'div.side-block:has(h2:contains("Just added")) a.popular')
         sectionCallback(justAddedSection)
 
-        // 5. Latest Updates - Continuous (Verticale Infinito)
-        // NOTA: Cambio UX importante. 'continuous' permette all'utente di scrollare
-        // senza dover entrare in una vista separata subito.
         const latestSection = App.createHomeSection({ 
             id: 'latest', 
             title: 'Latest Updates 🆙', 
             containsMoreItems: true, 
             type: HomeSectionType.continuous 
         })
-        // Qui passiamo il selettore del sottotitolo per vedere il capitolo
         latestSection.items = this.parseGridItems($, '.sect--latest .latest', '.latest__chapter')
         sectionCallback(latestSection)
     }
 
-    // Usato sia per Search che per ViewMore
     parseSearchResults($: any): PartialSourceManga[] {
-        // Usa il selettore generico della pagina search/list
         return this.parseGridItems($, '.readed')
     }
 }
