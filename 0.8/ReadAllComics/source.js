@@ -866,7 +866,7 @@ var _Sources = (() => {
     parseHomeSections($, sectionCallback) {
       const latestSection = App.createHomeSection({
         id: "latest",
-        title: "Catalogue",
+        title: "Latest Added \u{1F525}",
         containsMoreItems: false,
         type: import_types.HomeSectionType.singleRowLarge
       });
@@ -899,7 +899,8 @@ var _Sources = (() => {
   // src/ReadAllComics/ReadAllComics.ts
   var DOMAIN = "https://readallcomics.com";
   var ReadAllComicsInfo = {
-    version: "1.5.0",
+    version: "1.5.1",
+    // Bump versione per UI update
     name: "ReadAllComics",
     icon: "icon.png",
     author: "DarkDragonkz",
