@@ -800,7 +800,6 @@ var _Sources = (() => {
               id,
               name: title,
               chapNum,
-              // L'app ordinerà in base a questo numero
               time,
               langCode: "en"
             }));
@@ -860,6 +859,7 @@ var _Sources = (() => {
         title: "Hot New Releases \u{1F525}",
         containsMoreItems: false,
         type: import_types.HomeSectionType.singleRowLarge
+        // <-- FIX: Immagini grandi intere
       });
       const hotItems = [];
       $(".sect--hot .poster").each((_, item) => {
@@ -883,7 +883,8 @@ var _Sources = (() => {
         id: "latest",
         title: "Newest Releases \u{1F199}",
         containsMoreItems: true,
-        type: import_types.HomeSectionType.singleRowNormal
+        type: import_types.HomeSectionType.singleRowLarge
+        // <-- FIX: Anche qui immagini grandi intere
       });
       const latestItems = [];
       $(".sect--latest .latest").each((_, item) => {
@@ -911,7 +912,7 @@ var _Sources = (() => {
   // src/BatCave/BatCave.ts
   var DOMAIN = "https://batcave.biz";
   var BatCaveInfo = {
-    version: "1.0.1",
+    version: "1.0.3",
     // Bump versione
     name: "BatCave",
     icon: "icon.png",
@@ -933,9 +934,12 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.baseUrl = DOMAIN;
       this.parser = new BatCaveParser();
+      // Aumentato drasticamente per evitare la home bianca all'avvio
+      this.RETRIES = 10;
       this.requestManager = App.createRequestManager({
-        requestsPerSecond: 4,
-        requestTimeout: 2e4,
+        requestsPerSecond: 5,
+        // Aumentato per caricamenti più rapidi
+        requestTimeout: 25e3,
         interceptor: {
           interceptRequest: async (request) => {
             request.headers = {
@@ -959,7 +963,7 @@ var _Sources = (() => {
         url: `${this.baseUrl}/${mangaId}`,
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, 1);
+      const response = await this.requestManager.schedule(request, this.RETRIES);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseMangaDetails($, mangaId);
     }
@@ -968,7 +972,7 @@ var _Sources = (() => {
         url: `${this.baseUrl}/${mangaId}`,
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, 1);
+      const response = await this.requestManager.schedule(request, this.RETRIES);
       return this.parser.parseChapters(response.data ?? "");
     }
     async getChapterDetails(mangaId, chapterId) {
@@ -977,7 +981,7 @@ var _Sources = (() => {
         url: `${this.baseUrl}/reader/${mangaNumericId}/${chapterId}`,
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, 1);
+      const response = await this.requestManager.schedule(request, this.RETRIES);
       return this.parser.parseChapterDetails(response.data ?? "", mangaId, chapterId);
     }
     async getSearchResults(query, metadata) {
@@ -986,7 +990,7 @@ var _Sources = (() => {
         url: `${this.baseUrl}/index.php?do=search&subaction=search&story=${encodeURIComponent(query.title ?? "")}&search_start=${page}`,
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, 1);
+      const response = await this.requestManager.schedule(request, this.RETRIES);
       const $ = this.cheerio.load(response.data);
       const manga = this.parser.parseSearchResults($);
       const nextPage = manga.length > 0 ? page + 1 : void 0;
@@ -1000,7 +1004,7 @@ var _Sources = (() => {
         url: this.baseUrl,
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, 1);
+      const response = await this.requestManager.schedule(request, this.RETRIES);
       const $ = this.cheerio.load(response.data);
       this.parser.parseHomeSections($, sectionCallback);
     }
