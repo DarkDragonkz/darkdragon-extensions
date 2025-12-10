@@ -16,6 +16,7 @@ export class NineMangaITParser {
         let img = element.find('img').first()
         if (element.is('img')) img = element
 
+        // Supporto per vari tipi di lazy loading usati da NineManga
         let src = img.attr('src') || img.attr('data-src') || img.attr('original') || img.attr('data-original')
         
         if (!src || src.includes('logo-alt')) return 'https://paperback.moe/icons/logo-alt.svg'
@@ -52,6 +53,7 @@ export class NineMangaITParser {
         if (!desc) desc = 'No description available'
         desc = desc.replace(/^Sommario:\s*/i, '')
         
+        // Parsing Status migliorato
         let status = 'Ongoing'
         const statusText = $('.red, a[href*="completed"]').text().toLowerCase()
         if (statusText.includes('completato') || statusText.includes('completed')) status = 'Completed'
@@ -62,7 +64,7 @@ export class NineMangaITParser {
             const $el = $(el)
             const id = $el.attr('href')?.split('/').pop()?.replace('.html', '') ?? ''
             const label = $el.text().trim()
-            if (id && label) arrayTags.push({ id, label })
+            if (id && label) arrayTags.push(App.createTag({ id, label }))
         }
         const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
 
@@ -100,17 +102,20 @@ export class NineMangaITParser {
             const chapterId = filePart.split('?')[0].replace('.html', '')
 
             if (seenIds.has(chapterId)) continue
-            if (filePart.match(/-\d+-\d+\.html$/)) continue // Salta paginazione interna
+            // Evita duplicati di paginazione interna
+            if (filePart.match(/-\d+-\d+\.html$/)) continue 
 
             seenIds.add(chapterId)
 
             let titleRaw = $link.attr('title') || $link.text().trim()
+            // Pulizia titolo capitolo
             titleRaw = titleRaw.replace(new RegExp(`^${mangaId.replace(/-/g, ' ')}\\s+`, 'i'), '')
             titleRaw = titleRaw.replace(mangaId, '').trim()
 
             const dateText = $link.parent().find('span').last().text().trim()
             let time = new Date()
             if (dateText) {
+                // Tenta di parsare la data, altrimenti usa quella attuale
                 time = new Date(dateText)
                 if (isNaN(time.getTime())) time = new Date()
             }
@@ -181,31 +186,20 @@ export class NineMangaITParser {
 
     parseSearchResults($: any, baseUrl: string): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
-
-        // 1. SELETTORI "A STRASCICO": Cerchiamo qualsiasi elemento che potrebbe essere un manga
-        // .direlist .bookinfo -> Vecchio layout mobile
-        // .book-list li -> Nuovo layout mobile
-        // dl -> Layout ricerca definizione
         const items = $('.book-list li, .direlist .bookinfo, dl, .comic-item').toArray()
 
         for (const item of items) {
             const $item = $(item)
-            
-            // 2. CERCA LINK: Trova il primo link che porta a /manga/ dentro questo elemento
             const link = $item.find('a[href*="/manga/"]').first()
             const href = link.attr('href')
             
             if (!href) continue
 
-            // Estrai ID
             const id = href.split('/manga/')[1]?.replace('.html', '')
             if (!id) continue
 
-            // 3. CERCA IMMAGINE: Trova l'immagine più vicina o dentro l'elemento
-            // Usiamo il nostro helper che gestisce anche Lazy Loading e HTTPS
             const image = this.getImageSrc($item)
 
-            // 4. CERCA TITOLO
             let title = link.text().trim()
             if (!title) title = link.attr('title') ?? ''
             if (!title) title = $item.find('b, h3, dd.book-list').text().trim()
@@ -222,9 +216,30 @@ export class NineMangaITParser {
     }
 
     parseHomeSections($home: any, $updates: any, sectionCallback: (section: HomeSection) => void, baseUrl: string): void {
-        const popularSection = App.createHomeSection({ id: 'popular', title: 'Popolari', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
-        const newSection = App.createHomeSection({ id: 'new', title: 'Nuove Uscite', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
-        const latestSection = App.createHomeSection({ id: 'latest', title: 'Ultimi Aggiornamenti', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
+        
+        // 1. Popolari - Cambiato in Large per estetica
+        const popularSection = App.createHomeSection({ 
+            id: 'popular', 
+            title: 'Popolari', 
+            containsMoreItems: true, 
+            type: HomeSectionType.singleRowLarge 
+        })
+
+        // 2. Nuove Uscite
+        const newSection = App.createHomeSection({ 
+            id: 'new', 
+            title: 'Nuove Uscite', 
+            containsMoreItems: true, 
+            type: HomeSectionType.singleRowNormal 
+        })
+
+        // 3. Ultimi Aggiornamenti
+        const latestSection = App.createHomeSection({ 
+            id: 'latest', 
+            title: 'Ultimi Aggiornamenti', 
+            containsMoreItems: true, 
+            type: HomeSectionType.singleRowNormal 
+        })
 
         const popularItems: PartialSourceManga[] = []
         const newItems: PartialSourceManga[] = []
@@ -232,7 +247,6 @@ export class NineMangaITParser {
 
         const cleanTitle = (t: string) => t.replace(/(\s+(Vol\.|Ch\.|Chapter\.)?\s*\d+(\.\d+)?)+$/i, '').trim()
 
-        // Helper per processare liste Home
         const parseList = (selector: string, targetArray: PartialSourceManga[], subtitlePrefix: string | undefined) => {
             const list = $home(selector).toArray()
             for (const item of list) {

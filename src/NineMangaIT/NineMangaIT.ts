@@ -24,7 +24,7 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '1.1.1',
+    version: '1.1.2', // Bump versione
     name: 'NineMangaIT',
     description: 'Extension that pulls manga from it.ninemanga.com',
     author: 'DarkDragonkzz',
@@ -50,7 +50,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 3,
+        requestsPerSecond: 5, // Aumentato per maggiore velocità
         requestTimeout: 25000,
         interceptor: {
             interceptRequest: async (request: any) => {
@@ -119,8 +119,6 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         
         const response = await this.requestManager.schedule(request, 1)
         this.checkResponseError(response)
-        
-        // FIX: Carichiamo $ qui prima di passarlo al parser!
         const $ = this.cheerio.load(response.data)
         
         return this.parser.parseChapterDetails($, mangaId, chapterId, this.requestManager, this.baseUrl, this.cheerio)
