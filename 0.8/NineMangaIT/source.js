@@ -732,6 +732,7 @@ var _Sources = (() => {
   // src/NineMangaIT/NineMangaITParser.ts
   var import_types = __toESM(require_lib());
   var NineMangaITParser = class {
+    // HELPER: Trova l'immagine migliore e corregge HTTPS
     getImageSrc(element) {
       let img = element.find("img").first();
       if (element.is("img")) img = element;
@@ -760,7 +761,7 @@ var _Sources = (() => {
         intro.find("ul, h1, div, a").remove();
         desc = intro.text().trim();
       }
-      if (!desc) desc = "No description available";
+      if (!desc) desc = "Nessuna descrizione disponibile.";
       desc = desc.replace(/^Sommario:\s*/i, "");
       let status = "Ongoing";
       const statusText = $('.red, a[href*="completed"]').text().toLowerCase();
@@ -771,7 +772,7 @@ var _Sources = (() => {
         const $el = $(el);
         const id = $el.attr("href")?.split("/").pop()?.replace(".html", "") ?? "";
         const label = $el.text().trim();
-        if (id && label) arrayTags.push({ id, label });
+        if (id && label) arrayTags.push(App.createTag({ id, label }));
       }
       const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })];
       return App.createSourceManga({
@@ -818,9 +819,9 @@ var _Sources = (() => {
         if (chapNumMatch) {
           chapNum = parseFloat(chapNumMatch[1] ?? "0");
         } else {
-          const simpleNums = titleRaw.match(/(\d+(\.\d+)?)/g);
+          const simpleNums = titleRaw.match(/(\d+(\.\d+)?)/g).map(Number);
           if (simpleNums && simpleNums.length > 0) {
-            chapNum = parseFloat(simpleNums[simpleNums.length - 1] ?? "0");
+            chapNum = simpleNums[simpleNums.length - 1] ?? 0;
           }
         }
         chapters.push(App.createChapter({
@@ -833,47 +834,27 @@ var _Sources = (() => {
       }
       return chapters;
     }
+    // LOGICA CORRETTA: Utilizza il selettore desktop del modello fornito
     parseChapterDetails($, mangaId, chapterId) {
       const pages = [];
-      let images = $("img.manga_pic").toArray();
-      if (images.length === 0) {
-        images = $(".changepage img").toArray();
-      }
-      if (images.length === 0) {
-        images = $('div[id^="page"] img, .pic_box img').toArray();
-      }
-      for (const img of images) {
-        const $img = $(img);
-        let src = $img.attr("src") || $img.attr("data-src") || $img.attr("original") || $img.attr("data-original");
-        if (src) {
-          if (src.startsWith("//")) src = `https:${src}`;
-          else if (src.startsWith("/")) src = `https://it.ninemanga.com${src}`;
-          if (!src.includes("logo") && !src.includes("icon") && !src.includes("loading")) {
-            pages.push(src);
-          }
+      const imgSelector = $("div.pic_box img.manga_pic").toArray();
+      for (const obj of imgSelector) {
+        const i = $(obj).attr("src") ?? "";
+        if (i && i.startsWith("http") && !i.includes("logo") && !i.includes("icon") && !i.includes("button")) {
+          pages.push(i.trim());
         }
       }
-      const cleanPages = [...new Set(pages)];
-      if (cleanPages.length === 0) {
-        const scripts = $("script").toArray();
-        for (const script of scripts) {
-          const content = $(script).html();
-          if (content && (content.includes("p_urls") || content.includes("img_url"))) {
-            const matches = content.match(/(https?:\/\/[^"']+\.(?:jpg|png|webp|jpeg))/gi);
-            if (matches && matches.length > 0) {
-              for (const m of matches) cleanPages.push(m);
-              break;
-            }
-          }
-        }
-      }
-      if (cleanPages.length === 0) {
-        throw new Error("Nessuna pagina trovata. Riprova pi\xF9 tardi.");
+      if (pages.length === 0) {
+        $("img.manga_pic").each((_, img) => {
+          const src = $(img).attr("src");
+          if (src && src.startsWith("http")) pages.push(src.trim());
+        });
       }
       return App.createChapterDetails({
         id: chapterId,
         mangaId,
-        pages: cleanPages
+        pages: [...new Set(pages)]
+        // Rimuove eventuali duplicati
       });
     }
     parseSearchResults($, baseUrl) {
@@ -900,7 +881,7 @@ var _Sources = (() => {
       }
       return results;
     }
-    parseHomeSections($home, $updates, sectionCallback, baseUrl) {
+    parseHomeSections($home, sectionCallback, baseUrl) {
       const popularSection = App.createHomeSection({ id: "popular", title: "Popolari \u{1F525}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowLarge });
       const newSection = App.createHomeSection({ id: "new", title: "Nuove Uscite \u{1F195}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
       const latestSection = App.createHomeSection({ id: "latest", title: "Ultimi Aggiornamenti \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
