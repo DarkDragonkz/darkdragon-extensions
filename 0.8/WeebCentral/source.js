@@ -734,7 +734,6 @@ var _Sources = (() => {
   var WeebCentralParser = class {
     /**
      * Helper centralizzato per estrarre un manga da un elemento HTML.
-     * Gestisce Search, Home e Latest updates in un unico punto.
      */
     parseCommonManga($, element, extraSubtitle) {
       let item = $(element);
@@ -771,7 +770,9 @@ var _Sources = (() => {
       const arrayTags = [];
       $('strong:contains("Tags(s)")').nextAll("span").each((_, span) => {
         const label = $(span).text().trim();
-        if (label) arrayTags.push({ id: label, label });
+        if (label) {
+          arrayTags.push(App.createTag({ id: label, label }));
+        }
       });
       const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })];
       return App.createSourceManga({
@@ -859,7 +860,6 @@ var _Sources = (() => {
         title: "Latest Updates \u{1F199}",
         containsMoreItems: true,
         type: import_types.HomeSectionType.continuous
-        // UX migliorata
       });
       const hotManga = [];
       const hotContainer = $('section:has(h2:contains("Hot Updates"))').first();
