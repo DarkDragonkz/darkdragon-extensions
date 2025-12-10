@@ -1021,7 +1021,7 @@ var _Sources = (() => {
   // src/MangaWorld/MangaWorld.ts
   var MW_DOMAIN = "https://www.mangaworld.mx";
   var MangaWorldInfo = {
-    version: "3.2.0",
+    version: "3.3.0",
     // Bump versione per UI update
     name: "MangaWorld",
     description: "Extension that pulls manga from MangaWorld.",
