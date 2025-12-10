@@ -781,7 +781,7 @@ var _Sources = (() => {
         if (data.chapters && Array.isArray(data.chapters)) {
           for (const chap of data.chapters) {
             const id = String(chap.id);
-            const title = chap.title || `Chapter ${chap.id}`;
+            let title = (chap.title || `Chapter ${chap.id}`).replace(/_/g, " ").replace(/\s+/g, " ").trim();
             let time = /* @__PURE__ */ new Date();
             if (chap.date) {
               const parts = chap.date.split(".");
@@ -790,9 +790,20 @@ var _Sources = (() => {
               }
             }
             let chapNum = 0;
-            const numMatch = title.match(/#(\d+(\.\d+)?)/);
-            if (numMatch) {
-              chapNum = parseFloat(numMatch[1]);
+            const stdMatch = title.match(/(?:Issue|Chapter|Ch\.?|#)\s*(\d+(\.\d+)?)/i);
+            if (stdMatch) {
+              chapNum = parseFloat(stdMatch[1]);
+            } else if (title.match(/(?:Part|Pt\.?)\s*(\d+(\.\d+)?)/i)) {
+              const partMatch = title.match(/(?:Part|Pt\.?)\s*(\d+(\.\d+)?)/i);
+              chapNum = parseFloat(partMatch[1]);
+            } else if (title.match(/(?:Special)\s*(\d+(\.\d+)?)/i)) {
+              const specialMatch = title.match(/(?:Special)\s*(\d+(\.\d+)?)/i);
+              chapNum = parseFloat(specialMatch[1]);
+            } else {
+              const anyNumMatch = title.match(/(\d+(\.\d+)?)/g);
+              if (anyNumMatch && anyNumMatch.length > 0) {
+                chapNum = parseFloat(anyNumMatch[anyNumMatch.length - 1]);
+              }
             }
             chapters.push(App.createChapter({
               id,
@@ -856,7 +867,8 @@ var _Sources = (() => {
         id: "hot",
         title: "Hot New Releases \u{1F525}",
         containsMoreItems: false,
-        type: import_types.HomeSectionType.featured
+        type: import_types.HomeSectionType.singleRowLarge
+        // <-- Mostra copertina intera grande
       });
       const hotItems = [];
       $(".sect--hot .poster").each((_, item) => {
@@ -908,7 +920,8 @@ var _Sources = (() => {
   // src/BatCave/BatCave.ts
   var DOMAIN = "https://batcave.biz";
   var BatCaveInfo = {
-    version: "1.0.0",
+    version: "1.0.1",
+    // Bump versione
     name: "BatCave",
     icon: "icon.png",
     author: "DarkDragonkz",
