@@ -761,7 +761,7 @@ var _Sources = (() => {
         intro.find("ul, h1, div, a").remove();
         desc = intro.text().trim();
       }
-      if (!desc) desc = "Nessuna descrizione disponibile.";
+      if (!desc) desc = "No description available";
       desc = desc.replace(/^Sommario:\s*/i, "");
       let status = "Ongoing";
       const statusText = $('.red, a[href*="completed"]').text().toLowerCase();
@@ -836,31 +836,27 @@ var _Sources = (() => {
     }
     parseChapterDetails($, mangaId, chapterId, requestManager, baseUrl, cheerio) {
       const pages = [];
-      let foundInScript = false;
-      const scripts = $("script").toArray();
-      for (const script of scripts) {
-        const content = $(script).html();
-        if (content && (content.includes("p_urls") || content.includes("img_url"))) {
-          const matches = content.match(/(https?:\/\/[^"']+\.(?:jpg|png|webp|jpeg))/gi);
-          if (matches && matches.length > 0) {
-            for (const m of matches) pages.push(m);
-            foundInScript = true;
-            break;
-          }
-        }
-      }
-      if (!foundInScript) {
-        const imgElements = $("img.manga_pic").toArray();
-        for (const img of imgElements) {
+      $("img.manga_pic").each((_, img) => {
+        const src = $(img).attr("src");
+        if (src) pages.push(src);
+      });
+      if (pages.length === 0) {
+        $('div[align="center"] img').each((_, img) => {
           const src = $(img).attr("src");
-          if (src) pages.push(src);
-        }
-        if (pages.length === 0) {
-          const centerImages = $('div[align="center"] img').toArray();
-          for (const img of centerImages) {
-            const src = $(img).attr("src");
-            if (src && src.startsWith("http") && !src.includes("logo") && !src.includes("icon")) {
-              pages.push(src);
+          if (src && src.startsWith("http") && !src.includes("logo") && !src.includes("icon")) {
+            pages.push(src);
+          }
+        });
+      }
+      if (pages.length === 0) {
+        const scripts = $("script").toArray();
+        for (const script of scripts) {
+          const content = $(script).html();
+          if (content && (content.includes("p_urls") || content.includes("img_url"))) {
+            const matches = content.match(/(https?:\/\/[^"']+\.(?:jpg|png|webp|jpeg))/gi);
+            if (matches && matches.length > 0) {
+              for (const m of matches) pages.push(m);
+              break;
             }
           }
         }
@@ -869,6 +865,7 @@ var _Sources = (() => {
         id: chapterId,
         mangaId,
         pages: [...new Set(pages)]
+        // Rimuove duplicati
       });
     }
     parseSearchResults($, baseUrl) {
@@ -896,25 +893,9 @@ var _Sources = (() => {
       return results;
     }
     parseHomeSections($home, $updates, sectionCallback, baseUrl) {
-      const popularSection = App.createHomeSection({
-        id: "popular",
-        title: "Popolari \u{1F525}",
-        containsMoreItems: true,
-        type: import_types.HomeSectionType.singleRowLarge
-        // <-- Cambiato in Large
-      });
-      const newSection = App.createHomeSection({
-        id: "new",
-        title: "Nuove Uscite \u{1F195}",
-        containsMoreItems: true,
-        type: import_types.HomeSectionType.singleRowNormal
-      });
-      const latestSection = App.createHomeSection({
-        id: "latest",
-        title: "Ultimi Aggiornamenti \u{1F199}",
-        containsMoreItems: true,
-        type: import_types.HomeSectionType.singleRowNormal
-      });
+      const popularSection = App.createHomeSection({ id: "popular", title: "Popolari \u{1F525}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowLarge });
+      const newSection = App.createHomeSection({ id: "new", title: "Nuove Uscite \u{1F195}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
+      const latestSection = App.createHomeSection({ id: "latest", title: "Ultimi Aggiornamenti \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
       const popularItems = [];
       const newItems = [];
       const latestItems = [];
@@ -994,8 +975,7 @@ var _Sources = (() => {
   // src/NineMangaIT/NineMangaIT.ts
   var IT_DOMAIN = "https://it.ninemanga.com";
   var NineMangaITInfo = {
-    version: "1.2.0",
-    // Aggiornato per riflettere i cambiamenti UI
+    version: "1.1.5",
     name: "NineMangaIT",
     description: "Extension that pulls manga from it.ninemanga.com",
     author: "DarkDragonkzz",
@@ -1018,8 +998,7 @@ var _Sources = (() => {
       this.parser = new NineMangaITParser();
       this.userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
       this.requestManager = App.createRequestManager({
-        requestsPerSecond: 5,
-        // Aumentato a 5 per caricamenti più fluidi della home
+        requestsPerSecond: 3,
         requestTimeout: 25e3,
         interceptor: {
           interceptRequest: async (request) => {
