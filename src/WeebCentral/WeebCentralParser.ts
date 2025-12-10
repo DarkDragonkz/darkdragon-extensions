@@ -26,7 +26,7 @@ export class WeebCentralParser {
         let status = 'Ongoing'
         if (statusStr.includes('complete')) status = 'Completed'
         else if (statusStr.includes('hiatus')) status = 'Hiatus'
-        else if (statusStr.includes('cancel')) status = 'Completed' // Spesso usato per cancellati
+        else if (statusStr.includes('cancel')) status = 'Completed' 
 
         const arrayTags: Tag[] = []
         $('strong:contains("Tags(s)")').nextAll('span').each((_: any, span: any) => {
@@ -57,7 +57,6 @@ export class WeebCentralParser {
             const href = $(element).attr('href')
             const id = href?.split('/chapters/')[1]
             
-            // Cerchiamo il titolo nello span specifico
             let name = $(element).find('.grow span, span.font-bold').first().text().trim()
             
             if (!name) {
@@ -66,10 +65,8 @@ export class WeebCentralParser {
                 name = clone.text().trim()
             }
 
-            // Pulizia titolo
             name = name.replace(/(\r\n|\n|\r)/gm, " ").replace(/\s+/g, " ").trim()
 
-            // Parsing del numero
             const numMatch = name.match(/(\d+(\.\d+)?)/g)
             const chapNum = numMatch ? parseFloat(numMatch[numMatch.length - 1] ?? '0') : 0
 
@@ -155,15 +152,23 @@ export class WeebCentralParser {
     }
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
-        
-        // UI IMPROVEMENT: Sezione Hot in evidenza (Featured)
+        // 1. Hot Updates (Featured)
         const hotSection = App.createHomeSection({
             id: 'hot_updates',
             title: 'Hot Updates 🔥',
             containsMoreItems: false,
-            type: HomeSectionType.featured, // <-- Carosello grande
+            type: HomeSectionType.featured, 
         })
         
+        // 2. Recommendations (Nuova Sezione)
+        const recSection = App.createHomeSection({
+            id: 'recommendations',
+            title: 'Recommendations 💡',
+            containsMoreItems: false,
+            type: HomeSectionType.singleRowNormal, 
+        })
+
+        // 3. Latest Updates
         const latestSection = App.createHomeSection({
             id: 'latest_updates',
             title: 'Latest Updates 🆙',
@@ -171,6 +176,7 @@ export class WeebCentralParser {
             type: HomeSectionType.singleRowNormal,
         })
 
+        // --- Parsing Hot Updates ---
         const hotManga: PartialSourceManga[] = []
         const hotContainer = $('section:has(h2:contains("Hot Updates"))').first()
         
@@ -195,6 +201,38 @@ export class WeebCentralParser {
         hotSection.items = hotManga
         sectionCallback(hotSection)
 
+        // --- Parsing Recommendations ---
+        // Cerchiamo la sezione che contiene "Recommendations" nel titolo h2
+        const recManga: PartialSourceManga[] = []
+        const recContainer = $('section:has(h2:contains("Recommendations"))').first()
+
+        if (recContainer.length > 0) {
+            $('article', recContainer).each((_: any, manga: any) => {
+                const link = $('a', manga).attr('href')
+                const id = link?.split('/series/')?.[1]?.split('/')?.[0]
+                
+                let title = $(manga).attr('data-tip')?.trim()
+                if (!title) title = $('.text-white', manga).first().text().trim()
+                
+                const image = $('img', manga).attr('src') ?? ''
+                
+                if (id && title) {
+                    recManga.push(App.createPartialSourceManga({
+                        mangaId: id,
+                        image: image,
+                        title: title,
+                        subtitle: undefined
+                    }))
+                }
+            })
+            
+            if (recManga.length > 0) {
+                recSection.items = recManga
+                sectionCallback(recSection)
+            }
+        }
+
+        // --- Parsing Latest Updates ---
         const latestManga: PartialSourceManga[] = []
         const latestContainer = $('section:has(h2:contains("Latest Updates"))').first()
 
