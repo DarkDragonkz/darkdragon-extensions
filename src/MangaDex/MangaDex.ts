@@ -22,7 +22,7 @@ const MD_API = 'https://api.mangadex.org'
 const MD_UPLOADS = 'https://uploads.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '2.0.8', // Bump version
+    version: '2.0.9', // Bump version per UI update
     name: 'MangaDex (EN)',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -44,7 +44,7 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 5, // Aumentato leggermente per gestire il parallelo
+        requestsPerSecond: 5,
         requestTimeout: 25000
     })
 
@@ -212,21 +212,20 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        // 1. Definisci e invia subito le sezioni (UI veloce)
+        // UI IMPROVEMENT: Sezioni con copertine grandi e Emoji
         const sections = [
-            App.createHomeSection({ id: 'popular', title: 'Popular', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
-            App.createHomeSection({ id: 'latest', title: 'Latest Updates', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
-            App.createHomeSection({ id: 'recently_added', title: 'Recently Added', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
-            App.createHomeSection({ id: 'recommended', title: 'Recommended (Top Rated)', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
-            App.createHomeSection({ id: 'featured', title: 'Featured (Monthly)', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
-            App.createHomeSection({ id: 'self_published', title: 'Self-Published', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
+            App.createHomeSection({ id: 'popular', title: 'Popular 🔥', containsMoreItems: true, type: HomeSectionType.singleRowLarge }), // Large Cover
+            App.createHomeSection({ id: 'latest', title: 'Latest Updates 🆙', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
+            App.createHomeSection({ id: 'recently_added', title: 'Recently Added 🆕', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
+            App.createHomeSection({ id: 'recommended', title: 'Recommended (Top Rated) ⭐', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
+            App.createHomeSection({ id: 'featured', title: 'Featured (Monthly) 🌟', containsMoreItems: true, type: HomeSectionType.singleRowLarge }), // Large Cover
+            App.createHomeSection({ id: 'self_published', title: 'Self-Published 🖊️', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
         ]
 
         for (const section of sections) {
             sectionCallback(section)
         }
 
-        // 2. Parametri ottimizzati (solo cover_art per la home, niente author/artist per risparmiare banda)
         const baseParams = 'limit=10&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&availableTranslatedLanguage[]=en'
 
         const urls: Record<string, string> = {
@@ -238,7 +237,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
             self_published: `${MD_API}/manga?${baseParams}&originalLanguage[]=en&order[createdAt]=desc`
         }
 
-        // 3. FIX: Torna a usare Promise.all per la velocità, ma il requestManager gestirà il throttling (5 req/s)
         const promises = Object.keys(urls).map(async (sectionId) => {
             try {
                 const url = urls[sectionId]
