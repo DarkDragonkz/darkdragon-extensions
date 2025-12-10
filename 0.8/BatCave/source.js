@@ -857,30 +857,59 @@ var _Sources = (() => {
       return results;
     }
     parseHomeSections($, sectionCallback) {
+      const featuredSection = App.createHomeSection({
+        id: "featured",
+        title: "Featured Comics \u{1F525}",
+        containsMoreItems: false,
+        type: import_types.HomeSectionType.singleRowLarge
+        // <-- Grande come richiesto
+      });
       const hotSection = App.createHomeSection({
         id: "hot",
-        title: "Hot New Releases \u{1F525}",
+        title: "Hot New Releases \u26A1",
         containsMoreItems: false,
         type: import_types.HomeSectionType.singleRowNormal
+        // <-- Piccola
       });
       const topRatedSection = App.createHomeSection({
         id: "top_rated",
         title: "Top Rated \u2B50",
         containsMoreItems: false,
         type: import_types.HomeSectionType.singleRowNormal
+        // <-- Piccola
       });
       const justAddedSection = App.createHomeSection({
         id: "just_added",
         title: "Just Added \u{1F195}",
         containsMoreItems: false,
         type: import_types.HomeSectionType.singleRowNormal
+        // <-- Piccola
       });
       const latestSection = App.createHomeSection({
         id: "latest",
         title: "Latest Updates \u{1F199}",
         containsMoreItems: true,
         type: import_types.HomeSectionType.singleRowNormal
+        // <-- Piccola
       });
+      const featuredItems = [];
+      $(".sect--popular .poster").each((_, item) => {
+        const href = $(item).attr("href");
+        const id = href?.split("/").pop();
+        const title = $(".poster__title", item).text().trim();
+        let image = $("img", item).attr("data-src") ?? $("img", item).attr("src") ?? "";
+        if (image.startsWith("/")) image = BASE_URL + image;
+        if (id && title) {
+          featuredItems.push(App.createPartialSourceManga({
+            mangaId: id,
+            image,
+            title,
+            subtitle: void 0
+          }));
+        }
+      });
+      featuredSection.items = featuredItems;
+      sectionCallback(featuredSection);
       const hotItems = [];
       $(".sect--hot .poster").each((_, item) => {
         const href = $(item).attr("href");
@@ -961,7 +990,8 @@ var _Sources = (() => {
   // src/BatCave/BatCave.ts
   var DOMAIN = "https://batcave.biz";
   var BatCaveInfo = {
-    version: "1.0.7",
+    version: "1.0.8",
+    // Bump versione
     name: "BatCave",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -982,17 +1012,19 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.baseUrl = DOMAIN;
       this.parser = new BatCaveParser();
-      this.RETRIES = 5;
+      this.RETRIES = 10;
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 4,
-        requestTimeout: 2e4,
+        requestTimeout: 25e3,
         interceptor: {
           interceptRequest: async (request) => {
             request.headers = {
               ...request.headers ?? {},
               "Referer": `${DOMAIN}/`,
-              // Usiamo quello di default per passare meglio i controlli CF dell'app
-              "User-Agent": await this.requestManager.getDefaultUserAgent()
+              "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+              // Mobile UA
+              "Cache-Control": "no-cache",
+              "Pragma": "no-cache"
             };
             return request;
           },
@@ -1011,7 +1043,6 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, this.RETRIES);
-      this.checkResponseError(response);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseMangaDetails($, mangaId);
     }
@@ -1021,7 +1052,6 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, this.RETRIES);
-      this.checkResponseError(response);
       return this.parser.parseChapters(response.data ?? "");
     }
     async getChapterDetails(mangaId, chapterId) {
@@ -1031,7 +1061,6 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, this.RETRIES);
-      this.checkResponseError(response);
       return this.parser.parseChapterDetails(response.data ?? "", mangaId, chapterId);
     }
     async getSearchResults(query, metadata) {
@@ -1041,7 +1070,6 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, this.RETRIES);
-      this.checkResponseError(response);
       const $ = this.cheerio.load(response.data);
       const manga = this.parser.parseSearchResults($);
       const nextPage = manga.length > 0 ? page + 1 : void 0;
@@ -1056,29 +1084,21 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, this.RETRIES);
-      this.checkResponseError(response);
       const $ = this.cheerio.load(response.data);
       this.parser.parseHomeSections($, sectionCallback);
     }
     async getViewMoreItems(homepageSectionId, metadata) {
       return App.createPagedResults({ results: [] });
     }
-    // Funzione fondamentale per permettere il bypass Cloudflare dall'app
     async getCloudflareBypassRequestAsync() {
       return App.createRequest({
         url: this.baseUrl,
         method: "GET",
         headers: {
           "Referer": `${this.baseUrl}/`,
-          "User-Agent": await this.requestManager.getDefaultUserAgent()
+          "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
         }
       });
-    }
-    // Gestione errori per notificare l'app se serve il Cloudflare Bypass
-    checkResponseError(response) {
-      if (response.status === 403 || response.status === 503) {
-        throw new Error(`Cloudflare Bypass Required. Go to Settings > Sources > BatCave > Cloud Icon.`);
-      }
     }
   };
   return __toCommonJS(BatCave_exports);
