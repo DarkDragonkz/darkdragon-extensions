@@ -9,7 +9,7 @@ import {
     TagSection,
 } from '@paperback/types'
 
-// Mappatura ID -> Label dai file dell'autore originale
+// Mappatura ID -> Label
 const GENRES = [
     { id: "6", value: "Action" }, { id: "87264", value: "Adult" }, { id: "7", value: "Adventure" },
     { id: "8", value: "Boys Love" }, { id: "9", value: "Comedy" }, { id: "10", value: "Crime" },
@@ -39,17 +39,12 @@ const THEMES = [
     { id: "67", value: "Zombies" }
 ]
 
-const DEMOGRAPHICS = [
-    { id: "1", value: "Shoujo" }, { id: "2", value: "Shounen" }, { id: "3", value: "Josei" }, { id: "4", value: "Seinen" }
-]
-
 export class ComixParser {
 
     parseMangaDetails(data: any, mangaId: string): SourceManga {
         const manga = data.result
         
         const title = manga.title || 'Unknown'
-        // Priorità alle immagini grandi
         const image = manga.poster?.large || manga.poster?.medium || manga.poster?.small || 'https://paperback.moe/icons/logo-alt.svg'
         const desc = manga.synopsis || 'No description available'
         
@@ -58,16 +53,13 @@ export class ComixParser {
         else if (manga.status === 'on_hiatus') status = 'Hiatus'
         else if (manga.status === 'discontinued') status = 'Discontinued'
 
-        // Autori e Artisti
         const authors = manga.author?.map((a: any) => a.title).join(', ') || 'Unknown'
         const artists = manga.artist?.map((a: any) => a.title).join(', ') || 'Unknown'
 
-        // Tags e Generi
         const termIds: number[] = manga.term_ids || []
         const genresTags: Tag[] = []
         const themesTags: Tag[] = []
 
-        // Mappa gli ID ai nomi usando le costanti
         GENRES.forEach(g => {
             if (termIds.includes(Number(g.id))) genresTags.push(App.createTag({ id: g.id, label: g.value }))
         })
@@ -96,7 +88,8 @@ export class ComixParser {
     parseChapters(chaptersData: any[]): Chapter[] {
         const chapters: Chapter[] = []
 
-        for (const chap of chaptersData) {
+        for (let i = 0; i < chaptersData.length; i++) {
+            const chap = chaptersData[i]
             const id = String(chap.chapter_id)
             
             let title = chap.name || ''
@@ -104,17 +97,14 @@ export class ComixParser {
             
             if (!title) title = `Chapter ${chap.number}`
             
-            // Aggiungi info volume se presente
             let volStr = ''
             if (chap.volume > 0) volStr = `Vol.${chap.volume} `
 
-            // Titolo formattato: "Vol.1 Chapter 10" o "Chapter 10: Title"
             let finalTitle = `${volStr}${title}`
             if (chap.name && !chap.name.includes('Chapter')) {
                  finalTitle = `${volStr}Ch. ${chap.number} - ${chap.name}`
             }
 
-            // Data
             const time = new Date(chap.updated_at * 1000)
 
             chapters.push(App.createChapter({
@@ -124,7 +114,8 @@ export class ComixParser {
                 volume: chap.volume || 0,
                 time: time,
                 langCode: chap.language || 'en',
-                group: chap.scanlation_group?.name || undefined
+                group: chap.scanlation_group?.name || undefined,
+                sortingIndex: i // FIX: Assegna un indice basato sull'ordine dell'API
             }))
         }
         
@@ -169,7 +160,6 @@ export class ComixParser {
         return results
     }
 
-    // Metodo helper per le sezioni della home
     parseHomeSectionItems(data: any): PartialSourceManga[] {
         return this.parseSearchResults(data)
     }

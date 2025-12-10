@@ -24,7 +24,7 @@ const BASE_URL = 'https://comix.to'
 const API_URL = 'https://comix.to/api/v2'
 
 export const ComixInfo: SourceInfo = {
-    version: '2.0.2',
+    version: '2.0.4', // Bump version (Order Fix)
     name: 'Comix',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -72,7 +72,6 @@ export class Comix implements SearchResultsProviding, MangaProviding, ChapterPro
     }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
-        // API: /api/v2/manga/{id}?includes[]=author&includes[]=artist
         const request = App.createRequest({
             url: `${this.apiUrl}/manga/${mangaId}?includes[]=author&includes[]=artist`,
             method: 'GET'
@@ -83,30 +82,39 @@ export class Comix implements SearchResultsProviding, MangaProviding, ChapterPro
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        // Logica di paginazione API per ottenere TUTTI i capitoli
-        let allChaptersData: any[] = []
-        let page = 1
-        const limit = 100 // Limite API
-        let hasMore = true
+        // FIX ORDINE: Rimosso &order[number]=desc
+        // Lasciamo che sia il sito a darci l'ordine corretto (solitamente per data/inserimento)
+        const limit = 100 
+        const request = App.createRequest({
+            url: `${this.apiUrl}/manga/${mangaId}/chapters?page=1&limit=${limit}`,
+            method: 'GET'
+        })
+        
+        const response = await this.requestManager.schedule(request, 1)
+        const data = JSON.parse(response.data ?? '{}')
+        
+        let allChaptersData = data.result?.items || []
+        const pagination = data.result?.pagination
+        const lastPage = pagination?.last_page || 1
 
-        while (hasMore) {
-            const request = App.createRequest({
-                url: `${this.apiUrl}/manga/${mangaId}/chapters?page=${page}&limit=${limit}&order[number]=desc`,
-                method: 'GET'
-            })
-            
-            const response = await this.requestManager.schedule(request, 1)
-            const data = JSON.parse(response.data ?? '{}')
-            const items = data.result?.items || []
-            const pagination = data.result?.pagination
-            
-            allChaptersData = allChaptersData.concat(items)
+        if (lastPage > 1) {
+            const promises = []
+            for (let page = 2; page <= lastPage; page++) {
+                const req = App.createRequest({
+                    // Rimosso ordinamento anche qui
+                    url: `${this.apiUrl}/manga/${mangaId}/chapters?page=${page}&limit=${limit}`,
+                    method: 'GET'
+                })
+                promises.push(this.requestManager.schedule(req, 1))
+            }
 
-            // Controlla se abbiamo raggiunto l'ultima pagina
-            if (pagination && pagination.last_page && page < pagination.last_page) {
-                page++
-            } else {
-                hasMore = false
+            const responses = await Promise.all(promises)
+            
+            for (const res of responses) {
+                const pageData = JSON.parse(res.data ?? '{}')
+                if (pageData.result?.items) {
+                    allChaptersData = allChaptersData.concat(pageData.result.items)
+                }
             }
         }
 
@@ -114,7 +122,6 @@ export class Comix implements SearchResultsProviding, MangaProviding, ChapterPro
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // API: /api/v2/chapters/{id}
         const request = App.createRequest({
             url: `${this.apiUrl}/chapters/${chapterId}`,
             method: 'GET'
@@ -150,42 +157,36 @@ export class Comix implements SearchResultsProviding, MangaProviding, ChapterPro
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        // Definisci le sezioni (con UI Premium)
         const popularSection = App.createHomeSection({ id: 'popular', title: 'Popular 🔥', containsMoreItems: true, type: HomeSectionType.singleRowLarge })
         const followSection = App.createHomeSection({ id: 'follow', title: 'Most Followed 💖', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
         const recentSection = App.createHomeSection({ id: 'recent', title: 'Recently Added 🆕', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
         const updatesHotSection = App.createHomeSection({ id: 'updatesHot', title: 'Latest Hot Updates ⚡', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
         const updatesNewSection = App.createHomeSection({ id: 'updatesNew', title: 'Latest Updates 🆙', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
 
-        // 1. Popular
-        const reqPopular = App.createRequest({ url: `${this.apiUrl}/top?type=trending&days=7&limit=15&includes[]=author`, method: 'GET' })
-        this.requestManager.schedule(reqPopular, 1).then(res => {
+        const requestPopular = App.createRequest({ url: `${this.apiUrl}/top?type=trending&days=7&limit=15&includes[]=author`, method: 'GET' })
+        this.requestManager.schedule(requestPopular, 1).then(res => {
             popularSection.items = this.parser.parseHomeSectionItems(JSON.parse(res.data ?? '{}'))
             sectionCallback(popularSection)
         })
 
-        // 2. Follow
-        const reqFollow = App.createRequest({ url: `${this.apiUrl}/top?type=follows&days=7&limit=20&includes[]=author`, method: 'GET' })
-        this.requestManager.schedule(reqFollow, 1).then(res => {
+        const requestFollow = App.createRequest({ url: `${this.apiUrl}/top?type=follows&days=7&limit=20&includes[]=author`, method: 'GET' })
+        this.requestManager.schedule(requestFollow, 1).then(res => {
             followSection.items = this.parser.parseHomeSectionItems(JSON.parse(res.data ?? '{}'))
             sectionCallback(followSection)
         })
 
-        // 3. Recent
-        const reqRecent = App.createRequest({ url: `${this.apiUrl}/manga?order[created_at]=desc&page=1&limit=20&includes[]=author`, method: 'GET' })
-        this.requestManager.schedule(reqRecent, 1).then(res => {
+        const requestRecent = App.createRequest({ url: `${this.apiUrl}/manga?order[created_at]=desc&page=1&limit=20&includes[]=author`, method: 'GET' })
+        this.requestManager.schedule(requestRecent, 1).then(res => {
             recentSection.items = this.parser.parseHomeSectionItems(JSON.parse(res.data ?? '{}'))
             sectionCallback(recentSection)
         })
 
-        // 4. Updates Hot
         const reqUpdatesHot = App.createRequest({ url: `${this.apiUrl}/manga?order[chapter_updated_at]=desc&page=1&limit=20&scope=hot`, method: 'GET' })
         this.requestManager.schedule(reqUpdatesHot, 1).then(res => {
             updatesHotSection.items = this.parser.parseHomeSectionItems(JSON.parse(res.data ?? '{}'))
             sectionCallback(updatesHotSection)
         })
 
-        // 5. Updates New
         const reqUpdatesNew = App.createRequest({ url: `${this.apiUrl}/manga?order[chapter_updated_at]=desc&page=1&limit=20&scope=new`, method: 'GET' })
         this.requestManager.schedule(reqUpdatesNew, 1).then(res => {
             updatesNewSection.items = this.parser.parseHomeSectionItems(JSON.parse(res.data ?? '{}'))
