@@ -187,12 +187,12 @@ export class MangaWorldParser {
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
         
-        // --- 1. Manga del Mese (Featured) ---
+        // --- 1. Manga del Mese ---
         const section2 = App.createHomeSection({
             id: '2',
             title: 'Manga del Mese 🌟',
             containsMoreItems: true,
-            type: HomeSectionType.featured // <--- CAMBIATO IN FEATURED (Carosello grande)
+            type: HomeSectionType.singleRowLarge // <--- CAMBIATO: Ora le copertine sono intere e grandi
         })
 
         // --- 2. Ultimi Capitoli ---
@@ -251,12 +251,12 @@ export class MangaWorldParser {
             })
         }
 
-        // Popola Hot Titles (Featured)
+        // Popola Hot Titles
         let i = 0
         for (const obj of arrHotTitle) {
             hotTitles.push(processEntry(obj, 'hot'))
             i++
-            if (i >= 10) break // Limita a 10 per il carosello
+            if (i >= 10) break 
         }
         section2.items = hotTitles
         sectionCallback(section2)
