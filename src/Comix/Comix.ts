@@ -22,7 +22,7 @@ import { ComixParser } from './ComixParser'
 const DOMAIN = 'https://comix.to'
 
 export const ComixInfo: SourceInfo = {
-    version: '1.0.1',
+    version: '1.0.2',
     name: 'Comix',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -85,13 +85,15 @@ export class Comix implements SearchResultsProviding, MangaProviding, ChapterPro
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        return this.parser.parseChapters(response.data ?? '')
+        // Passiamo requestManager per fare la chiamata API
+        return this.parser.parseChapters(response.data ?? '', this.requestManager)
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
         let url = chapterId
         if (!url.startsWith('http')) {
-            url = `${this.baseUrl}${url.startsWith('/') ? '' : '/'}${url}`
+            // Costruiamo l'URL completo: /title/{mangaId}/{chapterId}
+            url = `${this.baseUrl}/title/${mangaId}/${chapterId}`
         }
 
         const request = App.createRequest({
@@ -127,8 +129,6 @@ export class Comix implements SearchResultsProviding, MangaProviding, ChapterPro
         })
 
         const response = await this.requestManager.schedule(request, 1)
-        
-        // FIX: Passiamo this.cheerio al parser
         this.parser.parseHomeSections(this.cheerio, response.data ?? '', sectionCallback)
     }
 
