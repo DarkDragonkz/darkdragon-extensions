@@ -448,7 +448,7 @@ var _Sources = (() => {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.urlEncodeObject = exports.convertTime = exports.Source = void 0;
-      var Source = class {
+      var Source2 = class {
         constructor(cheerio) {
           this.cheerio = cheerio;
         }
@@ -465,7 +465,7 @@ var _Sources = (() => {
           return this.getSearchTags?.();
         }
       };
-      exports.Source = Source;
+      exports.Source = Source2;
       function convertTime(timeAgo) {
         let time;
         let trimmed = Number((/\d*/.exec(timeAgo) ?? [])[0]);
@@ -613,15 +613,15 @@ var _Sources = (() => {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.ContentRating = exports.SourceIntents = void 0;
-      var SourceIntents2;
-      (function(SourceIntents3) {
-        SourceIntents3[SourceIntents3["MANGA_CHAPTERS"] = 1] = "MANGA_CHAPTERS";
-        SourceIntents3[SourceIntents3["MANGA_TRACKING"] = 2] = "MANGA_TRACKING";
-        SourceIntents3[SourceIntents3["HOMEPAGE_SECTIONS"] = 4] = "HOMEPAGE_SECTIONS";
-        SourceIntents3[SourceIntents3["COLLECTION_MANAGEMENT"] = 8] = "COLLECTION_MANAGEMENT";
-        SourceIntents3[SourceIntents3["CLOUDFLARE_BYPASS_REQUIRED"] = 16] = "CLOUDFLARE_BYPASS_REQUIRED";
-        SourceIntents3[SourceIntents3["SETTINGS_UI"] = 32] = "SETTINGS_UI";
-      })(SourceIntents2 = exports.SourceIntents || (exports.SourceIntents = {}));
+      var SourceIntents;
+      (function(SourceIntents2) {
+        SourceIntents2[SourceIntents2["MANGA_CHAPTERS"] = 1] = "MANGA_CHAPTERS";
+        SourceIntents2[SourceIntents2["MANGA_TRACKING"] = 2] = "MANGA_TRACKING";
+        SourceIntents2[SourceIntents2["HOMEPAGE_SECTIONS"] = 4] = "HOMEPAGE_SECTIONS";
+        SourceIntents2[SourceIntents2["COLLECTION_MANAGEMENT"] = 8] = "COLLECTION_MANAGEMENT";
+        SourceIntents2[SourceIntents2["CLOUDFLARE_BYPASS_REQUIRED"] = 16] = "CLOUDFLARE_BYPASS_REQUIRED";
+        SourceIntents2[SourceIntents2["SETTINGS_UI"] = 32] = "SETTINGS_UI";
+      })(SourceIntents = exports.SourceIntents || (exports.SourceIntents = {}));
       var ContentRating2;
       (function(ContentRating3) {
         ContentRating3["EVERYONE"] = "EVERYONE";
@@ -833,36 +833,42 @@ var _Sources = (() => {
       }
       return chapters;
     }
-    parseChapterDetails($, mangaId, chapterId, requestManager, baseUrl, cheerio) {
+    parseChapterDetails($, mangaId, chapterId) {
       const pages = [];
-      $("img.manga_pic").each((_, img) => {
-        const src = $(img).attr("src");
-        if (src) pages.push(src);
-      });
-      if (pages.length === 0) {
-        $('div[align="center"] img').each((_, img) => {
-          const src = $(img).attr("src");
-          if (src && src.startsWith("http") && !src.includes("logo") && !src.includes("icon")) {
+      let images = $("img.manga_pic").toArray();
+      if (images.length === 0) {
+        images = $(".changepage img").toArray();
+      }
+      if (images.length === 0) {
+        images = $('div[id^="page"] img, .pic_box img').toArray();
+      }
+      for (const img of images) {
+        const $img = $(img);
+        let src = $img.attr("src") || $img.attr("data-src") || $img.attr("original") || $img.attr("data-original");
+        if (src) {
+          if (src.startsWith("//")) src = `https:${src}`;
+          else if (src.startsWith("/")) src = `https://it.ninemanga.com${src}`;
+          if (!src.includes("logo") && !src.includes("icon") && !src.includes("loading")) {
             pages.push(src);
           }
-        });
+        }
       }
-      if (pages.length === 0) {
+      const cleanPages = [...new Set(pages)];
+      if (cleanPages.length === 0) {
         const scripts = $("script").toArray();
         for (const script of scripts) {
           const content = $(script).html();
           if (content && (content.includes("p_urls") || content.includes("img_url"))) {
             const matches = content.match(/(https?:\/\/[^"']+\.(?:jpg|png|webp|jpeg))/gi);
             if (matches && matches.length > 0) {
-              for (const m of matches) pages.push(m);
+              for (const m of matches) cleanPages.push(m);
               break;
             }
           }
         }
       }
-      const cleanPages = [...new Set(pages)].filter((p) => !p.includes("logo") && !p.includes("icon"));
       if (cleanPages.length === 0) {
-        throw new Error("Nessuna pagina trovata. Riprova o apri nel browser.");
+        throw new Error("Nessuna pagina trovata. Riprova pi\xF9 tardi.");
       }
       return App.createChapterDetails({
         id: chapterId,
@@ -938,83 +944,41 @@ var _Sources = (() => {
     }
   };
 
-  // src/helper.ts
-  var URLBuilder = class {
-    constructor(baseUrl) {
-      this.parameters = {};
-      this.pathComponents = [];
-      this.baseUrl = baseUrl.replace(/(^\/)?(?=.*)(\/$)?/gim, "");
-    }
-    addPathComponent(component) {
-      this.pathComponents.push(component.replace(/(^\/)?(?=.*)(\/$)?/gim, ""));
-      return this;
-    }
-    addQueryParameter(key, value) {
-      this.parameters[key] = value;
-      return this;
-    }
-    buildUrl({ addTrailingSlash, includeUndefinedParameters } = { addTrailingSlash: false, includeUndefinedParameters: false }) {
-      let finalUrl = this.baseUrl + "/";
-      finalUrl += this.pathComponents.join("/");
-      finalUrl += addTrailingSlash ? "/" : "";
-      finalUrl += Object.values(this.parameters).length > 0 ? "?" : "";
-      finalUrl += Object.entries(this.parameters).map((entry) => {
-        if (entry[1] == null && !includeUndefinedParameters) {
-          return void 0;
-        }
-        if (Array.isArray(entry[1])) {
-          return `${entry[0]}=` + entry[1].map((value) => value || includeUndefinedParameters ? `${value},` : void 0).filter((x) => x !== void 0).join("");
-        }
-        if (typeof entry[1] === "object") {
-          return Object.keys(entry[1]).map((key) => `${entry[0]}[${key}]=${entry[1][key]}`).join("&");
-        }
-        return `${entry[0]}=${entry[1]}`;
-      }).filter((x) => x !== void 0).join("&");
-      return finalUrl;
-    }
-  };
-
   // src/NineMangaIT/NineMangaIT.ts
-  var IT_DOMAIN = "https://it.ninemanga.com";
+  var NINE_MANGA_IT_DOMAIN = "https://it.ninemanga.com";
   var NineMangaITInfo = {
-    version: "1.2.0",
-    // Bump version per refresh cache
+    version: "2.0.1",
     name: "NineMangaIT",
-    description: "Extension that pulls manga from it.ninemanga.com",
-    author: "DarkDragonkzz",
     icon: "icon.png",
-    contentRating: import_types2.ContentRating.EVERYONE,
-    language: "it",
-    websiteBaseURL: IT_DOMAIN,
+    author: "Paperback",
+    authorWebsite: "https://github.com/Paperback-iOS",
+    description: "Extension that pulls manga from NineManga IT",
+    contentRating: import_types2.ContentRating.MATURE,
+    websiteBaseURL: NINE_MANGA_IT_DOMAIN,
     sourceTags: [
       {
-        text: "Italian \u{1F1EE}\u{1F1F9}",
-        type: import_types2.BadgeColor.RED
+        text: "Italian",
+        type: BadgeColor.GREY
+      },
+      {
+        text: "Notifications",
+        type: BadgeColor.GREEN
       }
-    ],
-    intents: import_types2.SourceIntents.MANGA_CHAPTERS | import_types2.SourceIntents.HOMEPAGE_SECTIONS | import_types2.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
+    ]
   };
-  var NineMangaIT = class {
-    constructor(cheerio) {
-      this.cheerio = cheerio;
-      this.baseUrl = IT_DOMAIN;
-      this.parser = new NineMangaITParser();
-      this.userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
+  var NineMangaIT = class extends import_types2.Source {
+    constructor() {
+      super(...arguments);
       this.requestManager = App.createRequestManager({
-        requestsPerSecond: 4,
-        // Aumentato leggermente per gestire il multipage fetch
-        requestTimeout: 25e3,
+        requestsPerSecond: 3,
+        requestTimeout: 15e3,
         interceptor: {
           interceptRequest: async (request) => {
             request.headers = {
               ...request.headers ?? {},
               ...{
-                "Referer": `${this.baseUrl}/`,
-                "User-Agent": this.userAgent,
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
-                "Connection": "keep-alive",
-                "Cookie": "is_warning=1; my_limit=1"
+                "referer": NINE_MANGA_IT_DOMAIN,
+                "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
               }
             };
             return request;
@@ -1024,148 +988,63 @@ var _Sources = (() => {
           }
         }
       });
-    }
-    getMangaShareUrl(mangaId) {
-      return `${this.baseUrl}/manga/${mangaId}.html`;
-    }
-    getMangaUrl(mangaId) {
-      const id = mangaId.endsWith(".html") ? mangaId : `${mangaId}.html`;
-      return `${this.baseUrl}/manga/${id}`;
+      this.baseUrl = NINE_MANGA_IT_DOMAIN;
+      this.parser = new NineMangaITParser();
     }
     async getMangaDetails(mangaId) {
       const request = App.createRequest({
-        url: this.getMangaUrl(mangaId) + "?waring=1",
+        url: `${this.baseUrl}/manga/${mangaId}.html`,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      this.checkResponseError(response);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseMangaDetails($, mangaId);
     }
     async getChapters(mangaId) {
       const request = App.createRequest({
-        url: this.getMangaUrl(mangaId) + "?waring=1",
+        url: `${this.baseUrl}/manga/${mangaId}.html?warning=1`,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      this.checkResponseError(response);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseChapters($, mangaId);
     }
     async getChapterDetails(mangaId, chapterId) {
-      let requestUrl = chapterId;
-      if (!requestUrl.startsWith("http")) {
-        if (!requestUrl.startsWith("/")) requestUrl = `/chapter/${mangaId}/${requestUrl}`;
-        requestUrl = `${this.baseUrl}${requestUrl}`;
-      }
-      if (!requestUrl.endsWith(".html")) requestUrl += ".html";
-      const separator = requestUrl.includes("?") ? "&" : "?";
-      const listUrl = requestUrl + separator + "style=list";
       const request = App.createRequest({
-        url: listUrl,
-        method: "GET"
+        url: `${this.baseUrl}/chapter/${chapterId}.html`,
+        method: "GET",
+        param: "?style=list"
       });
       const response = await this.requestManager.schedule(request, 1);
-      this.checkResponseError(response);
       const $ = this.cheerio.load(response.data);
-      const hasPagination = $('select[name="page"]').length > 0;
-      const imageCount = $("img.manga_pic").length;
-      if (hasPagination && imageCount === 1) {
-        const pages = [];
-        const firstImg = $("img.manga_pic").attr("src");
-        if (firstImg) pages.push(firstImg);
-        const pageLinks = [];
-        $('select[name="page"] option').each((_, el) => {
-          if (!$(el).prop("selected")) {
-            const val = $(el).attr("value");
-            if (val) pageLinks.push(val);
-          }
-        });
-        const promises = pageLinks.map((link) => {
-          return (async () => {
-            let pUrl = link;
-            if (!pUrl.startsWith("http")) pUrl = this.baseUrl + pUrl;
-            const r = App.createRequest({ url: pUrl, method: "GET" });
-            const res = await this.requestManager.schedule(r, 1);
-            const $p = this.cheerio.load(res.data);
-            let src = $p("img.manga_pic").attr("src");
-            if (!src) src = $p('div[align="center"] img').attr("src");
-            return src;
-          })();
-        });
-        const results = await Promise.all(promises);
-        for (const img of results) {
-          if (img && !img.includes("logo") && !img.includes("icon")) {
-            pages.push(img);
-          }
-        }
-        const uniquePages = [...new Set(pages)];
-        return App.createChapterDetails({
-          id: chapterId,
-          mangaId,
-          pages: uniquePages
-        });
-      }
-      return this.parser.parseChapterDetails($, mangaId, chapterId, this.requestManager, this.baseUrl, this.cheerio);
-    }
-    async getSearchResults(query, metadata) {
-      let page = metadata?.page ?? 1;
-      if (page === -1) return App.createPagedResults({ results: [], metadata: { page: -1 } });
-      const request = App.createRequest({
-        url: new URLBuilder(this.baseUrl).addPathComponent("search").addQueryParameter("name_sel", "contain").addQueryParameter("wd", encodeURIComponent(query?.title ?? "")).addQueryParameter("page", page.toString()).addQueryParameter("type", "high").buildUrl({ addTrailingSlash: true, includeUndefinedParameters: false }),
-        method: "GET"
-      });
-      const response = await this.requestManager.schedule(request, 1);
-      this.checkResponseError(response);
-      const $ = this.cheerio.load(response.data);
-      const manga = this.parser.parseSearchResults($, this.baseUrl);
-      page++;
-      if (manga.length < 10) page = -1;
-      return App.createPagedResults({
-        results: manga,
-        metadata: { page }
-      });
+      return this.parser.parseChapterDetails($, mangaId, chapterId);
     }
     async getHomePageSections(sectionCallback) {
-      const requestHome = App.createRequest({ url: this.baseUrl, method: "GET" });
-      const responseHome = await this.requestManager.schedule(requestHome, 1);
-      this.checkResponseError(responseHome);
-      const $home = this.cheerio.load(responseHome.data);
-      this.parser.parseHomeSections($home, $home, sectionCallback, this.baseUrl);
+      const request = App.createRequest({
+        url: this.baseUrl,
+        method: "GET"
+      });
+      const response = await this.requestManager.schedule(request, 1);
+      const $ = this.cheerio.load(response.data);
+      this.parser.parseHomeSections($, $, sectionCallback, this.baseUrl);
     }
     async getViewMoreItems(homepageSectionId, metadata) {
-      let page = metadata?.page ?? 1;
-      let url = "";
-      if (homepageSectionId === "recent") url = `${this.baseUrl}/list/New-Update/?page=${page}`;
-      else if (homepageSectionId === "popular") url = `${this.baseUrl}/list/Hot-Book/?page=${page}`;
-      else if (homepageSectionId === "new") url = `${this.baseUrl}/list/New-Book/?page=${page}`;
-      else return App.createPagedResults({ results: [] });
-      const request = App.createRequest({ url, method: "GET" });
-      const response = await this.requestManager.schedule(request, 1);
-      this.checkResponseError(response);
-      const $ = this.cheerio.load(response.data);
-      const manga = this.parser.parseSearchResults($, this.baseUrl);
-      if (manga.length > 0) {
-        return App.createPagedResults({ results: manga, metadata: { page: page + 1 } });
-      }
       return App.createPagedResults({ results: [] });
     }
-    async getCloudflareBypassRequest() {
-      return App.createRequest({
-        url: this.baseUrl,
-        method: "GET",
-        headers: {
-          "User-Agent": this.userAgent,
-          "Referer": `${this.baseUrl}/`,
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7"
-        }
+    async getSearchResults(query, metadata) {
+      const page = metadata?.page ?? 1;
+      const searchUrl = `${this.baseUrl}/search/?name_sel=contain&wd=${encodeURIComponent(query.title ?? "")}&page=${page}`;
+      const request = App.createRequest({
+        url: searchUrl,
+        method: "GET"
       });
-    }
-    checkResponseError(response) {
-      if (response.status === 403 || response.status === 503) {
-        throw new Error(`Cloudflare Bypass Required. Go to Settings > Sources > NineMangaIT > Cloud Icon.`);
-      }
+      const response = await this.requestManager.schedule(request, 1);
+      const $ = this.cheerio.load(response.data);
+      const manga = this.parser.parseSearchResults($, this.baseUrl);
+      return App.createPagedResults({
+        results: manga,
+        metadata: manga.length > 0 ? { page: page + 1 } : void 0
+      });
     }
   };
   return __toCommonJS(NineMangaIT_exports);
