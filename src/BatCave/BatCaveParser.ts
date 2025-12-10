@@ -62,7 +62,6 @@ export class BatCaveParser {
     parseChapters(html: string): Chapter[] {
         const chapters: Chapter[] = []
         
-        // Estraiamo il JSON che contiene tutti i dati precisi
         const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s)
         if (!scriptData) return []
 
@@ -72,8 +71,7 @@ export class BatCaveParser {
                 for (const chap of data.chapters) {
                     const id = String(chap.id)
                     
-                    // Pulizia titolo: rimuove underscore e spazi multipli
-                    // Es: "The_Sandman_(1989)_Issue_#75" -> "The Sandman (1989) Issue #75"
+                    // Pulizia titolo
                     let title = (chap.title || `Chapter ${chap.id}`).replace(/_/g, ' ').replace(/\s+/g, ' ').trim()
                     
                     let time = new Date()
@@ -84,14 +82,11 @@ export class BatCaveParser {
                         }
                     }
 
-                    // --- SOLUZIONE ORDINE ---
-                    // Usiamo 'posi' (posizione) fornito dal sito.
-                    // Questo garantisce che l'ordine sia IDENTICO a quello del sito web.
+                    // Usa la posizione del sito per l'ordinamento (risolve problemi di numerazione)
                     let chapNum = 0
                     if (chap.posi) {
                         chapNum = parseFloat(chap.posi)
                     } else {
-                        // Fallback nel caso rarissimo manchi 'posi'
                         const numMatch = title.match(/#(\d+(\.\d+)?)/)
                         chapNum = numMatch ? parseFloat(numMatch[1]) : 0
                     }
@@ -99,7 +94,7 @@ export class BatCaveParser {
                     chapters.push(App.createChapter({
                         id: id,
                         name: title,
-                        chapNum: chapNum, // L'app ordinerà in base a questo numero
+                        chapNum: chapNum,
                         time: time,
                         langCode: 'en'
                     }))
@@ -166,12 +161,12 @@ export class BatCaveParser {
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
         
-        // 1. Hot Comics (Featured Large)
+        // 1. Hot Comics -> SingleRowLarge (Copertina Intera)
         const hotSection = App.createHomeSection({ 
             id: 'hot', 
             title: 'Hot New Releases 🔥', 
             containsMoreItems: false, 
-            type: HomeSectionType.singleRowLarge 
+            type: HomeSectionType.singleRowLarge // <-- FIX: Immagini grandi intere
         })
         
         const hotItems: PartialSourceManga[] = []
@@ -195,12 +190,12 @@ export class BatCaveParser {
         hotSection.items = hotItems
         sectionCallback(hotSection)
 
-        // 2. Latest Comics (List)
+        // 2. Latest Comics -> SingleRowLarge (Copertina Intera)
         const latestSection = App.createHomeSection({ 
             id: 'latest', 
             title: 'Newest Releases 🆙', 
             containsMoreItems: true, 
-            type: HomeSectionType.singleRowNormal 
+            type: HomeSectionType.singleRowLarge // <-- FIX: Anche qui immagini grandi intere
         })
 
         const latestItems: PartialSourceManga[] = []

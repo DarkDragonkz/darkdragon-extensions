@@ -22,7 +22,7 @@ import { BatCaveParser } from './BatCaveParser'
 const DOMAIN = 'https://batcave.biz'
 
 export const BatCaveInfo: SourceInfo = {
-    version: '1.0.1', // Bump versione
+    version: '1.0.3', // Bump versione
     name: 'BatCave',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -43,11 +43,14 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
     baseUrl = DOMAIN
     parser = new BatCaveParser()
     
+    // Aumentato drasticamente per evitare la home bianca all'avvio
+    RETRIES = 10 
+
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 4,
-        requestTimeout: 20000,
+        requestsPerSecond: 5, // Aumentato per caricamenti più rapidi
+        requestTimeout: 25000,
         interceptor: {
             interceptRequest: async (request: any) => {
                 request.headers = {
@@ -72,7 +75,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             url: `${this.baseUrl}/${mangaId}`,
             method: 'GET'
         })
-        const response = await this.requestManager.schedule(request, 1)
+        const response = await this.requestManager.schedule(request, this.RETRIES)
         const $ = this.cheerio.load(response.data)
         return this.parser.parseMangaDetails($, mangaId)
     }
@@ -82,8 +85,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             url: `${this.baseUrl}/${mangaId}`,
             method: 'GET'
         })
-        const response = await this.requestManager.schedule(request, 1)
-        // Passiamo l'HTML grezzo per estrarre il JSON
+        const response = await this.requestManager.schedule(request, this.RETRIES)
         return this.parser.parseChapters(response.data ?? '')
     }
 
@@ -93,7 +95,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             url: `${this.baseUrl}/reader/${mangaNumericId}/${chapterId}`,
             method: 'GET'
         })
-        const response = await this.requestManager.schedule(request, 1)
+        const response = await this.requestManager.schedule(request, this.RETRIES)
         return this.parser.parseChapterDetails(response.data ?? '', mangaId, chapterId)
     }
 
@@ -104,7 +106,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             method: 'GET'
         })
 
-        const response = await this.requestManager.schedule(request, 1)
+        const response = await this.requestManager.schedule(request, this.RETRIES)
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($)
         
@@ -122,7 +124,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             method: 'GET'
         })
 
-        const response = await this.requestManager.schedule(request, 1)
+        const response = await this.requestManager.schedule(request, this.RETRIES)
         const $ = this.cheerio.load(response.data)
         this.parser.parseHomeSections($, sectionCallback)
     }
