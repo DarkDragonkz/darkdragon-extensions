@@ -13,16 +13,20 @@ export class WeebCentralParser {
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
         let title = $('h1').first().text().trim()
-        if (!title) title = $('section:has(picture)').first().attr('data-tip') ?? ''
+        if (!title) title = $('section:has(picture)').first().attr('data-tip') ?? 'Unknown'
         
         const image = $('img[alt$=" cover"]').attr('src') ?? 'https://paperback.moe/icons/logo-alt.svg'
-        const desc = $('.whitespace-pre-wrap').text().trim()
-        const author = $('strong:contains("Author(s)")').next().find('a').text().trim()
+        
+        const desc = $('.whitespace-pre-wrap').text().trim() || 'No description available'
+        
+        const author = $('strong:contains("Author(s)")').next().find('a').text().trim() || 'Unknown'
 
-        const statusStr = $('strong:contains("Status")').next('a').text().trim()
-        let status = 'Unknown'
-        if (statusStr.toLowerCase().includes('ongoing')) status = 'Ongoing'
-        else if (statusStr.toLowerCase().includes('complete')) status = 'Completed'
+        // Parsing Status migliorato
+        const statusStr = $('strong:contains("Status")').next('a').text().trim().toLowerCase()
+        let status = 'Ongoing'
+        if (statusStr.includes('complete')) status = 'Completed'
+        else if (statusStr.includes('hiatus')) status = 'Hiatus'
+        else if (statusStr.includes('cancel')) status = 'Completed' // Spesso usato per cancellati
 
         const arrayTags: Tag[] = []
         $('strong:contains("Tags(s)")').nextAll('span').each((_: any, span: any) => {
@@ -41,7 +45,7 @@ export class WeebCentralParser {
                 status: status,
                 author: author,
                 tags: tagSections,
-                desc: desc || 'No description available'
+                desc: desc
             })
         })
     }
@@ -56,23 +60,18 @@ export class WeebCentralParser {
             // Cerchiamo il titolo nello span specifico
             let name = $(element).find('.grow span, span.font-bold').first().text().trim()
             
-            // Fallback se non trova lo span specifico
             if (!name) {
                 const clone = $(element).clone()
                 clone.find('time').remove()
                 name = clone.text().trim()
             }
 
-            // PULIZIA SOLO SPAZI (Cruciale per evitare il bug grafico)
-            // Rimuove i ritorni a capo (\n) e riduce gli spazi multipli
+            // Pulizia titolo
             name = name.replace(/(\r\n|\n|\r)/gm, " ").replace(/\s+/g, " ").trim()
 
             // Parsing del numero
             const numMatch = name.match(/(\d+(\.\d+)?)/g)
             const chapNum = numMatch ? parseFloat(numMatch[numMatch.length - 1] ?? '0') : 0
-
-            // NOTA: Ho rimosso il blocco che cancellava "Chapter X". 
-            // Ora il titolo sarà esattamente quello del sito (es. "Chapter 51").
 
             const timeStr = $(element).find('time').attr('datetime')
             const time = timeStr ? new Date(timeStr) : new Date()
@@ -156,16 +155,18 @@ export class WeebCentralParser {
     }
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
+        
+        // UI IMPROVEMENT: Sezione Hot in evidenza (Featured)
         const hotSection = App.createHomeSection({
             id: 'hot_updates',
-            title: 'Hot Updates',
+            title: 'Hot Updates 🔥',
             containsMoreItems: false,
-            type: HomeSectionType.singleRowNormal,
+            type: HomeSectionType.featured, // <-- Carosello grande
         })
         
         const latestSection = App.createHomeSection({
             id: 'latest_updates',
-            title: 'Latest Updates',
+            title: 'Latest Updates 🆙',
             containsMoreItems: true,
             type: HomeSectionType.singleRowNormal,
         })

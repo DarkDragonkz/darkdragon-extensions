@@ -22,7 +22,7 @@ import { URLBuilder } from '../helper'
 const DOMAIN = 'https://weebcentral.com'
 
 export const WeebCentralInfo: SourceInfo = {
-    version: '1.0.17',
+    version: '1.0.18',
     name: 'WeebCentral',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
@@ -54,7 +54,6 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
                     ...(request.headers ?? {}),
                     ...{
                         'referer': `${this.baseUrl}/`,
-                        // RIMOSSO User-Agent forzato
                     }
                 }
                 return request
