@@ -835,10 +835,8 @@ var _Sources = (() => {
     }
     async parseChapterDetails($, mangaId, chapterId, requestManager, cheerio, baseUrl) {
       const pages = [];
-      const firstImg = $("img.manga_pic").attr("src");
-      if (firstImg) pages.push(firstImg);
-      const otherPagesSet = /* @__PURE__ */ new Set();
       const options = $("select.sl-page option").toArray();
+      const otherPages = [];
       let firstPageValue = "";
       for (let i = 0; i < options.length; i++) {
         const option = options[i];
@@ -847,14 +845,20 @@ var _Sources = (() => {
         if (pageUrl.startsWith("/")) pageUrl = baseUrl + pageUrl;
         if (i === 0) {
           firstPageValue = pageUrl;
-          continue;
+        } else if (pageUrl === firstPageValue) {
+          break;
         }
-        if (pageUrl === firstPageValue) break;
-        if (!otherPagesSet.has(pageUrl)) {
-          otherPagesSet.add(pageUrl);
-        }
+        otherPages.push(pageUrl);
       }
-      const otherPages = Array.from(otherPagesSet);
+      if (otherPages.length === 0) {
+        const src = $("img.manga_pic").attr("src");
+        if (src) pages.push(src);
+        return App.createChapterDetails({
+          id: chapterId,
+          mangaId,
+          pages
+        });
+      }
       const promises = otherPages.map(async (url) => {
         try {
           const request = App.createRequest({
@@ -867,7 +871,16 @@ var _Sources = (() => {
           });
           const response = await requestManager.schedule(request, 1);
           const $page = cheerio.load(response.data);
-          const imgSrc = $page("img.manga_pic").attr("src");
+          let imgSrc = $page("img.manga_pic").attr("src");
+          if (!imgSrc) {
+            $page('div[align="center"] img').each((_, img) => {
+              const s = $(img).attr("src");
+              if (s && s.startsWith("http") && !s.includes("logo") && !s.includes("icon")) {
+                imgSrc = s;
+                return false;
+              }
+            });
+          }
           return imgSrc;
         } catch (e) {
           return null;
@@ -880,8 +893,7 @@ var _Sources = (() => {
       return App.createChapterDetails({
         id: chapterId,
         mangaId,
-        pages: [...new Set(pages)]
-        // Doppia sicurezza contro duplicati
+        pages
       });
     }
     parseSearchResults($, baseUrl) {
@@ -991,7 +1003,7 @@ var _Sources = (() => {
   // src/NineMangaIT/NineMangaIT.ts
   var IT_DOMAIN = "https://it.ninemanga.com";
   var NineMangaITInfo = {
-    version: "1.3.5",
+    version: "1.3.1",
     name: "NineMangaIT",
     description: "Extension that pulls manga from it.ninemanga.com",
     author: "DarkDragonkzz",
@@ -1012,13 +1024,9 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.baseUrl = IT_DOMAIN;
       this.parser = new NineMangaITParser();
-      // User-Agent Mobile Android (Mantenuto come richiesto per evitare ban e caricare la home)
       this.userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
-      // Aumentiamo i retries per risolvere il problema "Homepage non carica al primo colpo"
-      this.RETRIES = 5;
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 5,
-        // Aumentato per velocità
         requestTimeout: 25e3,
         interceptor: {
           interceptRequest: async (request) => {
@@ -1052,7 +1060,7 @@ var _Sources = (() => {
         url: this.getMangaUrl(mangaId) + "?waring=1",
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, this.RETRIES);
+      const response = await this.requestManager.schedule(request, 1);
       this.checkResponseError(response);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseMangaDetails($, mangaId);
@@ -1062,7 +1070,7 @@ var _Sources = (() => {
         url: this.getMangaUrl(mangaId) + "?waring=1",
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, this.RETRIES);
+      const response = await this.requestManager.schedule(request, 1);
       this.checkResponseError(response);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseChapters($, mangaId);
@@ -1079,7 +1087,7 @@ var _Sources = (() => {
         url,
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, this.RETRIES);
+      const response = await this.requestManager.schedule(request, 1);
       this.checkResponseError(response);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseChapterDetails($, mangaId, chapterId, this.requestManager, this.cheerio, this.baseUrl);
@@ -1091,7 +1099,7 @@ var _Sources = (() => {
         url: new URLBuilder(this.baseUrl).addPathComponent("search").addQueryParameter("name_sel", "contain").addQueryParameter("wd", encodeURIComponent(query?.title ?? "")).addQueryParameter("page", page.toString()).addQueryParameter("type", "high").buildUrl({ addTrailingSlash: true, includeUndefinedParameters: false }),
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, this.RETRIES);
+      const response = await this.requestManager.schedule(request, 1);
       this.checkResponseError(response);
       const $ = this.cheerio.load(response.data);
       const manga = this.parser.parseSearchResults($, this.baseUrl);
@@ -1104,7 +1112,7 @@ var _Sources = (() => {
     }
     async getHomePageSections(sectionCallback) {
       const requestHome = App.createRequest({ url: this.baseUrl, method: "GET" });
-      const responseHome = await this.requestManager.schedule(requestHome, this.RETRIES);
+      const responseHome = await this.requestManager.schedule(requestHome, 1);
       this.checkResponseError(responseHome);
       const $home = this.cheerio.load(responseHome.data);
       this.parser.parseHomeSections($home, $home, sectionCallback, this.baseUrl);
@@ -1117,7 +1125,7 @@ var _Sources = (() => {
       else if (homepageSectionId === "new") url = `${this.baseUrl}/list/New-Book/?page=${page}`;
       else return App.createPagedResults({ results: [] });
       const request = App.createRequest({ url, method: "GET" });
-      const response = await this.requestManager.schedule(request, this.RETRIES);
+      const response = await this.requestManager.schedule(request, 1);
       this.checkResponseError(response);
       const $ = this.cheerio.load(response.data);
       const manga = this.parser.parseSearchResults($, this.baseUrl);
@@ -1133,8 +1141,7 @@ var _Sources = (() => {
         headers: {
           "User-Agent": this.userAgent,
           "Referer": `${this.baseUrl}/`,
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7"
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         }
       });
     }
