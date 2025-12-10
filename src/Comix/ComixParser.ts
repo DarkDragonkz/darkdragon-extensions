@@ -1,14 +1,13 @@
 import {
     Chapter,
     ChapterDetails,
-    HomeSection,
-    HomeSectionType,
     SourceManga,
     PartialSourceManga,
     Tag,
     TagSection,
 } from '@paperback/types'
 
+// Definizioni costanti spostate per pulizia
 const GENRES = [
     { id: "6", value: "Action" }, { id: "87264", value: "Adult" }, { id: "7", value: "Adventure" },
     { id: "8", value: "Boys Love" }, { id: "9", value: "Comedy" }, { id: "10", value: "Crime" },
@@ -44,6 +43,7 @@ export class ComixParser {
         const manga = data.result
         
         const title = manga.title || 'Unknown'
+        // Priorità all'immagine Large
         const image = manga.poster?.large || manga.poster?.medium || manga.poster?.small || 'https://paperback.moe/icons/logo-alt.svg'
         const desc = manga.synopsis || 'No description available'
         
@@ -52,8 +52,9 @@ export class ComixParser {
         else if (manga.status === 'on_hiatus') status = 'Hiatus'
         else if (manga.status === 'discontinued') status = 'Discontinued'
 
-        const authors = manga.author?.map((a: any) => a.title).join(', ') || 'Unknown'
-        const artists = manga.artist?.map((a: any) => a.title).join(', ') || 'Unknown'
+        // Mapping degli autori con fallback
+        const authors = Array.isArray(manga.author) ? manga.author.map((a: any) => a.title).join(', ') : 'Unknown'
+        const artists = Array.isArray(manga.artist) ? manga.artist.map((a: any) => a.title).join(', ') : 'Unknown'
 
         const termIds: number[] = manga.term_ids || []
         const genresTags: Tag[] = []
@@ -91,30 +92,33 @@ export class ComixParser {
             const chap = chaptersData[i]
             const id = String(chap.chapter_id)
             
-            let title = chap.name || ''
+            // Logica titoli migliorata
             const num = parseFloat(chap.number) || 0
+            const volume = chap.volume || 0
             
-            if (!title) title = `Chapter ${chap.number}`
+            let name = ''
+            if (volume > 0) name += `Vol.${volume} `
+            name += `Ch.${num}`
             
-            let volStr = ''
-            if (chap.volume > 0) volStr = `Vol.${chap.volume} `
-
-            let finalTitle = `${volStr}${title}`
-            if (chap.name && !chap.name.includes('Chapter')) {
-                 finalTitle = `${volStr}Ch. ${chap.number} - ${chap.name}`
+            if (chap.name) {
+                // Evita ripetizioni tipo "Ch.1 - Chapter 1"
+                const cleanChapName = chap.name.replace(/chapter\s*\d+/gi, '').trim()
+                if (cleanChapName) {
+                    name += ` - ${cleanChapName}`
+                }
             }
 
             const time = new Date(chap.updated_at * 1000)
 
             chapters.push(App.createChapter({
                 id: id,
-                name: finalTitle,
+                name: name,
                 chapNum: num,
-                volume: chap.volume || 0,
+                volume: volume,
                 time: time,
                 langCode: chap.language || 'en',
                 group: chap.scanlation_group?.name || undefined,
-                sortingIndex: i // FIX: Ordine forzato basato sulla lista (0 = primo/più recente)
+                sortingIndex: i 
             }))
         }
         
@@ -145,7 +149,12 @@ export class ComixParser {
             const title = item.title
             const image = item.poster?.large || item.poster?.medium || 'https://paperback.moe/icons/logo-alt.svg'
             
-            const subtitle = item.latest_chapter ? `Ch. ${item.latest_chapter}` : undefined
+            let subtitle = undefined
+            if (item.latest_chapter) {
+                subtitle = `Ch. ${item.latest_chapter}`
+            } else if (item.status) {
+                subtitle = item.status === 'finished' ? 'Completed' : 'Ongoing'
+            }
 
             if (id && title) {
                 results.push(App.createPartialSourceManga({
@@ -157,9 +166,5 @@ export class ComixParser {
             }
         }
         return results
-    }
-
-    parseHomeSectionItems(data: any): PartialSourceManga[] {
-        return this.parseSearchResults(data)
     }
 }
