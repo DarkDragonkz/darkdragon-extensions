@@ -833,50 +833,48 @@ var _Sources = (() => {
       }
       return chapters;
     }
+    // --- LOGICA SEQUENZIALE SICURA (NO CRASH) ---
     async parseChapterDetails($, mangaId, chapterId, source) {
       const pages = [];
       const options = $("select.sl-page option").toArray();
-      const allPageUrls = [];
       for (const option of options) {
         let pageUrl = $(option).attr("value");
         if (!pageUrl) continue;
         if (pageUrl.startsWith("/")) pageUrl = source.baseUrl + pageUrl;
-        allPageUrls.push(pageUrl);
+        const images = await this.getImage(pageUrl, source);
+        for (const img of images) {
+          if (!pages.includes(img)) {
+            pages.push(img);
+          }
+        }
       }
-      if (allPageUrls.length === 0) {
+      if (pages.length === 0) {
         const img = $("img.manga_pic").attr("src");
         if (img) pages.push(img);
-      } else {
-        const promises = allPageUrls.map(async (url) => {
-          try {
-            const request = App.createRequest({
-              url,
-              method: "GET",
-              headers: {
-                "Referer": source.baseUrl,
-                "User-Agent": source.userAgent
-                // Usiamo lo stesso user agent mobile
-              }
-            });
-            const response = await source.requestManager.schedule(request, 1);
-            const $page = source.cheerio.load(response.data);
-            const imgSrc = $page("img.manga_pic").attr("src");
-            return imgSrc;
-          } catch (e) {
-            console.log(`Failed to load page ${url}`);
-            return null;
-          }
-        });
-        const results = await Promise.all(promises);
-        for (const img of results) {
-          if (img) pages.push(img);
-        }
       }
       return App.createChapterDetails({
         id: chapterId,
         mangaId,
         pages
       });
+    }
+    // Funzione helper per scaricare una singola pagina
+    async getImage(url, source) {
+      const request = App.createRequest({
+        url,
+        method: "GET",
+        headers: {
+          "Referer": source.baseUrl,
+          "User-Agent": source.userAgent
+          // Usa lo UserAgent mobile del source
+        }
+      });
+      const response = await source.requestManager.schedule(request, 1);
+      const $ = source.cheerio.load(response.data);
+      const images = [];
+      const src = $("img.manga_pic").attr("src");
+      if (src) images.push(src);
+      return images;
     }
     parseSearchResults($, baseUrl) {
       const results = [];
@@ -985,8 +983,8 @@ var _Sources = (() => {
   // src/NineMangaIT/NineMangaIT.ts
   var IT_DOMAIN = "https://it.ninemanga.com";
   var NineMangaITInfo = {
-    version: "1.4.0",
-    // Versione aggiornata
+    version: "1.4.1",
+    // Bump version
     name: "NineMangaIT",
     description: "Extension that pulls manga from it.ninemanga.com",
     author: "DarkDragonkzz",
@@ -1007,10 +1005,11 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.baseUrl = IT_DOMAIN;
       this.parser = new NineMangaITParser();
-      // User-Agent Mobile Android
+      // User-Agent Mobile Android (Mantenuto per stabilità)
       this.userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 4,
+        // 4 req/s è sicuro per il download sequenziale
         requestTimeout: 25e3,
         interceptor: {
           interceptRequest: async (request) => {
@@ -1066,9 +1065,9 @@ var _Sources = (() => {
         if (!url.startsWith("/")) url = `/chapter/${mangaId}/${chapterId}`;
         url = `${this.baseUrl}${url}`;
       }
-      if (!url.endsWith(".html")) url += ".html";
+      if (url.endsWith(".html")) url = url.replace(".html", "");
       const request = App.createRequest({
-        url,
+        url: url + ".html",
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
@@ -1125,7 +1124,8 @@ var _Sources = (() => {
         headers: {
           "User-Agent": this.userAgent,
           "Referer": `${this.baseUrl}/`,
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7"
         }
       });
     }
