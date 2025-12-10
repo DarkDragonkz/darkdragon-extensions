@@ -22,7 +22,7 @@ import { BatCaveParser } from './BatCaveParser'
 const DOMAIN = 'https://batcave.biz'
 
 export const BatCaveInfo: SourceInfo = {
-    version: '1.0.6', // Updated version
+    version: '1.0.7',
     name: 'BatCave',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -43,25 +43,20 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
     baseUrl = DOMAIN
     parser = new BatCaveParser()
     
-    // User-Agent Mobile Android: Cruciale per evitare redirect strani o blocchi
-    readonly userAgent = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
+    RETRIES = 5 
 
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
         requestsPerSecond: 4,
-        requestTimeout: 25000,
+        requestTimeout: 20000,
         interceptor: {
             interceptRequest: async (request: any) => {
                 request.headers = {
                     ...(request.headers ?? {}),
-                    'Referer': `${DOMAIN}/`, // Referer con la maiuscola per sicurezza
-                    'User-Agent': this.userAgent,
-                    // Header per forzare contenuto fresco
-                    'Cache-Control': 'no-cache',
-                    'Pragma': 'no-cache',
-                    // Importante per le immagini se sono su sottodomini
-                    'Origin': DOMAIN
+                    'Referer': `${DOMAIN}/`,
+                    // Usiamo quello di default per passare meglio i controlli CF dell'app
+                    'User-Agent': await this.requestManager.getDefaultUserAgent(), 
                 }
                 return request
             },
@@ -80,7 +75,8 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             url: `${this.baseUrl}/${mangaId}`,
             method: 'GET'
         })
-        const response = await this.requestManager.schedule(request, 1)
+        const response = await this.requestManager.schedule(request, this.RETRIES)
+        this.checkResponseError(response)
         const $ = this.cheerio.load(response.data)
         return this.parser.parseMangaDetails($, mangaId)
     }
@@ -90,7 +86,8 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             url: `${this.baseUrl}/${mangaId}`,
             method: 'GET'
         })
-        const response = await this.requestManager.schedule(request, 1)
+        const response = await this.requestManager.schedule(request, this.RETRIES)
+        this.checkResponseError(response)
         return this.parser.parseChapters(response.data ?? '')
     }
 
@@ -100,7 +97,8 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             url: `${this.baseUrl}/reader/${mangaNumericId}/${chapterId}`,
             method: 'GET'
         })
-        const response = await this.requestManager.schedule(request, 1)
+        const response = await this.requestManager.schedule(request, this.RETRIES)
+        this.checkResponseError(response)
         return this.parser.parseChapterDetails(response.data ?? '', mangaId, chapterId)
     }
 
@@ -111,7 +109,8 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             method: 'GET'
         })
 
-        const response = await this.requestManager.schedule(request, 1)
+        const response = await this.requestManager.schedule(request, this.RETRIES)
+        this.checkResponseError(response)
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($)
         
@@ -129,7 +128,8 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             method: 'GET'
         })
 
-        const response = await this.requestManager.schedule(request, 1)
+        const response = await this.requestManager.schedule(request, this.RETRIES)
+        this.checkResponseError(response)
         const $ = this.cheerio.load(response.data)
         this.parser.parseHomeSections($, sectionCallback)
     }
@@ -138,14 +138,22 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
         return App.createPagedResults({ results: [] })
     }
     
+    // Funzione fondamentale per permettere il bypass Cloudflare dall'app
     async getCloudflareBypassRequestAsync() {
         return App.createRequest({
             url: this.baseUrl,
             method: 'GET',
             headers: {
                 'Referer': `${this.baseUrl}/`,
-                'User-Agent': this.userAgent
+                'User-Agent': await this.requestManager.getDefaultUserAgent()
             }
         })
+    }
+
+    // Gestione errori per notificare l'app se serve il Cloudflare Bypass
+    checkResponseError(response: Response): void {
+        if (response.status === 403 || response.status === 503) {
+            throw new Error(`Cloudflare Bypass Required. Go to Settings > Sources > BatCave > Cloud Icon.`)
+        }
     }
 }
