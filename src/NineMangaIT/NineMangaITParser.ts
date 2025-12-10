@@ -135,92 +135,82 @@ export class NineMangaITParser {
         return chapters
     }
 
-    // --- LOGICA DELL'ALTRO AUTORE ADATTATA ---
     async parseChapterDetails(
         $: any, 
         mangaId: string, 
         chapterId: string, 
-        source: any // Passiamo l'intera classe source per usare requestManager
+        requestManager: any, 
+        cheerio: any,
+        baseUrl: string
     ): Promise<ChapterDetails> {
         const pages: string[] = []
         
-        // Selettore corretto per il sito IT: select.sl-page
-        const pageArr = $('select.sl-page option').toArray()
+        // 1. Estrai immagine dalla pagina corrente (Pagina 1)
+        const firstImg = $('img.manga_pic').attr('src')
+        if (firstImg) pages.push(firstImg)
+
+        // 2. Trova le altre pagine nel menu a tendina
+        const otherPagesSet = new Set<string>()
+        const options = $('select.sl-page option').toArray()
         
-        let firstPageUrl = ''
-        let i = 0
-
-        // Ciclo SEQUENZIALE (non parallelo) come l'altro autore
-        for (const obj of pageArr) {
-            let pageUrl = $(obj).attr('value') ?? ''
-            if (pageUrl.startsWith('/')) pageUrl = source.baseUrl + pageUrl
+        let firstPageValue = ''
+        
+        for (let i = 0; i < options.length; i++) {
+            const option = options[i]
+            let pageUrl = $(option).attr('value')
             
-            // Logica anti-loop dell'autore
-            if (i == 0) firstPageUrl = pageUrl
-            if (i > 0 && pageUrl == firstPageUrl) break
+            if (!pageUrl) continue
             
-            // Scarica le immagini di questa pagina
-            const imagesArray = await this.getImage(pageUrl, source)
+            if (pageUrl.startsWith('/')) pageUrl = baseUrl + pageUrl
             
-            // Aggiungi le immagini uniche
-            for (const image of imagesArray) {
-                if (!pages.includes(image)) {
-                    pages.push(image)
-                }
+            // Logica Anti-Loop
+            if (i === 0) {
+                firstPageValue = pageUrl
+                continue // Saltiamo la prima pagina già presa
             }
-            i++
+            
+            if (pageUrl === firstPageValue) break 
+            
+            if (!otherPagesSet.has(pageUrl)) {
+                otherPagesSet.add(pageUrl)
+            }
         }
+        
+        const otherPages = Array.from(otherPagesSet)
 
-        // Se il ciclo fallisce (es. pagina singola), prova a prendere le immagini dal $ corrente
-        if (pages.length === 0) {
-             const imagesArray = await this.getImageFromCheerio($, source)
-             for (const image of imagesArray) pages.push(image)
+        // 3. Scarica le altre pagine in parallelo (Batch)
+        const promises = otherPages.map(async (url) => {
+            try {
+                const request = App.createRequest({
+                    url: url,
+                    method: 'GET',
+                    headers: {
+                        'Referer': baseUrl,
+                        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
+                    }
+                })
+                
+                const response = await requestManager.schedule(request, 1)
+                const $page = cheerio.load(response.data)
+                const imgSrc = $page('img.manga_pic').attr('src')
+                
+                return imgSrc
+            } catch (e) {
+                return null
+            }
+        })
+
+        const results = await Promise.all(promises)
+        
+        for (const img of results) {
+            if (img) pages.push(img)
         }
 
         return App.createChapterDetails({
             id: chapterId,
             mangaId: mangaId,
-            pages: pages
+            pages: [...new Set(pages)]
         })
-    }
-
-    // Helper per scaricare e parsare una pagina
-    async getImage(url: string, source: any): Promise<string[]> {
-        const request = App.createRequest({
-            url: url,
-            method: 'GET',
-            headers: {
-                'Referer': source.baseUrl,
-                'User-Agent': source.userAgent
-            }
-        })
-        
-        // Timeout e retries come l'altro autore
-        const response = await source.requestManager.schedule(request, 1)
-        const $ = source.cheerio.load(response.data)
-        
-        return this.getImageFromCheerio($, source)
-    }
-
-    // Estrae le immagini da un oggetto Cheerio caricato
-    async getImageFromCheerio($: any, source: any): Promise<string[]> {
-        const arrImages: string[] = []
-        
-        // Selettore Desktop
-        $('div.pic_box img.manga_pic').each((_: any, img: any) => {
-             const src = $(img).attr('src')
-             if (src) arrImages.push(src)
-        })
-
-        // Selettore Mobile/Fallback
-        if (arrImages.length === 0) {
-             $('img.manga_pic').each((_: any, img: any) => {
-                 const src = $(img).attr('src')
-                 if (src) arrImages.push(src)
-             })
-        }
-
-        return arrImages
     }
 
     parseSearchResults($: any, baseUrl: string): PartialSourceManga[] {
@@ -255,9 +245,28 @@ export class NineMangaITParser {
     }
 
     parseHomeSections($home: any, $updates: any, sectionCallback: (section: HomeSection) => void, baseUrl: string): void {
-        const popularSection = App.createHomeSection({ id: 'popular', title: 'Popolari 🔥', containsMoreItems: true, type: HomeSectionType.singleRowLarge })
-        const newSection = App.createHomeSection({ id: 'new', title: 'Nuove Uscite 🆕', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
-        const latestSection = App.createHomeSection({ id: 'latest', title: 'Ultimi Aggiornamenti 🆙', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
+        
+        // UI IMPROVEMENT: Sezione Popolari in evidenza (Featured)
+        const popularSection = App.createHomeSection({ 
+            id: 'popular', 
+            title: 'Popolari 🔥', 
+            containsMoreItems: true, 
+            type: HomeSectionType.featured // <--- CAMBIATO IN FEATURED
+        })
+
+        const newSection = App.createHomeSection({ 
+            id: 'new', 
+            title: 'Nuove Uscite 🆕', 
+            containsMoreItems: true, 
+            type: HomeSectionType.singleRowNormal 
+        })
+
+        const latestSection = App.createHomeSection({ 
+            id: 'latest', 
+            title: 'Ultimi Aggiornamenti 🆙', 
+            containsMoreItems: true, 
+            type: HomeSectionType.singleRowNormal 
+        })
 
         const popularItems: PartialSourceManga[] = []
         const newItems: PartialSourceManga[] = []
