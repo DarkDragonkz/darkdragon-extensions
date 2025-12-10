@@ -772,7 +772,7 @@ var _Sources = (() => {
         const $el = $(el);
         const id = $el.attr("href")?.split("/").pop()?.replace(".html", "") ?? "";
         const label = $el.text().trim();
-        if (id && label) arrayTags.push({ id, label });
+        if (id && label) arrayTags.push(App.createTag({ id, label }));
       }
       const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })];
       return App.createSourceManga({
@@ -896,9 +896,24 @@ var _Sources = (() => {
       return results;
     }
     parseHomeSections($home, $updates, sectionCallback, baseUrl) {
-      const popularSection = App.createHomeSection({ id: "popular", title: "Popolari", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
-      const newSection = App.createHomeSection({ id: "new", title: "Nuove Uscite", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
-      const latestSection = App.createHomeSection({ id: "latest", title: "Ultimi Aggiornamenti", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
+      const popularSection = App.createHomeSection({
+        id: "popular",
+        title: "Popolari",
+        containsMoreItems: true,
+        type: import_types.HomeSectionType.singleRowLarge
+      });
+      const newSection = App.createHomeSection({
+        id: "new",
+        title: "Nuove Uscite",
+        containsMoreItems: true,
+        type: import_types.HomeSectionType.singleRowNormal
+      });
+      const latestSection = App.createHomeSection({
+        id: "latest",
+        title: "Ultimi Aggiornamenti",
+        containsMoreItems: true,
+        type: import_types.HomeSectionType.singleRowNormal
+      });
       const popularItems = [];
       const newItems = [];
       const latestItems = [];
@@ -978,7 +993,8 @@ var _Sources = (() => {
   // src/NineMangaIT/NineMangaIT.ts
   var IT_DOMAIN = "https://it.ninemanga.com";
   var NineMangaITInfo = {
-    version: "1.1.1",
+    version: "1.1.2",
+    // Bump versione
     name: "NineMangaIT",
     description: "Extension that pulls manga from it.ninemanga.com",
     author: "DarkDragonkzz",
@@ -1001,7 +1017,8 @@ var _Sources = (() => {
       this.parser = new NineMangaITParser();
       this.userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
       this.requestManager = App.createRequestManager({
-        requestsPerSecond: 3,
+        requestsPerSecond: 5,
+        // Aumentato per maggiore velocità
         requestTimeout: 25e3,
         interceptor: {
           interceptRequest: async (request) => {
