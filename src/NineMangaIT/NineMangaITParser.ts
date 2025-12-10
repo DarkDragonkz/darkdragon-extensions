@@ -135,6 +135,7 @@ export class NineMangaITParser {
         return chapters
     }
 
+    // --- LOGICA SEQUENZIALE SICURA (NO CRASH) ---
     async parseChapterDetails(
         $: any, 
         mangaId: string, 
@@ -143,56 +144,31 @@ export class NineMangaITParser {
     ): Promise<ChapterDetails> {
         const pages: string[] = []
 
-        // Strategia: Leggere TUTTE le pagine dalla select, inclusa la prima.
-        // Questo garantisce l'ordine corretto e il numero esatto di pagine.
+        // 1. Ottieni la lista delle pagine dal menu a tendina
         const options = $('select.sl-page option').toArray()
-        const allPageUrls: string[] = []
         
+        // 2. Ciclo SEQUENZIALE: Scarica una pagina, aspetta, scarica la prossima
+        // Questo è più lento del parallelo, ma evita i crash di memoria e i ban.
         for (const option of options) {
             let pageUrl = $(option).attr('value')
             if (!pageUrl) continue
             
             if (pageUrl.startsWith('/')) pageUrl = source.baseUrl + pageUrl
-            allPageUrls.push(pageUrl)
+
+            // Scarica l'immagine di questa singola pagina
+            const images = await this.getImage(pageUrl, source)
+            
+            for (const img of images) {
+                if (!pages.includes(img)) { // Evita duplicati
+                    pages.push(img)
+                }
+            }
         }
 
-        // Se non c'è menu a tendina, è una pagina singola (one-shot) o la lista è fallita
-        if (allPageUrls.length === 0) {
+        // Fallback: se il menu è vuoto (capitolo di 1 pagina), prendi l'immagine corrente
+        if (pages.length === 0) {
             const img = $('img.manga_pic').attr('src')
             if (img) pages.push(img)
-        } else {
-            // Scarica tutte le pagine trovate nel menu
-            // Usiamo map per creare un array di Promises
-            const promises = allPageUrls.map(async (url) => {
-                try {
-                    const request = App.createRequest({
-                        url: url,
-                        method: 'GET',
-                        headers: {
-                            'Referer': source.baseUrl,
-                            'User-Agent': source.userAgent // Usiamo lo stesso user agent mobile
-                        }
-                    })
-                    
-                    // Il requestManager gestirà la coda per non sovraccaricare (3-4 req/s)
-                    const response = await source.requestManager.schedule(request, 1)
-                    const $page = source.cheerio.load(response.data)
-                    
-                    const imgSrc = $page('img.manga_pic').attr('src')
-                    return imgSrc
-                } catch (e) {
-                    console.log(`Failed to load page ${url}`)
-                    return null
-                }
-            })
-
-            // Attende che tutte le pagine siano scaricate
-            const results = await Promise.all(promises)
-            
-            // Filtra i null e aggiunge all'array finale
-            for (const img of results) {
-                if (img) pages.push(img)
-            }
         }
 
         return App.createChapterDetails({
@@ -200,6 +176,28 @@ export class NineMangaITParser {
             mangaId: mangaId,
             pages: pages
         })
+    }
+
+    // Funzione helper per scaricare una singola pagina
+    async getImage(url: string, source: any): Promise<string[]> {
+        const request = App.createRequest({
+            url: url,
+            method: 'GET',
+            headers: {
+                'Referer': source.baseUrl,
+                'User-Agent': source.userAgent // Usa lo UserAgent mobile del source
+            }
+        })
+
+        // Retries aumentati per stabilità
+        const response = await source.requestManager.schedule(request, 1)
+        const $ = source.cheerio.load(response.data)
+        
+        const images: string[] = []
+        const src = $('img.manga_pic').attr('src')
+        if (src) images.push(src)
+        
+        return images
     }
 
     parseSearchResults($: any, baseUrl: string): PartialSourceManga[] {

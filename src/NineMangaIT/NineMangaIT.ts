@@ -24,7 +24,7 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '1.4.0', // Versione aggiornata
+    version: '1.4.1', // Bump version
     name: 'NineMangaIT',
     description: 'Extension that pulls manga from it.ninemanga.com',
     author: 'DarkDragonkzz',
@@ -45,13 +45,13 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     baseUrl = IT_DOMAIN
     parser = new NineMangaITParser()
 
-    // User-Agent Mobile Android
+    // User-Agent Mobile Android (Mantenuto per stabilità)
     readonly userAgent = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
 
-    constructor(public cheerio: any) {}
+    constructor(public cheerio: any) {} 
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 4, 
+        requestsPerSecond: 4, // 4 req/s è sicuro per il download sequenziale
         requestTimeout: 25000,
         interceptor: {
             interceptRequest: async (request: any) => {
@@ -111,11 +111,11 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
              if (!url.startsWith('/')) url = `/chapter/${mangaId}/${chapterId}`
              url = `${this.baseUrl}${url}`
         }
-        if (!url.endsWith('.html')) url += '.html'
+        if (url.endsWith('.html')) url = url.replace('.html', '')
 
-        // NESSUN SUFFISSO. URL pulito per scaricare la pagina 1 normalmente.
+        // NESSUN TRUCCO QUI. Usiamo l'URL base e il parser farà il ciclo sulle pagine.
         const request = App.createRequest({
-            url: url,
+            url: url + '.html',
             method: 'GET'
         })
         
@@ -124,7 +124,6 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         
         const $ = this.cheerio.load(response.data)
         
-        // Passiamo 'this' per permettere al parser di fare le chiamate successive
         return this.parser.parseChapterDetails($, mangaId, chapterId, this)
     }
 
@@ -195,6 +194,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
                 'User-Agent': this.userAgent,
                 'Referer': `${this.baseUrl}/`,
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7'
             }
         })
     }
