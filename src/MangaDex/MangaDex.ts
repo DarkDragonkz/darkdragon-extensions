@@ -122,26 +122,24 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const limit = 20
         const offset = metadata?.offset ?? 0
         
-        // Costruzione URL robusta
+        // Base URL
         let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&includes[]=cover_art`
 
-        // FILTRI: Aggiungiamo 'pornographic' se l'app è settata su MATURE, altrimenti alcuni risultati spariscono
+        // FILTRI:
+        // 1. Content Rating: Fondamentale includere tutto per evitare buchi nei risultati
         url += '&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic'
         
-        // Lingua: Solo Inglese
-        url += '&availableTranslatedLanguage[]=en'
+        // 2. FIX: RIMOSSO '&availableTranslatedLanguage[]=en' 
+        // Questo filtro era il colpevole. Nascondeva i manga se l'API non era sicura al 100% 
+        // che ci fossero capitoli EN, o se volevi solo vedere se l'opera esiste.
         
-        // Gestione Query Titolo
+        // Gestione Query
         if (query.title) {
+            // Se l'utente sta cercando un titolo specifico
             const safeTitle = query.title.trim()
-            if (safeTitle.length > 0) {
-                url += `&title=${encodeURIComponent(safeTitle)}&order[relevance]=desc`
-            } else {
-                // Se l'utente cerca stringa vuota o spazi
-                url += '&order[followedCount]=desc'
-            }
+            url += `&title=${encodeURIComponent(safeTitle)}&order[relevance]=desc`
         } else {
-            // Default sort se non c'è query
+            // Se la query è vuota (es. pulsante 'cerca' senza testo o caricamento iniziale)
             url += '&order[followedCount]=desc' 
         }
         
@@ -149,7 +147,7 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const response = await this.requestManager.schedule(request, 1)
         const data = JSON.parse(response.data ?? '{}')
         
-        // Usiamo thumbs low-res per la lista search (più veloce)
+        // Parsing dei risultati
         const results = this.parser.parseSearchResults(data, false)
 
         return App.createPagedResults({
