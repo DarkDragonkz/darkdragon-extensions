@@ -11,6 +11,7 @@ import {
 
 export class NineMangaITParser {
 
+    // HELPER: Trova l'immagine migliore e corregge HTTPS
     private getImageSrc(element: any): string {
         let img = element.find('img').first()
         if (element.is('img')) img = element
@@ -42,15 +43,17 @@ export class NineMangaITParser {
         const author = $('a[itemprop="author"]').first().text().trim() || 'Unknown'
         const artist = author 
 
+        // UI IMPROVEMENT: Pulizia descrizione
         let desc = $('p[itemprop="description"]').text().trim()
         if (!desc) {
             const intro = $('.bookintro').clone()
             intro.find('ul, h1, div, a').remove() 
             desc = intro.text().trim()
         }
-        if (!desc) desc = 'No description available'
-        desc = desc.replace(/^Sommario:\s*/i, '')
+        if (!desc) desc = 'Nessuna descrizione disponibile.'
+        desc = desc.replace(/^Sommario:\s*/i, '') // Rimuove "Sommario:"
         
+        // UI IMPROVEMENT: Status mappato correttamente per i badge dell'app
         let status = 'Ongoing'
         const statusText = $('.red, a[href*="completed"]').text().toLowerCase()
         if (statusText.includes('completato') || statusText.includes('completed')) status = 'Completed'
@@ -98,7 +101,7 @@ export class NineMangaITParser {
             const chapterId = filePart.split('?')[0].replace('.html', '')
 
             if (seenIds.has(chapterId)) continue
-            if (filePart.match(/-\d+-\d+\.html$/)) continue
+            if (filePart.match(/-\d+-\d+\.html$/)) continue 
 
             seenIds.add(chapterId)
 
@@ -137,33 +140,34 @@ export class NineMangaITParser {
 
     parseChapterDetails($: any, mangaId: string, chapterId: string, requestManager: any, baseUrl: string, cheerio: any): ChapterDetails {
         const pages: string[] = []
+        let foundInScript = false
         
-        // 1. Priorità: Cerca immagini nel DOM (grazie a ?style=list)
-        $('img.manga_pic').each((_: any, img: any) => {
-             const src = $(img).attr('src')
-             if (src) pages.push(src)
-        })
-
-        // 2. Se non trova nulla, prova altri selettori del DOM
-        if (pages.length === 0) {
-             $('div[align="center"] img').each((_: any, img: any) => {
-                const src = $(img).attr('src')
-                if (src && src.startsWith('http') && !src.includes('logo') && !src.includes('icon')) {
-                    pages.push(src)
+        const scripts = $('script').toArray()
+        for (const script of scripts) {
+            const content = $(script).html()
+            if (content && (content.includes('p_urls') || content.includes('img_url'))) {
+                const matches = content.match(/(https?:\/\/[^"']+\.(?:jpg|png|webp|jpeg))/gi)
+                if (matches && matches.length > 0) {
+                    for(const m of matches) pages.push(m)
+                    foundInScript = true
+                    break
                 }
-            })
+            }
         }
 
-        // 3. Fallback estremo: Script Regex (usato solo se i metodi sopra falliscono)
-        if (pages.length === 0) {
-            const scripts = $('script').toArray()
-            for (const script of scripts) {
-                const content = $(script).html()
-                if (content && (content.includes('p_urls') || content.includes('img_url'))) {
-                    const matches = content.match(/(https?:\/\/[^"']+\.(?:jpg|png|webp|jpeg))/gi)
-                    if (matches && matches.length > 0) {
-                        for(const m of matches) pages.push(m)
-                        break
+        if (!foundInScript) {
+            const imgElements = $('img.manga_pic').toArray()
+            for (const img of imgElements) {
+                const src = $(img).attr('src')
+                if (src) pages.push(src)
+            }
+            
+            if (pages.length === 0) {
+                 const centerImages = $('div[align="center"] img').toArray()
+                 for (const img of centerImages) {
+                    const src = $(img).attr('src')
+                    if (src && src.startsWith('http') && !src.includes('logo') && !src.includes('icon')) {
+                        pages.push(src)
                     }
                 }
             }
@@ -208,10 +212,28 @@ export class NineMangaITParser {
     }
 
     parseHomeSections($home: any, $updates: any, sectionCallback: (section: HomeSection) => void, baseUrl: string): void {
-        // Estetica: Popolari in grande
-        const popularSection = App.createHomeSection({ id: 'popular', title: 'Popolari', containsMoreItems: true, type: HomeSectionType.singleRowLarge })
-        const newSection = App.createHomeSection({ id: 'new', title: 'Nuove Uscite', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
-        const latestSection = App.createHomeSection({ id: 'latest', title: 'Ultimi Aggiornamenti', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
+        
+        // UI IMPROVEMENT: Usiamo 'singleRowLarge' per i Popolari per dare risalto
+        const popularSection = App.createHomeSection({ 
+            id: 'popular', 
+            title: 'Popolari 🔥', 
+            containsMoreItems: true, 
+            type: HomeSectionType.singleRowLarge // <-- Cambiato in Large
+        })
+
+        const newSection = App.createHomeSection({ 
+            id: 'new', 
+            title: 'Nuove Uscite 🆕', 
+            containsMoreItems: true, 
+            type: HomeSectionType.singleRowNormal 
+        })
+
+        const latestSection = App.createHomeSection({ 
+            id: 'latest', 
+            title: 'Ultimi Aggiornamenti 🆙', 
+            containsMoreItems: true, 
+            type: HomeSectionType.singleRowNormal 
+        })
 
         const popularItems: PartialSourceManga[] = []
         const newItems: PartialSourceManga[] = []

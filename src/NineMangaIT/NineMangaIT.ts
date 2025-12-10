@@ -24,7 +24,7 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '1.1.5',
+    version: '1.2.0', // Aggiornato per riflettere i cambiamenti UI
     name: 'NineMangaIT',
     description: 'Extension that pulls manga from it.ninemanga.com',
     author: 'DarkDragonkzz',
@@ -50,7 +50,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 3,
+        requestsPerSecond: 5, // Aumentato a 5 per caricamenti più fluidi della home
         requestTimeout: 25000,
         interceptor: {
             interceptRequest: async (request: any) => {
@@ -112,8 +112,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         }
         if (!url.endsWith('.html')) url += '.html'
 
-        // FIX CRITICO: Aggiungi ?style=list per forzare il caricamento di tutte le immagini
-        // Questo risolve sia il problema delle pagine mancanti che i crash da parsing degli script
+        // Manteniamo il fix per vedere tutte le pagine
         url += '?style=list'
 
         const request = App.createRequest({
