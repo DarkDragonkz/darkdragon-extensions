@@ -448,7 +448,7 @@ var _Sources = (() => {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.urlEncodeObject = exports.convertTime = exports.Source = void 0;
-      var Source2 = class {
+      var Source = class {
         constructor(cheerio) {
           this.cheerio = cheerio;
         }
@@ -465,7 +465,7 @@ var _Sources = (() => {
           return this.getSearchTags?.();
         }
       };
-      exports.Source = Source2;
+      exports.Source = Source;
       function convertTime(timeAgo) {
         let time;
         let trimmed = Number((/\d*/.exec(timeAgo) ?? [])[0]);
@@ -613,15 +613,15 @@ var _Sources = (() => {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.ContentRating = exports.SourceIntents = void 0;
-      var SourceIntents;
-      (function(SourceIntents2) {
-        SourceIntents2[SourceIntents2["MANGA_CHAPTERS"] = 1] = "MANGA_CHAPTERS";
-        SourceIntents2[SourceIntents2["MANGA_TRACKING"] = 2] = "MANGA_TRACKING";
-        SourceIntents2[SourceIntents2["HOMEPAGE_SECTIONS"] = 4] = "HOMEPAGE_SECTIONS";
-        SourceIntents2[SourceIntents2["COLLECTION_MANAGEMENT"] = 8] = "COLLECTION_MANAGEMENT";
-        SourceIntents2[SourceIntents2["CLOUDFLARE_BYPASS_REQUIRED"] = 16] = "CLOUDFLARE_BYPASS_REQUIRED";
-        SourceIntents2[SourceIntents2["SETTINGS_UI"] = 32] = "SETTINGS_UI";
-      })(SourceIntents = exports.SourceIntents || (exports.SourceIntents = {}));
+      var SourceIntents2;
+      (function(SourceIntents3) {
+        SourceIntents3[SourceIntents3["MANGA_CHAPTERS"] = 1] = "MANGA_CHAPTERS";
+        SourceIntents3[SourceIntents3["MANGA_TRACKING"] = 2] = "MANGA_TRACKING";
+        SourceIntents3[SourceIntents3["HOMEPAGE_SECTIONS"] = 4] = "HOMEPAGE_SECTIONS";
+        SourceIntents3[SourceIntents3["COLLECTION_MANAGEMENT"] = 8] = "COLLECTION_MANAGEMENT";
+        SourceIntents3[SourceIntents3["CLOUDFLARE_BYPASS_REQUIRED"] = 16] = "CLOUDFLARE_BYPASS_REQUIRED";
+        SourceIntents3[SourceIntents3["SETTINGS_UI"] = 32] = "SETTINGS_UI";
+      })(SourceIntents2 = exports.SourceIntents || (exports.SourceIntents = {}));
       var ContentRating2;
       (function(ContentRating3) {
         ContentRating3["EVERYONE"] = "EVERYONE";
@@ -944,41 +944,84 @@ var _Sources = (() => {
     }
   };
 
+  // src/helper.ts
+  var URLBuilder = class {
+    constructor(baseUrl) {
+      this.parameters = {};
+      this.pathComponents = [];
+      this.baseUrl = baseUrl.replace(/(^\/)?(?=.*)(\/$)?/gim, "");
+    }
+    addPathComponent(component) {
+      this.pathComponents.push(component.replace(/(^\/)?(?=.*)(\/$)?/gim, ""));
+      return this;
+    }
+    addQueryParameter(key, value) {
+      this.parameters[key] = value;
+      return this;
+    }
+    buildUrl({ addTrailingSlash, includeUndefinedParameters } = { addTrailingSlash: false, includeUndefinedParameters: false }) {
+      let finalUrl = this.baseUrl + "/";
+      finalUrl += this.pathComponents.join("/");
+      finalUrl += addTrailingSlash ? "/" : "";
+      finalUrl += Object.values(this.parameters).length > 0 ? "?" : "";
+      finalUrl += Object.entries(this.parameters).map((entry) => {
+        if (entry[1] == null && !includeUndefinedParameters) {
+          return void 0;
+        }
+        if (Array.isArray(entry[1])) {
+          return `${entry[0]}=` + entry[1].map((value) => value || includeUndefinedParameters ? `${value},` : void 0).filter((x) => x !== void 0).join("");
+        }
+        if (typeof entry[1] === "object") {
+          return Object.keys(entry[1]).map((key) => `${entry[0]}[${key}]=${entry[1][key]}`).join("&");
+        }
+        return `${entry[0]}=${entry[1]}`;
+      }).filter((x) => x !== void 0).join("&");
+      return finalUrl;
+    }
+  };
+
   // src/NineMangaIT/NineMangaIT.ts
-  var NINE_MANGA_IT_DOMAIN = "https://it.ninemanga.com";
+  var IT_DOMAIN = "https://it.ninemanga.com";
   var NineMangaITInfo = {
-    version: "2.0.1",
+    version: "1.2.7",
+    // Versione aggiornata
     name: "NineMangaIT",
+    description: "Extension that pulls manga from it.ninemanga.com",
+    author: "DarkDragonkzz",
     icon: "icon.png",
-    author: "Paperback",
-    authorWebsite: "https://github.com/Paperback-iOS",
-    description: "Extension that pulls manga from NineManga IT",
-    contentRating: import_types2.ContentRating.MATURE,
-    websiteBaseURL: NINE_MANGA_IT_DOMAIN,
+    contentRating: import_types2.ContentRating.EVERYONE,
+    language: "it",
+    websiteBaseURL: IT_DOMAIN,
     sourceTags: [
       {
-        text: "Italian",
-        type: BadgeColor.GREY
-      },
-      {
-        text: "Notifications",
-        type: BadgeColor.GREEN
+        text: "Italian \u{1F1EE}\u{1F1F9}",
+        type: import_types2.BadgeColor.RED
       }
-    ]
+    ],
+    intents: import_types2.SourceIntents.MANGA_CHAPTERS | import_types2.SourceIntents.HOMEPAGE_SECTIONS | import_types2.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
   };
-  var NineMangaIT = class extends import_types2.Source {
-    constructor() {
-      super(...arguments);
+  var NineMangaIT = class {
+    constructor(cheerio) {
+      this.cheerio = cheerio;
+      this.baseUrl = IT_DOMAIN;
+      this.parser = new NineMangaITParser();
+      // FIX CHIAVE 1: User-Agent Desktop per forzare la versione completa del sito
+      this.userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
       this.requestManager = App.createRequestManager({
-        requestsPerSecond: 3,
-        requestTimeout: 15e3,
+        requestsPerSecond: 5,
+        requestTimeout: 25e3,
         interceptor: {
           interceptRequest: async (request) => {
             request.headers = {
               ...request.headers ?? {},
               ...{
-                "referer": NINE_MANGA_IT_DOMAIN,
-                "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+                "Referer": `${this.baseUrl}/`,
+                "User-Agent": this.userAgent,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Connection": "keep-alive",
+                // Cookie per forzare la visualizzazione corretta (già presente, mantenuto)
+                "Cookie": "is_warning=1; my_limit=1; ninemanga_ninemanga_image_list=1"
               }
             };
             return request;
@@ -988,63 +1031,110 @@ var _Sources = (() => {
           }
         }
       });
-      this.baseUrl = NINE_MANGA_IT_DOMAIN;
-      this.parser = new NineMangaITParser();
+    }
+    getMangaShareUrl(mangaId) {
+      return `${this.baseUrl}/manga/${mangaId}.html`;
+    }
+    getMangaUrl(mangaId) {
+      const id = mangaId.endsWith(".html") ? mangaId : `${mangaId}.html`;
+      return `${this.baseUrl}/manga/${id}`;
     }
     async getMangaDetails(mangaId) {
       const request = App.createRequest({
-        url: `${this.baseUrl}/manga/${mangaId}.html`,
+        url: this.getMangaUrl(mangaId) + "?waring=1",
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
+      this.checkResponseError(response);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseMangaDetails($, mangaId);
     }
     async getChapters(mangaId) {
       const request = App.createRequest({
-        url: `${this.baseUrl}/manga/${mangaId}.html?warning=1`,
+        url: this.getMangaUrl(mangaId) + "?waring=1",
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
+      this.checkResponseError(response);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseChapters($, mangaId);
     }
+    // FIX CHIAVE 2 & 3: Caricamento corretto del capitolo
     async getChapterDetails(mangaId, chapterId) {
+      let url = chapterId;
+      if (!url.startsWith("http")) {
+        if (!url.startsWith("/")) url = `/chapter/${mangaId}/${chapterId}`;
+        url = `${this.baseUrl}${url}`;
+      }
+      if (!url.endsWith(".html")) url += ".html";
+      url += "?style=list";
       const request = App.createRequest({
-        url: `${this.baseUrl}/chapter/${chapterId}.html`,
-        method: "GET",
-        param: "?style=list"
+        url,
+        method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
+      this.checkResponseError(response);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseChapterDetails($, mangaId, chapterId);
     }
-    async getHomePageSections(sectionCallback) {
-      const request = App.createRequest({
-        url: this.baseUrl,
-        method: "GET"
-      });
-      const response = await this.requestManager.schedule(request, 1);
-      const $ = this.cheerio.load(response.data);
-      this.parser.parseHomeSections($, $, sectionCallback, this.baseUrl);
-    }
-    async getViewMoreItems(homepageSectionId, metadata) {
-      return App.createPagedResults({ results: [] });
-    }
     async getSearchResults(query, metadata) {
-      const page = metadata?.page ?? 1;
-      const searchUrl = `${this.baseUrl}/search/?name_sel=contain&wd=${encodeURIComponent(query.title ?? "")}&page=${page}`;
+      let page = metadata?.page ?? 1;
+      if (page === -1) return App.createPagedResults({ results: [], metadata: { page: -1 } });
       const request = App.createRequest({
-        url: searchUrl,
+        url: new URLBuilder(this.baseUrl).addPathComponent("search").addQueryParameter("name_sel", "contain").addQueryParameter("wd", encodeURIComponent(query?.title ?? "")).addQueryParameter("page", page.toString()).addQueryParameter("type", "high").buildUrl({ addTrailingSlash: true, includeUndefinedParameters: false }),
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
+      this.checkResponseError(response);
       const $ = this.cheerio.load(response.data);
       const manga = this.parser.parseSearchResults($, this.baseUrl);
+      page++;
+      if (manga.length < 10) page = -1;
       return App.createPagedResults({
         results: manga,
-        metadata: manga.length > 0 ? { page: page + 1 } : void 0
+        metadata: { page }
       });
+    }
+    async getHomePageSections(sectionCallback) {
+      const requestHome = App.createRequest({ url: this.baseUrl, method: "GET" });
+      const responseHome = await this.requestManager.schedule(requestHome, 1);
+      this.checkResponseError(responseHome);
+      const $home = this.cheerio.load(responseHome.data);
+      this.parser.parseHomeSections($home, sectionCallback, this.baseUrl);
+    }
+    async getViewMoreItems(homepageSectionId, metadata) {
+      let page = metadata?.page ?? 1;
+      let url = "";
+      if (homepageSectionId === "recent") url = `${this.baseUrl}/list/New-Update/?page=${page}`;
+      else if (homepageSectionId === "popular") url = `${this.baseUrl}/list/Hot-Book/?page=${page}`;
+      else if (homepageSectionId === "new") url = `${this.baseUrl}/list/New-Book/?page=${page}`;
+      else return App.createPagedResults({ results: [] });
+      const request = App.createRequest({ url, method: "GET" });
+      const response = await this.requestManager.schedule(request, 1);
+      this.checkResponseError(response);
+      const $ = this.cheerio.load(response.data);
+      const manga = this.parser.parseSearchResults($, this.baseUrl);
+      if (manga.length > 0) {
+        return App.createPagedResults({ results: manga, metadata: { page: page + 1 } });
+      }
+      return App.createPagedResults({ results: [] });
+    }
+    async getCloudflareBypassRequest() {
+      return App.createRequest({
+        url: this.baseUrl,
+        method: "GET",
+        headers: {
+          "User-Agent": this.userAgent,
+          "Referer": `${this.baseUrl}/`,
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+      });
+    }
+    checkResponseError(response) {
+      if (response.status === 403 || response.status === 503) {
+        throw new Error(`Cloudflare Bypass Required. Go to Settings > Sources > NineMangaIT > Cloud Icon.`);
+      }
     }
   };
   return __toCommonJS(NineMangaIT_exports);
