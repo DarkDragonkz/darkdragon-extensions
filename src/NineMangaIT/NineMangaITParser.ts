@@ -135,40 +135,46 @@ export class NineMangaITParser {
         return chapters
     }
 
-    // --- LOGICA SEQUENZIALE SICURA (NO CRASH) ---
+    // --- LOGICA DELL'ALTRO AUTORE ADATTATA ---
     async parseChapterDetails(
         $: any, 
         mangaId: string, 
         chapterId: string, 
-        source: any 
+        source: any // Passiamo l'intera classe source per usare requestManager
     ): Promise<ChapterDetails> {
         const pages: string[] = []
-
-        // 1. Ottieni la lista delle pagine dal menu a tendina
-        const options = $('select.sl-page option').toArray()
         
-        // 2. Ciclo SEQUENZIALE: Scarica una pagina, aspetta, scarica la prossima
-        // Questo è più lento del parallelo, ma evita i crash di memoria e i ban.
-        for (const option of options) {
-            let pageUrl = $(option).attr('value')
-            if (!pageUrl) continue
-            
-            if (pageUrl.startsWith('/')) pageUrl = source.baseUrl + pageUrl
+        // Selettore corretto per il sito IT: select.sl-page
+        const pageArr = $('select.sl-page option').toArray()
+        
+        let firstPageUrl = ''
+        let i = 0
 
-            // Scarica l'immagine di questa singola pagina
-            const images = await this.getImage(pageUrl, source)
+        // Ciclo SEQUENZIALE (non parallelo) come l'altro autore
+        for (const obj of pageArr) {
+            let pageUrl = $(obj).attr('value') ?? ''
+            if (pageUrl.startsWith('/')) pageUrl = source.baseUrl + pageUrl
             
-            for (const img of images) {
-                if (!pages.includes(img)) { // Evita duplicati
-                    pages.push(img)
+            // Logica anti-loop dell'autore
+            if (i == 0) firstPageUrl = pageUrl
+            if (i > 0 && pageUrl == firstPageUrl) break
+            
+            // Scarica le immagini di questa pagina
+            const imagesArray = await this.getImage(pageUrl, source)
+            
+            // Aggiungi le immagini uniche
+            for (const image of imagesArray) {
+                if (!pages.includes(image)) {
+                    pages.push(image)
                 }
             }
+            i++
         }
 
-        // Fallback: se il menu è vuoto (capitolo di 1 pagina), prendi l'immagine corrente
+        // Se il ciclo fallisce (es. pagina singola), prova a prendere le immagini dal $ corrente
         if (pages.length === 0) {
-            const img = $('img.manga_pic').attr('src')
-            if (img) pages.push(img)
+             const imagesArray = await this.getImageFromCheerio($, source)
+             for (const image of imagesArray) pages.push(image)
         }
 
         return App.createChapterDetails({
@@ -178,26 +184,43 @@ export class NineMangaITParser {
         })
     }
 
-    // Funzione helper per scaricare una singola pagina
+    // Helper per scaricare e parsare una pagina
     async getImage(url: string, source: any): Promise<string[]> {
         const request = App.createRequest({
             url: url,
             method: 'GET',
             headers: {
                 'Referer': source.baseUrl,
-                'User-Agent': source.userAgent // Usa lo UserAgent mobile del source
+                'User-Agent': source.userAgent
             }
         })
-
-        // Retries aumentati per stabilità
+        
+        // Timeout e retries come l'altro autore
         const response = await source.requestManager.schedule(request, 1)
         const $ = source.cheerio.load(response.data)
         
-        const images: string[] = []
-        const src = $('img.manga_pic').attr('src')
-        if (src) images.push(src)
+        return this.getImageFromCheerio($, source)
+    }
+
+    // Estrae le immagini da un oggetto Cheerio caricato
+    async getImageFromCheerio($: any, source: any): Promise<string[]> {
+        const arrImages: string[] = []
         
-        return images
+        // Selettore Desktop
+        $('div.pic_box img.manga_pic').each((_: any, img: any) => {
+             const src = $(img).attr('src')
+             if (src) arrImages.push(src)
+        })
+
+        // Selettore Mobile/Fallback
+        if (arrImages.length === 0) {
+             $('img.manga_pic').each((_: any, img: any) => {
+                 const src = $(img).attr('src')
+                 if (src) arrImages.push(src)
+             })
+        }
+
+        return arrImages
     }
 
     parseSearchResults($: any, baseUrl: string): PartialSourceManga[] {
