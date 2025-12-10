@@ -19,6 +19,7 @@ import { XoxoComicParser } from './XoxoComicParser'
 
 const DOMAIN = 'https://xoxocomic.com'
 
+// QUESTO È IL PEZZO CHE MANCA O È SBAGLIATO
 export const XoxoComicInfo: SourceInfo = {
     version: '1.0.0',
     name: 'XoxoComic',
@@ -86,8 +87,6 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // chapterId qui contiene già il path relativo parziale o completo
-        // Assicuriamoci che l'URL sia corretto
         const url = chapterId.startsWith('http') ? chapterId : `${this.baseUrl}/${chapterId}`
 
         const request = App.createRequest({
@@ -95,14 +94,11 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        // Passiamo la stringa HTML raw per il parsing regex veloce
         return this.parser.parseChapterDetails(response.data ?? '', mangaId, chapterId)
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
-        
-        // XoxoComic Search URL pattern: /search?keyword=query&page=1
         const request = App.createRequest({
             url: `${this.baseUrl}/search?keyword=${encodeURIComponent(query.title ?? '')}&page=${page}`,
             method: 'GET'
@@ -112,7 +108,6 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($)
         
-        // Paginazione semplice
         const nextPage = manga.length > 0 ? page + 1 : undefined
 
         return App.createPagedResults({
@@ -137,7 +132,6 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         let url = ''
 
         if (homepageSectionId === 'latest') {
-            // URL per ultimi aggiornamenti paginati
             url = `${this.baseUrl}/latest-comic?page=${page}`
         } else {
             return App.createPagedResults({ results: [] })
