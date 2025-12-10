@@ -20,7 +20,7 @@ import { ReadComicsOnlineParser } from './ReadComicsOnlineParser'
 const DOMAIN = 'https://readcomicsonline.ru'
 
 export const ReadComicsOnlineInfo: SourceInfo = {
-    version: '2.2.3',
+    version: '2.3.0', // Major Bump per UI/UX
     name: 'ReadComicsOnline',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -91,7 +91,6 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        // MODIFICA QUI: Passo 'this.cheerio' al parser
         return this.parser.parseChapterDetails(this.cheerio, response.data ?? '', mangaId, chapterId)
     }
 
@@ -126,7 +125,35 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
     }
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
-        return App.createPagedResults({ results: [] })
+        const page = metadata?.page ?? 1
+        let url = ''
+
+        // Gestione Paginazione "Latest"
+        // L'URL corretto per la paginazione su questo sito è spesso /filterList?page=X
+        // oppure /latest-release?page=X. Verificato che filterList funziona genericamente.
+        if (homepageSectionId === 'latest') {
+            url = `${this.baseUrl}/filterList?page=${page}&cat=&alpha=&sortBy=last_release&asc=false`
+        } else {
+            return App.createPagedResults({ results: [] })
+        }
+
+        const request = App.createRequest({
+            url: url,
+            method: 'GET'
+        })
+
+        const response = await this.requestManager.schedule(request, 1)
+        const $ = this.cheerio.load(response.data)
+        
+        // Riusiamo il parser della griglia
+        const manga = this.parser.parseGridItems($)
+        
+        const nextPage = manga.length > 0 ? page + 1 : undefined
+
+        return App.createPagedResults({
+            results: manga,
+            metadata: nextPage ? { page: nextPage } : undefined
+        })
     }
     
     async getCloudflareBypassRequestAsync() {

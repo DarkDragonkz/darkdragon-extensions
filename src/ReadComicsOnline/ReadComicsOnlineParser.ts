@@ -13,11 +13,70 @@ const BASE_URL = 'https://readcomicsonline.ru'
 
 export class ReadComicsOnlineParser {
 
+    /**
+     * Tenta di ottenere l'immagine alla massima risoluzione.
+     * Rimuove suffissi tipo '_250x350' se presenti.
+     */
+    private getHighResImage(url: string | undefined): string {
+        if (!url) return 'https://paperback.moe/icons/logo-alt.svg'
+        
+        // Fix URL relativi
+        if (url.startsWith('//')) url = `https:${url}`
+        else if (url.startsWith('/')) url = `${BASE_URL}${url}`
+
+        // Rimuove suffissi di ridimensionamento comuni (es. cover_250x350.jpg -> cover.jpg)
+        // La regex cerca _\d+x\d+ prima dell'estensione
+        return url.replace(/_\d+x\d+(?=\.[a-z]+$)/i, '')
+    }
+
+    /**
+     * Helper centralizzato per estrarre l'immagine da un elemento.
+     * Prova vari attributi di lazy loading e fallback.
+     */
+    private getImageSrc(element: any, id?: string): string {
+        // Cerca attributi comuni
+        let src = element.attr('data-src') ?? 
+                  element.attr('src') ?? 
+                  element.attr('original') ?? 
+                  element.attr('data-original') ?? 
+                  ''
+        
+        // Se non trova nulla o è un placeholder, prova a costruire l'URL
+        if ((!src || src.includes('no-image') || src.includes('placeholder')) && id) {
+             // Fallback euristico: spesso l'immagine è qui
+             return `${BASE_URL}/uploads/manga/${id}/cover/cover_250x350.jpg`
+        }
+
+        return this.getHighResImage(src)
+    }
+
+    /**
+     * Helper per parsare un singolo elemento lista/griglia
+     */
+    private parseMangaItem($: any, element: any): PartialSourceManga | null {
+        const link = $('a', element).first() || $(element).find('h5 a').first()
+        const href = link.attr('href')
+        const id = href?.split('/').pop()
+        
+        if (!id) return null
+
+        const title = link.text().trim() || $(element).find('h5').text().trim() || 'Unknown'
+        
+        const imgEl = $('img', element).first()
+        const image = this.getImageSrc(imgEl, id)
+
+        return App.createPartialSourceManga({
+            mangaId: id,
+            image: image,
+            title: title,
+            subtitle: undefined
+        })
+    }
+
     parseMangaDetails($: any, mangaId: string): SourceManga {
         const title = $('h2.listmanga-header').first().text().trim() || 'Unknown'
         
-        let image = $('img', 'div.boxed').attr('src') ?? ''
-        if (image.startsWith('/')) image = BASE_URL + image
+        const image = this.getImageSrc($('img', 'div.boxed').first(), mangaId)
         
         const author = $('dd', 'dt:contains("Type")').parent().text().replace('Type', '').trim() || 'Unknown'
         
@@ -57,6 +116,7 @@ export class ReadComicsOnlineParser {
             const link = $('a', li).attr('href')
             
             let chapterId = link?.split('/').pop() ?? ''
+            // Pulizia ID da query params
             if (chapterId.includes('?')) chapterId = chapterId.split('?')[0]
             if (chapterId.includes('#')) chapterId = chapterId.split('#')[0]
 
@@ -80,18 +140,22 @@ export class ReadComicsOnlineParser {
         return chapters
     }
 
-    // MODIFICA QUI: Aggiunto il parametro 'cheerio'
     parseChapterDetails(cheerio: any, html: string, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
-        // Usiamo l'istanza di cheerio passata dal main
         const $ = cheerio.load(html)
         
         $('img', 'div#all').each((_: any, img: any) => {
             let url = $(img).attr('data-src')?.trim() ?? $(img).attr('src')?.trim()
             if (url) {
                 url = url.trim();
+                // Assicuriamoci che l'URL sia assoluto e corretto
                 if (url.startsWith('/')) url = BASE_URL + url
-                pages.push(url)
+                if (!url.startsWith('http')) url = url.trim() // A volte sono url relativi strani
+                
+                // Evitiamo duplicati
+                if (!pages.includes(url)) {
+                    pages.push(url)
+                }
             }
         })
 
@@ -109,6 +173,7 @@ export class ReadComicsOnlineParser {
             for (const item of json.suggestions) {
                 const title = item.value
                 const id = item.data
+                // Costruiamo l'immagine direttamente
                 const image = `${BASE_URL}/uploads/manga/${id}/cover/cover_250x350.jpg`
 
                 if (id && title) {
@@ -126,10 +191,10 @@ export class ReadComicsOnlineParser {
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
         
-        // 1. Hot Comics (Visualizzazione Grande)
+        // 1. Hot Comics (Vetrina Large)
         const hotSection = App.createHomeSection({ 
             id: 'hot', 
-            title: 'Hot Comics', 
+            title: 'Hot Comics 🔥', 
             containsMoreItems: false, 
             type: HomeSectionType.singleRowLarge 
         })
@@ -139,10 +204,8 @@ export class ReadComicsOnlineParser {
             const id = $('div.schedule-name a', item).attr('href')?.split('/').pop()
             const title = $('div.schedule-name', item).text().trim()
             
-            const img = $('div.schedule-avatar img', item)
-            // Cerca ovunque: src, data-src, o style background
-            let image = img.attr('data-src') ?? img.attr('src') ?? ''
-            if (image.startsWith('/')) image = BASE_URL + image
+            const imgEl = $('div.schedule-avatar img', item)
+            const image = this.getImageSrc(imgEl, id)
 
             if (id && title) {
                 hotItems.push(App.createPartialSourceManga({
@@ -156,42 +219,45 @@ export class ReadComicsOnlineParser {
         hotSection.items = hotItems
         sectionCallback(hotSection)
 
-        // 2. Latest Comics (Lista normale)
+        // 2. Latest Comics (Scroll Infinito)
         const latestSection = App.createHomeSection({ 
             id: 'latest', 
-            title: 'Latest Comics', 
+            title: 'Latest Comics 🆕', 
             containsMoreItems: true, 
-            type: HomeSectionType.singleRowNormal 
+            type: HomeSectionType.continuous // UI MIGLIORATA
         })
-        const latestItems: PartialSourceManga[] = []
+        
+        // Riutilizziamo parseGridItems logic
+        const latestItems = this.parseGridItems($)
+        latestSection.items = latestItems
+        sectionCallback(latestSection)
+    }
 
+    // Usato sia per Home Latest che per View More
+    parseGridItems($: any): PartialSourceManga[] {
+        const items: PartialSourceManga[] = []
+        
         $('div.media', 'div.list-container > div.row').each((_: any, item: any) => {
             const link = $('h5.media-heading a', item)
             const id = link.attr('href')?.split('/').pop()
             const title = link.text().trim()
             
-            const img = $('div.media-left img', item)
-            // FIX AGGRESSIVO: Cerca src, data-src, original, data-original
-            let image = img.attr('src') ?? img.attr('data-src') ?? img.attr('original') ?? img.attr('data-original') ?? ''
+            const imgEl = $('div.media-left img', item)
+            const image = this.getImageSrc(imgEl, id)
             
-            // Se l'immagine è un placeholder o vuota, prova a costruirla dall'ID
-            if (!image || image.includes('no-image') || image.includes('placeholder')) {
-                // Tentativo di costruzione manuale url cover (spesso funzionante su questi siti)
-                image = `${BASE_URL}/uploads/manga/${id}/cover/cover_250x350.jpg`
-            } else if (image.startsWith('/')) {
-                image = BASE_URL + image
-            }
+            // Estrai info extra se presenti (es. capitolo o data)
+            const subtitle = undefined
 
             if (id && title) {
-                latestItems.push(App.createPartialSourceManga({
+                items.push(App.createPartialSourceManga({
                     mangaId: id,
                     image: image,
                     title: title,
-                    subtitle: undefined
+                    subtitle: subtitle
                 }))
             }
         })
-        latestSection.items = latestItems
-        sectionCallback(latestSection)
+        
+        return items
     }
 }
