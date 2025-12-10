@@ -20,7 +20,7 @@ import { ReadAllComicsParser } from './ReadAllComicsParser'
 const DOMAIN = 'https://readallcomics.com'
 
 export const ReadAllComicsInfo: SourceInfo = {
-    version: '1.5.0',
+    version: '1.5.1', // Bump versione per UI update
     name: 'ReadAllComics',
     icon: 'icon.png',
     author: 'DarkDragonkz',

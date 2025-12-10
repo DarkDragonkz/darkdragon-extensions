@@ -30,12 +30,10 @@ export class ReadAllComicsParser {
 
         const context = $('.description-archive')
         
-        // Descrizione
         let tempDesc = context.clone()
         tempDesc.find('b, strong, div, img').remove()
         desc = tempDesc.text().trim()
 
-        // Metadati
         const publisherLabel = context.find('b:contains("Publisher:"), strong:contains("Publisher:")')
         if (publisherLabel.length > 0) {
             author = publisherLabel[0].nextSibling?.nodeValue?.trim() || 
@@ -43,7 +41,6 @@ export class ReadAllComicsParser {
                      'Unknown'
         }
 
-        // --- FIX ERRORE TAGS ---
         const genreLabel = context.find('b:contains("Genres:"), strong:contains("Genres:")')
         if (genreLabel.length > 0) {
             let genreContainer = genreLabel.parent()
@@ -52,7 +49,6 @@ export class ReadAllComicsParser {
                 const href = $(a).attr('href')
                 const id = href?.split('/').filter(Boolean).pop() ?? label
                 
-                // Controllo rigoroso per evitare crash
                 if (id && label) {
                     arrayTags.push(App.createTag({ id: String(id), label: String(label) }))
                 }
@@ -85,17 +81,11 @@ export class ReadAllComicsParser {
 
             const chapterId = href
 
-            // --- FIX CAPITOLI (Ch. 0 e Ordine) ---
             let chapNum = 0
-            
-            // 1. Rimuovi l'anno tra parentesi es. "(2025)" o "(2024)"
             const titleClean = title.replace(/\(\d{4}\)/g, '').trim()
-            
-            // 2. Cerca numeri nel titolo pulito (es. "Werewolf... 006")
             const numMatch = titleClean.match(/(\d+(\.\d+)?)/g)
             
             if (numMatch && numMatch.length > 0) {
-                 // Prendi l'ultimo numero trovato. Es: "Vol 2 006" -> prende 6
                  chapNum = parseFloat(numMatch[numMatch.length - 1]!)
             }
 
@@ -139,7 +129,6 @@ export class ReadAllComicsParser {
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
 
-        // Caso 1: Griglia immagini (se presente)
         if ($('#post-area .post').length > 0) {
             $('#post-area .post').each((_: any, item: any) => {
                 const link = $('.pinbin-copy a', item).first()
@@ -163,7 +152,6 @@ export class ReadAllComicsParser {
                 }))
             })
         } 
-        // Caso 2: Lista testuale (Come da tuo screenshot)
         else if ($('.list-story li').length > 0) {
             $('.list-story li').each((_: any, li: any) => {
                 const link = $('a', li).first()
@@ -175,7 +163,6 @@ export class ReadAllComicsParser {
                 const urlParts = href.split('/').filter(Boolean)
                 const id = urlParts[urlParts.length - 1]
 
-                // Immagine FALLBACK per la lista testuale
                 const image = 'https://readallcomics.com/wp-content/uploads/2020/09/logo.png'
 
                 if (id) {
@@ -193,12 +180,15 @@ export class ReadAllComicsParser {
     }
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
+        
+        // UI IMPROVEMENT: Usiamo singleRowLarge per mostrare copertine grandi e belle
         const latestSection = App.createHomeSection({ 
             id: 'latest', 
-            title: 'Catalogue', 
+            title: 'Latest Added 🔥', 
             containsMoreItems: false, 
             type: HomeSectionType.singleRowLarge 
         })
+        
         const items: PartialSourceManga[] = []
 
         $('#post-area .post').each((_: any, item: any) => {
