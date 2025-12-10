@@ -871,7 +871,8 @@ ${desc}`;
   // src/MangaDex/MangaDex.ts
   var MD_API = "https://api.mangadex.org";
   var MangaDexInfo = {
-    version: "2.1.0",
+    version: "2.1.1",
+    // Bump version per fix search
     name: "MangaDex (EN)",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -894,7 +895,6 @@ ${desc}`;
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 5,
         requestTimeout: 2e4,
-        // Timeout ridotto per non bloccare troppo l'UI
         interceptor: {
           interceptRequest: async (request) => {
             request.headers = {
@@ -958,11 +958,18 @@ ${desc}`;
     async getSearchResults(query, metadata) {
       const limit = 20;
       const offset = metadata?.offset ?? 0;
-      let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&availableTranslatedLanguage[]=en`;
+      let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&includes[]=cover_art`;
+      url += "&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic";
+      url += "&availableTranslatedLanguage[]=en";
       if (query.title) {
-        url += `&title=${encodeURIComponent(query.title)}&order[relevance]=desc`;
+        const safeTitle = query.title.trim();
+        if (safeTitle.length > 0) {
+          url += `&title=${encodeURIComponent(safeTitle)}&order[relevance]=desc`;
+        } else {
+          url += "&order[followedCount]=desc";
+        }
       } else {
-        url += `&order[followedCount]=desc`;
+        url += "&order[followedCount]=desc";
       }
       const request = App.createRequest({ url, method: "GET" });
       const response = await this.requestManager.schedule(request, 1);
@@ -977,7 +984,6 @@ ${desc}`;
       const sections = [
         App.createHomeSection({ id: "popular", title: "Popular \u{1F525}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowLarge }),
         App.createHomeSection({ id: "latest", title: "Latest Updates \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.continuous }),
-        // UX: Continuous per updates
         App.createHomeSection({ id: "recently_added", title: "Recently Added \u{1F195}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
         App.createHomeSection({ id: "recommended", title: "Top Rated \u2B50", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
         App.createHomeSection({ id: "featured", title: "Featured (Monthly) \u{1F31F}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowLarge }),
@@ -987,7 +993,6 @@ ${desc}`;
       const urls = {
         popular: `${MD_API}/manga?${baseParams}&order[followedCount]=desc`,
         latest: `${MD_API}/manga?${baseParams}&order[latestUploadedChapter]=desc`,
-        // Nota: MD non ha un endpoint "feed" globale pulito, questo è il best effort per manga
         recently_added: `${MD_API}/manga?${baseParams}&order[createdAt]=desc`,
         recommended: `${MD_API}/manga?${baseParams}&order[rating]=desc`,
         featured: `${MD_API}/manga?${baseParams}&order[followedCount]=desc&createdAtSince=${new Date(Date.now() - 2592e6).toISOString().slice(0, 19)}`,
