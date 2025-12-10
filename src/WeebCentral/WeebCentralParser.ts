@@ -152,15 +152,15 @@ export class WeebCentralParser {
     }
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
-        // 1. Hot Updates (Featured)
+        // 1. Hot Updates (FIX: singleRowLarge per copertine verticali intere)
         const hotSection = App.createHomeSection({
             id: 'hot_updates',
             title: 'Hot Updates 🔥',
             containsMoreItems: false,
-            type: HomeSectionType.featured, 
+            type: HomeSectionType.singleRowLarge, // <-- CAMBIATO DA featured A singleRowLarge
         })
         
-        // 2. Recommendations (Nuova Sezione)
+        // 2. Recommendations
         const recSection = App.createHomeSection({
             id: 'recommendations',
             title: 'Recommendations 💡',
@@ -202,7 +202,6 @@ export class WeebCentralParser {
         sectionCallback(hotSection)
 
         // --- Parsing Recommendations ---
-        // Cerchiamo la sezione che contiene "Recommendations" nel titolo h2
         const recManga: PartialSourceManga[] = []
         const recContainer = $('section:has(h2:contains("Recommendations"))').first()
 

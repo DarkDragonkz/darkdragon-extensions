@@ -22,7 +22,7 @@ import { URLBuilder } from '../helper'
 const DOMAIN = 'https://weebcentral.com'
 
 export const WeebCentralInfo: SourceInfo = {
-    version: '1.0.18',
+    version: '1.0.19', // Bump version
     name: 'WeebCentral',
     icon: 'icon.png',
     author: 'DarkDragonkzz',

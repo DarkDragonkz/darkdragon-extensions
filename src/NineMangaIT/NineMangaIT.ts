@@ -24,7 +24,7 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '1.4.5',
+    version: '1.3.8',
     name: 'NineMangaIT',
     description: 'Extension that pulls manga from it.ninemanga.com',
     author: 'DarkDragonkzz',
@@ -48,7 +48,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     // User-Agent Mobile (Necessario per evitare ban Home)
     readonly userAgent = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
 
-    constructor(public cheerio: any) {}
+    constructor(public cheerio: any) {} // Reso pubblico per accessibilità dal parser
 
     requestManager = App.createRequestManager({
         requestsPerSecond: 3, 
@@ -113,9 +113,11 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         }
         if (url.endsWith('.html')) url = url.replace('.html', '')
 
-        // NESSUN TRUCCO QUI. Usiamo l'URL base e il parser farà il ciclo sequenziale.
+        // Usiamo il trucco -10-1 per ridurre il numero di pagine da scaricare nel ciclo
+        url += '-10-1.html'
+
         const request = App.createRequest({
-            url: url + '.html',
+            url: url,
             method: 'GET'
         })
         
@@ -124,7 +126,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         
         const $ = this.cheerio.load(response.data)
         
-        // Passiamo 'this' come source
+        // Passiamo 'this' come source, così il parser può usare requestManager e cheerio per il ciclo
         return this.parser.parseChapterDetails($, mangaId, chapterId, this)
     }
 
