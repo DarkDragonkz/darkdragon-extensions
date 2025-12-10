@@ -61,7 +61,7 @@ export class NineMangaITParser {
             const $el = $(el)
             const id = $el.attr('href')?.split('/').pop()?.replace('.html', '') ?? ''
             const label = $el.text().trim()
-            if (id && label) arrayTags.push(App.createTag({ id, label }))
+            if (id && label) arrayTags.push({ id, label })
         }
         const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
 
@@ -135,28 +135,27 @@ export class NineMangaITParser {
         return chapters
     }
 
-    // --- NUOVA LOGICA PER IL MOBILE ---
-    // Scarica le pagine una ad una
+    // --- NUOVA LOGICA ALLINEATA ALL'AUTORE NETSKY ---
     async parseChapterDetails(
         $: any, 
         mangaId: string, 
         chapterId: string, 
-        requestManager: any, // Serve per fare le chiamate alle altre pagine
-        cheerio: any,        // Serve per parsare le altre pagine
+        requestManager: any, 
+        cheerio: any,
         baseUrl: string
     ): Promise<ChapterDetails> {
         const pages: string[] = []
         
         // 1. Estrai immagine dalla pagina corrente (Pagina 1)
-        const firstPageImg = $('img.manga_pic').attr('src')
-        if (firstPageImg) pages.push(firstPageImg)
+        const firstImg = $('img.manga_pic').attr('src')
+        if (firstImg) pages.push(firstImg)
 
-        // 2. Trova tutte le altre pagine nel menu a tendina
+        // 2. Trova le altre pagine dal menu a tendina <select class="sl-page">
+        // Nel codice HTML fornito: <select class="sl-page" ...>
         const otherPages: string[] = []
         
-        // Cerca il select delle pagine (sl-page)
         $('select.sl-page option').each((i: number, option: any) => {
-            // Saltiamo la prima (già caricata)
+            // Saltiamo la prima opzione perché è la pagina corrente
             if (i === 0) return 
             
             let pageUrl = $(option).attr('value')
@@ -166,8 +165,8 @@ export class NineMangaITParser {
             }
         })
 
-        // 3. Scarica le altre pagine in parallelo (con limite per non essere bannati)
-        // Usiamo un batch size di 5 richieste alla volta
+        // 3. Scarica le altre pagine (Concurrency controllata da requestManager)
+        // Usiamo Promise.all per parallelizzare ma il requestManager limiterà a 4req/s
         const promises = otherPages.map(async (url) => {
             try {
                 const request = App.createRequest({
@@ -185,15 +184,12 @@ export class NineMangaITParser {
                 
                 return imgSrc
             } catch (e) {
-                console.log(`Failed to load page ${url}`)
                 return null
             }
         })
 
-        // Attendi tutte le promesse
         const results = await Promise.all(promises)
         
-        // Aggiungi i risultati validi all'array finale
         for (const img of results) {
             if (img) pages.push(img)
         }

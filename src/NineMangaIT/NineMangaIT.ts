@@ -24,7 +24,7 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '1.2.8',
+    version: '1.3.0',
     name: 'NineMangaIT',
     description: 'Extension that pulls manga from it.ninemanga.com',
     author: 'DarkDragonkzz',
@@ -45,13 +45,13 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     baseUrl = IT_DOMAIN
     parser = new NineMangaITParser()
 
-    // BACK TO MOBILE USER AGENT (per evitare ban e caricare la home)
+    // User-Agent Mobile (Android) per evitare blocchi e caricare la versione leggera
     readonly userAgent = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
 
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 3, // Teniamo 3 per sicurezza visto che ora scarichiamo più pagine per capitolo
+        requestsPerSecond: 4, // Bilanciato per scaricare le pagine senza essere bannati
         requestTimeout: 25000,
         interceptor: {
             interceptRequest: async (request: any) => {
@@ -61,9 +61,6 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
                         'Referer': `${this.baseUrl}/`,
                         'User-Agent': this.userAgent,
                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                        'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
-                        'Connection': 'keep-alive',
-                        'Cookie': 'is_warning=1; my_limit=1'
                     }
                 }
                 return request
@@ -113,7 +110,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         }
         if (!url.endsWith('.html')) url += '.html'
 
-        // Rimuoviamo ?style=list perché su mobile non funziona/fa crashare se l'agent è mobile
+        // NOTA: Non aggiungiamo più ?style=list. Usiamo la paginazione naturale.
         const request = App.createRequest({
             url: url,
             method: 'GET'
@@ -124,7 +121,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         
         const $ = this.cheerio.load(response.data)
         
-        // Passiamo requestManager e cheerio per scaricare le altre pagine
+        // Passiamo tutto il necessario al parser per scaricare le altre pagine
         return this.parser.parseChapterDetails($, mangaId, chapterId, this.requestManager, this.cheerio, this.baseUrl)
     }
 
@@ -195,7 +192,6 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
                 'User-Agent': this.userAgent,
                 'Referer': `${this.baseUrl}/`,
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7'
             }
         })
     }
