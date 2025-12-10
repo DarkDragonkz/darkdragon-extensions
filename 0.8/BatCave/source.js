@@ -790,25 +790,17 @@ var _Sources = (() => {
               }
             }
             let chapNum = 0;
-            const stdMatch = title.match(/(?:Issue|Chapter|Ch\.?|#)\s*(\d+(\.\d+)?)/i);
-            if (stdMatch) {
-              chapNum = parseFloat(stdMatch[1]);
-            } else if (title.match(/(?:Part|Pt\.?)\s*(\d+(\.\d+)?)/i)) {
-              const partMatch = title.match(/(?:Part|Pt\.?)\s*(\d+(\.\d+)?)/i);
-              chapNum = parseFloat(partMatch[1]);
-            } else if (title.match(/(?:Special)\s*(\d+(\.\d+)?)/i)) {
-              const specialMatch = title.match(/(?:Special)\s*(\d+(\.\d+)?)/i);
-              chapNum = parseFloat(specialMatch[1]);
+            if (chap.posi) {
+              chapNum = parseFloat(chap.posi);
             } else {
-              const anyNumMatch = title.match(/(\d+(\.\d+)?)/g);
-              if (anyNumMatch && anyNumMatch.length > 0) {
-                chapNum = parseFloat(anyNumMatch[anyNumMatch.length - 1]);
-              }
+              const numMatch = title.match(/#(\d+(\.\d+)?)/);
+              chapNum = numMatch ? parseFloat(numMatch[1]) : 0;
             }
             chapters.push(App.createChapter({
               id,
               name: title,
               chapNum,
+              // L'app ordinerà in base a questo numero
               time,
               langCode: "en"
             }));
@@ -868,7 +860,6 @@ var _Sources = (() => {
         title: "Hot New Releases \u{1F525}",
         containsMoreItems: false,
         type: import_types.HomeSectionType.singleRowLarge
-        // <-- Mostra copertina intera grande
       });
       const hotItems = [];
       $(".sect--hot .poster").each((_, item) => {
