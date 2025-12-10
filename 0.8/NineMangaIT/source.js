@@ -771,7 +771,7 @@ var _Sources = (() => {
         const $el = $(el);
         const id = $el.attr("href")?.split("/").pop()?.replace(".html", "") ?? "";
         const label = $el.text().trim();
-        if (id && label) arrayTags.push(App.createTag({ id, label }));
+        if (id && label) arrayTags.push({ id, label });
       }
       const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })];
       return App.createSourceManga({
@@ -833,12 +833,11 @@ var _Sources = (() => {
       }
       return chapters;
     }
-    // --- NUOVA LOGICA PER IL MOBILE ---
-    // Scarica le pagine una ad una
+    // --- NUOVA LOGICA ALLINEATA ALL'AUTORE NETSKY ---
     async parseChapterDetails($, mangaId, chapterId, requestManager, cheerio, baseUrl) {
       const pages = [];
-      const firstPageImg = $("img.manga_pic").attr("src");
-      if (firstPageImg) pages.push(firstPageImg);
+      const firstImg = $("img.manga_pic").attr("src");
+      if (firstImg) pages.push(firstImg);
       const otherPages = [];
       $("select.sl-page option").each((i, option) => {
         if (i === 0) return;
@@ -863,7 +862,6 @@ var _Sources = (() => {
           const imgSrc = $page("img.manga_pic").attr("src");
           return imgSrc;
         } catch (e) {
-          console.log(`Failed to load page ${url}`);
           return null;
         }
       });
@@ -984,7 +982,7 @@ var _Sources = (() => {
   // src/NineMangaIT/NineMangaIT.ts
   var IT_DOMAIN = "https://it.ninemanga.com";
   var NineMangaITInfo = {
-    version: "1.2.8",
+    version: "1.3.0",
     name: "NineMangaIT",
     description: "Extension that pulls manga from it.ninemanga.com",
     author: "DarkDragonkzz",
@@ -1005,11 +1003,11 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.baseUrl = IT_DOMAIN;
       this.parser = new NineMangaITParser();
-      // BACK TO MOBILE USER AGENT (per evitare ban e caricare la home)
+      // User-Agent Mobile (Android) per evitare blocchi e caricare la versione leggera
       this.userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
       this.requestManager = App.createRequestManager({
-        requestsPerSecond: 3,
-        // Teniamo 3 per sicurezza visto che ora scarichiamo più pagine per capitolo
+        requestsPerSecond: 4,
+        // Bilanciato per scaricare le pagine senza essere bannati
         requestTimeout: 25e3,
         interceptor: {
           interceptRequest: async (request) => {
@@ -1018,10 +1016,7 @@ var _Sources = (() => {
               ...{
                 "Referer": `${this.baseUrl}/`,
                 "User-Agent": this.userAgent,
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
-                "Connection": "keep-alive",
-                "Cookie": "is_warning=1; my_limit=1"
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
               }
             };
             return request;
@@ -1124,8 +1119,7 @@ var _Sources = (() => {
         headers: {
           "User-Agent": this.userAgent,
           "Referer": `${this.baseUrl}/`,
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7"
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         }
       });
     }
