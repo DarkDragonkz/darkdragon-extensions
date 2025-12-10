@@ -23,7 +23,7 @@ const BASE_URL = 'https://comix.to'
 const API_URL = 'https://comix.to/api/v2'
 
 export const ComixInfo: SourceInfo = {
-    version: '2.0.7', // Bump version per fix ricerca
+    version: '2.0.8', // Bump version (Fix Ricerca GTO)
     name: 'Comix',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -133,12 +133,13 @@ export class Comix implements SearchResultsProviding, MangaProviding, ChapterPro
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
         
-        let url = `${this.apiUrl}/manga?page=${page}&limit=20`
+        // FIX: Aumentiamo il limit a 60 per essere sicuri di scaricare il manga giusto 
+        // anche se l'API lo mette in fondo alla lista.
+        let url = `${this.apiUrl}/manga?page=${page}&limit=60`
         
         if (query.title) {
-            // FIX 1: Cambiato da 'keyword' a 'q' che è standard per molte API v2
-            // Aggiunto anche sort per rilevanza se supportato, altrimenti lo gestiamo noi sotto
-            url += `&q=${encodeURIComponent(query.title)}`
+            // FIX: Torniamo a 'keyword' che è quello supportato, ma manteniamo il limit alto
+            url += `&keyword=${encodeURIComponent(query.title)}`
         }
 
         const request = App.createRequest({ url, method: 'GET' })
@@ -147,30 +148,35 @@ export class Comix implements SearchResultsProviding, MangaProviding, ChapterPro
         
         let manga = this.parser.parseSearchResults(data)
         
-        // FIX 2: Client-Side Sorting (Algoritmo di Rilevanza)
-        // Se l'utente ha cercato qualcosa, riordiniamo i risultati
+        // FIX 2: Client-Side Sorting Aggressivo
+        // Dato che l'API ritorna "Mayo Chiki" prima di "GTO", riordiniamo noi.
         if (query.title && manga.length > 0) {
-            const q = query.title.toLowerCase()
+            const q = query.title.toLowerCase().trim()
             manga.sort((a, b) => {
                 const titleA = a.title.toLowerCase()
                 const titleB = b.title.toLowerCase()
 
-                // Priorità 1: Match Esatto ("GTO" vs "GTO Paradise")
+                // 1. Corrispondenza Esatta (Priorità Massima)
                 if (titleA === q && titleB !== q) return -1
                 if (titleB === q && titleA !== q) return 1
 
-                // Priorità 2: Inizia con la query ("GTO..." vs "Great Teacher...")
+                // 2. Inizia con la parola cercata
                 const aStarts = titleA.startsWith(q)
                 const bStarts = titleB.startsWith(q)
                 if (aStarts && !bStarts) return -1
                 if (bStarts && !aStarts) return 1
+                
+                // 3. Contiene la parola cercata
+                const aIncludes = titleA.includes(q)
+                const bIncludes = titleB.includes(q)
+                if (aIncludes && !bIncludes) return -1
+                if (bIncludes && !aIncludes) return 1
 
-                // Default: ordine originale API
                 return 0
             })
         }
         
-        const nextPage = manga.length >= 20 ? page + 1 : undefined
+        const nextPage = manga.length >= 60 ? page + 1 : undefined
 
         return App.createPagedResults({
             results: manga,
