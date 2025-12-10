@@ -11,6 +11,7 @@ import {
 
 export class NineMangaITParser {
 
+    // HELPER: Trova l'immagine migliore e corregge HTTPS
     private getImageSrc(element: any): string {
         let img = element.find('img').first()
         if (element.is('img')) img = element
@@ -48,7 +49,7 @@ export class NineMangaITParser {
             intro.find('ul, h1, div, a').remove() 
             desc = intro.text().trim()
         }
-        if (!desc) desc = 'No description available'
+        if (!desc) desc = 'Nessuna descrizione disponibile.'
         desc = desc.replace(/^Sommario:\s*/i, '')
         
         let status = 'Ongoing'
@@ -61,7 +62,7 @@ export class NineMangaITParser {
             const $el = $(el)
             const id = $el.attr('href')?.split('/').pop()?.replace('.html', '') ?? ''
             const label = $el.text().trim()
-            if (id && label) arrayTags.push({ id, label })
+            if (id && label) arrayTags.push(App.createTag({ id, label }))
         }
         const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
 
@@ -98,7 +99,6 @@ export class NineMangaITParser {
             const chapterId = filePart.split('?')[0].replace('.html', '')
 
             if (seenIds.has(chapterId)) continue
-            // Ignoriamo le sottopagine tipo -10-1.html
             if (filePart.match(/-\d+-\d+\.html$/)) continue 
 
             seenIds.add(chapterId)
@@ -119,9 +119,9 @@ export class NineMangaITParser {
             if (chapNumMatch) {
                 chapNum = parseFloat(chapNumMatch[1] ?? '0')
             } else {
-                const simpleNums = titleRaw.match(/(\d+(\.\d+)?)/g)
+                const simpleNums = titleRaw.match(/(\d+(\.\d+)?)/g).map(Number)
                 if (simpleNums && simpleNums.length > 0) {
-                    chapNum = parseFloat(simpleNums[simpleNums.length - 1] ?? '0')
+                    chapNum = simpleNums[simpleNums.length - 1] ?? 0
                 }
             }
 
@@ -136,66 +136,34 @@ export class NineMangaITParser {
         return chapters
     }
 
+    // LOGICA CORRETTA: Utilizza il selettore desktop del modello fornito
     parseChapterDetails($: any, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
-
-        // Strategia Aggiornata:
-        // Dato che abbiamo richiesto ?style=list, cerchiamo tutte le immagini caricate.
-        // Selettore tipico per NineManga in lista: img.manga_pic
-        let images = $('img.manga_pic').toArray()
-
-        // Fallback: a volte usano classi diverse o nidificazione semplice
-        if (images.length === 0) {
-            images = $('.changepage img').toArray()
-        }
         
-        // Ultimo fallback: cerca tutte le immagini nel reader container se esiste
-        if (images.length === 0) {
-             images = $('div[id^="page"] img, .pic_box img').toArray()
-        }
-
-        for (const img of images) {
-            const $img = $(img)
-            let src = $img.attr('src') || $img.attr('data-src') || $img.attr('original') || $img.attr('data-original')
+        // Selettore primario basato sulla logica del file NineMangaParser.ts
+        const imgSelector = $('div.pic_box img.manga_pic').toArray()
+        
+        for (const obj of imgSelector) {
+            const i = $(obj).attr('src') ?? ''
             
-            if (src) {
-                if (src.startsWith('//')) src = `https:${src}`
-                else if (src.startsWith('/')) src = `https://it.ninemanga.com${src}`
-                
-                // Filtra icone e loghi
-                if (!src.includes('logo') && !src.includes('icon') && !src.includes('loading')) {
-                    pages.push(src)
-                }
+            // Filtro per evitare immagini non valide (es. loghi, icone caricamento)
+            if (i && i.startsWith('http') && !i.includes('logo') && !i.includes('icon') && !i.includes('button')) {
+                pages.push(i.trim())
             }
         }
 
-        const cleanPages = [...new Set(pages)]
-
-        if (cleanPages.length === 0) {
-             // Se ancora vuoto, potremmo provare il parsing degli script come ultima risorsa,
-             // ma solitamente style=list risolve tutto.
-             // Proviamo a estrarre dallo script se presente (codice legacy mantenuto per sicurezza)
-             const scripts = $('script').toArray()
-             for (const script of scripts) {
-                 const content = $(script).html()
-                 if (content && (content.includes('p_urls') || content.includes('img_url'))) {
-                     const matches = content.match(/(https?:\/\/[^"']+\.(?:jpg|png|webp|jpeg))/gi)
-                     if (matches && matches.length > 0) {
-                         for(const m of matches) cleanPages.push(m)
-                         break
-                     }
-                 }
-             }
-        }
-        
-        if (cleanPages.length === 0) {
-            throw new Error("Nessuna pagina trovata. Riprova più tardi.")
+        // Fallback: se il selettore specifico desktop fallisce, tenta quello generico
+        if (pages.length === 0) {
+            $('img.manga_pic').each((_: any, img: any) => {
+                const src = $(img).attr('src')
+                if (src && src.startsWith('http')) pages.push(src.trim())
+            })
         }
 
         return App.createChapterDetails({
             id: chapterId,
             mangaId: mangaId,
-            pages: cleanPages
+            pages: [...new Set(pages)] // Rimuove eventuali duplicati
         })
     }
 
@@ -230,7 +198,7 @@ export class NineMangaITParser {
         return results
     }
 
-    parseHomeSections($home: any, $updates: any, sectionCallback: (section: HomeSection) => void, baseUrl: string): void {
+    parseHomeSections($home: any, sectionCallback: (section: HomeSection) => void, baseUrl: string): void {
         const popularSection = App.createHomeSection({ id: 'popular', title: 'Popolari 🔥', containsMoreItems: true, type: HomeSectionType.singleRowLarge })
         const newSection = App.createHomeSection({ id: 'new', title: 'Nuove Uscite 🆕', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
         const latestSection = App.createHomeSection({ id: 'latest', title: 'Ultimi Aggiornamenti 🆙', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
