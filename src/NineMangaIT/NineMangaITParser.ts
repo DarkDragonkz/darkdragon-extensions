@@ -136,45 +136,60 @@ export class NineMangaITParser {
         return chapters
     }
 
-    parseChapterDetails($: any, mangaId: string, chapterId: string, requestManager: any, baseUrl: string, cheerio: any): ChapterDetails {
+    parseChapterDetails($: any, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
-        
-        // 1. Cerca immagini standard
-        $('img.manga_pic').each((_: any, img: any) => {
-             const src = $(img).attr('src')
-             if (src) pages.push(src)
-        })
 
-        // 2. Fallback DOM
-        if (pages.length === 0) {
-             $('div[align="center"] img').each((_: any, img: any) => {
-                const src = $(img).attr('src')
-                if (src && src.startsWith('http') && !src.includes('logo') && !src.includes('icon')) {
-                    pages.push(src)
-                }
-            })
+        // Strategia Aggiornata:
+        // Dato che abbiamo richiesto ?style=list, cerchiamo tutte le immagini caricate.
+        // Selettore tipico per NineManga in lista: img.manga_pic
+        let images = $('img.manga_pic').toArray()
+
+        // Fallback: a volte usano classi diverse o nidificazione semplice
+        if (images.length === 0) {
+            images = $('.changepage img').toArray()
+        }
+        
+        // Ultimo fallback: cerca tutte le immagini nel reader container se esiste
+        if (images.length === 0) {
+             images = $('div[id^="page"] img, .pic_box img').toArray()
         }
 
-        // 3. Script Fallback
-        if (pages.length === 0) {
-            const scripts = $('script').toArray()
-            for (const script of scripts) {
-                const content = $(script).html()
-                if (content && (content.includes('p_urls') || content.includes('img_url'))) {
-                    const matches = content.match(/(https?:\/\/[^"']+\.(?:jpg|png|webp|jpeg))/gi)
-                    if (matches && matches.length > 0) {
-                        for(const m of matches) pages.push(m)
-                        break
-                    }
+        for (const img of images) {
+            const $img = $(img)
+            let src = $img.attr('src') || $img.attr('data-src') || $img.attr('original') || $img.attr('data-original')
+            
+            if (src) {
+                if (src.startsWith('//')) src = `https:${src}`
+                else if (src.startsWith('/')) src = `https://it.ninemanga.com${src}`
+                
+                // Filtra icone e loghi
+                if (!src.includes('logo') && !src.includes('icon') && !src.includes('loading')) {
+                    pages.push(src)
                 }
             }
         }
 
-        const cleanPages = [...new Set(pages)].filter(p => !p.includes('logo') && !p.includes('icon'))
+        const cleanPages = [...new Set(pages)]
 
         if (cleanPages.length === 0) {
-            // Non lanciamo errore qui se il chiamante gestisce il fallback, ma per sicurezza:
-             throw new Error("Nessuna pagina trovata. Riprova o apri nel browser.")
+             // Se ancora vuoto, potremmo provare il parsing degli script come ultima risorsa,
+             // ma solitamente style=list risolve tutto.
+             // Proviamo a estrarre dallo script se presente (codice legacy mantenuto per sicurezza)
+             const scripts = $('script').toArray()
+             for (const script of scripts) {
+                 const content = $(script).html()
+                 if (content && (content.includes('p_urls') || content.includes('img_url'))) {
+                     const matches = content.match(/(https?:\/\/[^"']+\.(?:jpg|png|webp|jpeg))/gi)
+                     if (matches && matches.length > 0) {
+                         for(const m of matches) cleanPages.push(m)
+                         break
+                     }
+                 }
+             }
+        }
+        
+        if (cleanPages.length === 0) {
+            throw new Error("Nessuna pagina trovata. Riprova più tardi.")
         }
 
         return App.createChapterDetails({
