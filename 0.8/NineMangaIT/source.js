@@ -760,20 +760,19 @@ var _Sources = (() => {
         intro.find("ul, h1, div, a").remove();
         desc = intro.text().trim();
       }
-      if (!desc) desc = "No description available";
+      if (!desc) desc = "Nessuna descrizione disponibile.";
       desc = desc.replace(/^Sommario:\s*/i, "");
       let status = "Ongoing";
       const statusText = $('.red, a[href*="completed"]').text().toLowerCase();
       if (statusText.includes("completato") || statusText.includes("completed")) status = "Completed";
       const arrayTags = [];
-      const genreLinks = $('li[itemprop="genre"] a').toArray();
-      for (const el of genreLinks) {
+      $('li[itemprop="genre"] a').each((_, el) => {
         const $el = $(el);
         const id = $el.attr("href")?.split("/").pop()?.replace(".html", "") ?? "";
         const label = $el.text().trim();
         if (id && label) arrayTags.push({ id, label });
-      }
-      const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })];
+      });
+      const tagSections = [App.createTagSection({ id: "0", label: "Generi", tags: arrayTags })];
       return App.createSourceManga({
         id: mangaId,
         mangaInfo: App.createMangaInfo({
@@ -810,8 +809,8 @@ var _Sources = (() => {
         const dateText = $link.parent().find("span").last().text().trim();
         let time = /* @__PURE__ */ new Date();
         if (dateText) {
-          time = new Date(dateText);
-          if (isNaN(time.getTime())) time = /* @__PURE__ */ new Date();
+          const parsedDate = new Date(dateText);
+          if (!isNaN(parsedDate.getTime())) time = parsedDate;
         }
         const chapNumMatch = titleRaw.match(/(?:ch|chapter|episode|c)\.?\s*(\d+(\.\d+)?)/i);
         let chapNum = 0;
@@ -833,50 +832,55 @@ var _Sources = (() => {
       }
       return chapters;
     }
-    // --- LOGICA DELL'ALTRO AUTORE ADATTATA ---
+    /**
+     * OTTIMIZZAZIONE SENIOR: Caricamento Parallelo
+     */
     async parseChapterDetails($, mangaId, chapterId, source) {
-      const pages = [];
-      const pageArr = $("select.sl-page option").toArray();
-      let firstPageUrl = "";
-      let i = 0;
-      for (const obj of pageArr) {
+      const pageUrls = [];
+      $("select.sl-page option").each((_, obj) => {
         let pageUrl = $(obj).attr("value") ?? "";
         if (pageUrl.startsWith("/")) pageUrl = source.baseUrl + pageUrl;
-        if (i == 0) firstPageUrl = pageUrl;
-        if (i > 0 && pageUrl == firstPageUrl) break;
-        const imagesArray = await this.getImage(pageUrl, source);
-        for (const image of imagesArray) {
-          if (!pages.includes(image)) {
-            pages.push(image);
-          }
+        if (pageUrl && !pageUrls.includes(pageUrl)) {
+          pageUrls.push(pageUrl);
         }
-        i++;
+      });
+      if (pageUrls.length === 0) {
+        const singlePageImages = await this.getImageFromCheerio($, source);
+        return App.createChapterDetails({
+          id: chapterId,
+          mangaId,
+          pages: singlePageImages
+        });
       }
-      if (pages.length === 0) {
-        const imagesArray = await this.getImageFromCheerio($, source);
-        for (const image of imagesArray) pages.push(image);
-      }
+      const promises = pageUrls.map((url) => this.getImage(url, source));
+      const results = await Promise.all(promises);
+      const allPages = [...new Set(results.flat())];
       return App.createChapterDetails({
         id: chapterId,
         mangaId,
-        pages
+        pages: allPages
       });
     }
-    // Helper per scaricare e parsare una pagina
+    // Helper per scaricare e parsare una singola pagina
     async getImage(url, source) {
-      const request = App.createRequest({
-        url,
-        method: "GET",
-        headers: {
-          "Referer": source.baseUrl,
-          "User-Agent": source.userAgent
-        }
-      });
-      const response = await source.requestManager.schedule(request, 1);
-      const $ = source.cheerio.load(response.data);
-      return this.getImageFromCheerio($, source);
+      try {
+        const request = App.createRequest({
+          url,
+          method: "GET",
+          headers: {
+            "Referer": source.baseUrl,
+            "User-Agent": source.userAgent
+          }
+        });
+        const response = await source.requestManager.schedule(request, 1);
+        const $ = source.cheerio.load(response.data);
+        return this.getImageFromCheerio($, source);
+      } catch (e) {
+        console.error(`Failed to load page ${url}: ${e}`);
+        return [];
+      }
     }
-    // Estrae le immagini da un oggetto Cheerio caricato
+    // Estrae le immagini da un oggetto Cheerio
     async getImageFromCheerio($, source) {
       const arrImages = [];
       $("div.pic_box img.manga_pic").each((_, img) => {
@@ -918,7 +922,7 @@ var _Sources = (() => {
     parseHomeSections($home, $updates, sectionCallback, baseUrl) {
       const popularSection = App.createHomeSection({ id: "popular", title: "Popolari \u{1F525}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowLarge });
       const newSection = App.createHomeSection({ id: "new", title: "Nuove Uscite \u{1F195}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
-      const latestSection = App.createHomeSection({ id: "latest", title: "Ultimi Aggiornamenti \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
+      const latestSection = App.createHomeSection({ id: "latest", title: "Ultimi Aggiornamenti \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.continuous });
       const popularItems = [];
       const newItems = [];
       const latestItems = [];
@@ -998,7 +1002,8 @@ var _Sources = (() => {
   // src/NineMangaIT/NineMangaIT.ts
   var IT_DOMAIN = "https://it.ninemanga.com";
   var NineMangaITInfo = {
-    version: "1.3.8",
+    version: "1.4.0",
+    // Major bump per l'ottimizzazione parallela
     name: "NineMangaIT",
     description: "Extension that pulls manga from it.ninemanga.com",
     author: "DarkDragonkzz",
@@ -1019,9 +1024,7 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.baseUrl = IT_DOMAIN;
       this.parser = new NineMangaITParser();
-      // User-Agent Mobile (Necessario per evitare ban Home)
       this.userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
-      // Reso pubblico per accessibilità dal parser
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 3,
         requestTimeout: 25e3,
@@ -1118,7 +1121,7 @@ var _Sources = (() => {
     async getViewMoreItems(homepageSectionId, metadata) {
       let page = metadata?.page ?? 1;
       let url = "";
-      if (homepageSectionId === "recent") url = `${this.baseUrl}/list/New-Update/?page=${page}`;
+      if (homepageSectionId === "latest") url = `${this.baseUrl}/list/New-Update/?page=${page}`;
       else if (homepageSectionId === "popular") url = `${this.baseUrl}/list/Hot-Book/?page=${page}`;
       else if (homepageSectionId === "new") url = `${this.baseUrl}/list/New-Book/?page=${page}`;
       else return App.createPagedResults({ results: [] });
