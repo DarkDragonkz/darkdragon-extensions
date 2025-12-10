@@ -449,8 +449,8 @@ var _Sources = (() => {
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.urlEncodeObject = exports.convertTime = exports.Source = void 0;
       var Source = class {
-        constructor(cheerio2) {
-          this.cheerio = cheerio2;
+        constructor(cheerio) {
+          this.cheerio = cheerio;
         }
         /**
          * @deprecated use {@link Source.getSearchResults getSearchResults} instead
@@ -732,26 +732,6 @@ var _Sources = (() => {
   // src/Comix/ComixParser.ts
   var import_types = __toESM(require_lib());
   var ComixParser = class {
-    // Helper per estrarre i dati JSON di Next.js (_next_f)
-    // Questo è fondamentale per siti moderni come Comix.to
-    extractNextData(html) {
-      const regex = /self\.__next_f\.push\(\[1,"(.*?)"\]\)/g;
-      let match;
-      let combinedJson = "";
-      while ((match = regex.exec(html)) !== null) {
-        let data = match[1];
-        data = data.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
-        if (data.includes("manga_id") || data.includes("chapter_id")) {
-          const mangaMatch = data.match(/{"manga":{.*?}/);
-          if (mangaMatch) return JSON.parse(mangaMatch[0]);
-          const chapterMatch = data.match(/{"chapter":{.*?}/);
-          if (chapterMatch) return JSON.parse(chapterMatch[0]);
-          const itemsMatch = data.match(/{"items":\[{.*?}\]}/);
-          if (itemsMatch) return JSON.parse(itemsMatch[0]);
-        }
-      }
-      return null;
-    }
     parseMangaDetails($, mangaId) {
       const title = $("h1.title").text().trim() || "Unknown";
       const image = $('img[itemprop="image"]').attr("src") ?? "";
@@ -855,16 +835,14 @@ var _Sources = (() => {
       }
       return results;
     }
-    parseHomeSections(html, sectionCallback) {
+    // FIX: Aggiunto parametro 'cheerio'
+    parseHomeSections(cheerio, html, sectionCallback) {
       const popularSection = App.createHomeSection({ id: "popular", title: "Most Popular \u{1F525}", containsMoreItems: false, type: import_types.HomeSectionType.singleRowLarge });
       const trendingSection = App.createHomeSection({ id: "trending", title: "Trending New \u{1F31F}", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
       const latestSection = App.createHomeSection({ id: "latest", title: "Latest Updates \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
       const popularItems = [];
       const trendingItems = [];
       const latestItems = [];
-      const extractItems = (rawJson, keyword) => {
-        return [];
-      };
       const $ = cheerio.load(html);
       $(".popular .swiper-slide").each((_, slide) => {
         const title = $(".title", slide).text().trim();
@@ -927,7 +905,7 @@ var _Sources = (() => {
   // src/Comix/Comix.ts
   var DOMAIN = "https://comix.to";
   var ComixInfo = {
-    version: "1.0.0",
+    version: "1.0.1",
     name: "Comix",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -944,11 +922,10 @@ var _Sources = (() => {
     intents: import_types2.SourceIntents.MANGA_CHAPTERS | import_types2.SourceIntents.HOMEPAGE_SECTIONS | import_types2.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
   };
   var Comix = class {
-    constructor(cheerio2) {
-      this.cheerio = cheerio2;
+    constructor(cheerio) {
+      this.cheerio = cheerio;
       this.baseUrl = DOMAIN;
       this.parser = new ComixParser();
-      // User Agent Mobile per compatibilità
       this.userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 4,
@@ -1020,7 +997,7 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      this.parser.parseHomeSections(response.data ?? "", sectionCallback);
+      this.parser.parseHomeSections(this.cheerio, response.data ?? "", sectionCallback);
     }
     async getViewMoreItems(homepageSectionId, metadata) {
       return App.createPagedResults({ results: [] });
