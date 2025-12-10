@@ -815,7 +815,6 @@ var _Sources = (() => {
             id,
             name,
             chapNum: chapNum >= 0 ? chapNum : 0,
-            // Imposta a 0 se negativo
             time: /* @__PURE__ */ new Date(),
             langCode: "it"
           })
@@ -883,21 +882,22 @@ var _Sources = (() => {
       return results;
     }
     parseHomeSections($, sectionCallback) {
-      const section1 = App.createHomeSection({
-        id: "1",
-        title: "Ultimi capitoli aggiunti",
-        containsMoreItems: true,
-        type: import_types.HomeSectionType.singleRowNormal
-      });
       const section2 = App.createHomeSection({
         id: "2",
-        title: "Manga del mese",
+        title: "Manga del Mese \u{1F31F}",
+        containsMoreItems: true,
+        type: import_types.HomeSectionType.featured
+        // <--- CAMBIATO IN FEATURED (Carosello grande)
+      });
+      const section1 = App.createHomeSection({
+        id: "1",
+        title: "Ultimi Capitoli \u{1F525}",
         containsMoreItems: true,
         type: import_types.HomeSectionType.singleRowNormal
       });
       const section3 = App.createHomeSection({
         id: "3",
-        title: "Capitoli di tendenza",
+        title: "In Tendenza \u{1F4C8}",
         containsMoreItems: true,
         type: import_types.HomeSectionType.singleRowNormal
       });
@@ -933,16 +933,19 @@ var _Sources = (() => {
           subtitle: sub
         });
       };
+      let i = 0;
+      for (const obj of arrHotTitle) {
+        hotTitles.push(processEntry(obj, "hot"));
+        i++;
+        if (i >= 10) break;
+      }
+      section2.items = hotTitles;
+      sectionCallback(section2);
       for (const obj of arrLatest) {
         latestManga.push(processEntry(obj, "latest"));
       }
       section1.items = latestManga;
       sectionCallback(section1);
-      for (const obj of arrHotTitle) {
-        hotTitles.push(processEntry(obj, "hot"));
-      }
-      section2.items = hotTitles;
-      sectionCallback(section2);
       for (const obj of arrTrending) {
         trending.push(processEntry(obj, "trending"));
       }
@@ -1018,7 +1021,8 @@ var _Sources = (() => {
   // src/MangaWorld/MangaWorld.ts
   var MW_DOMAIN = "https://www.mangaworld.mx";
   var MangaWorldInfo = {
-    version: "3.1.0",
+    version: "3.2.0",
+    // Bump versione per UI update
     name: "MangaWorld",
     description: "Extension that pulls manga from MangaWorld.",
     author: "NmN",
@@ -1041,7 +1045,6 @@ var _Sources = (() => {
       this.baseUrl = MW_DOMAIN;
       this.RETRIES = 10;
       this.parser = new MangaWorldParser();
-      // Rinominato
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 8,
         requestTimeout: 2e4,
@@ -1081,7 +1084,7 @@ var _Sources = (() => {
       });
       const response = await this.requestManager.schedule(request, this.RETRIES);
       const $ = this.cheerio.load(response.data);
-      return this.parser.parseChapters($, mangaId, this);
+      return this.parser.parseChapters($, mangaId);
     }
     async getChapterDetails(mangaId, chapterId) {
       const request = App.createRequest({
