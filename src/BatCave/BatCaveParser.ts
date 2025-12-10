@@ -25,7 +25,6 @@ export class BatCaveParser {
         let artist = 'Unknown'
         let status = 'Ongoing'
 
-        // Parsing della lista laterale (Year, Publisher, Release type, Writer, Artist)
         $('.page__list li').each((_: any, li: any) => {
             const text = $(li).text().trim()
             if (text.includes('Writer:')) {
@@ -63,7 +62,6 @@ export class BatCaveParser {
     parseChapters(html: string): Chapter[] {
         const chapters: Chapter[] = []
         
-        // Estrazione dati JSON dalla pagina
         const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s)
         if (!scriptData) return []
 
@@ -71,10 +69,10 @@ export class BatCaveParser {
             const data = JSON.parse(scriptData[1])
             if (data.chapters && Array.isArray(data.chapters)) {
                 for (const chap of data.chapters) {
-                    const id = String(chap.id) // ID numerico del capitolo (es. 203100)
-                    const title = chap.title || `Chapter ${chap.id}`
+                    const id = String(chap.id)
+                    // Pulizia titolo: rimuove underscore e spazi multipli
+                    let title = (chap.title || `Chapter ${chap.id}`).replace(/_/g, ' ').replace(/\s+/g, ' ').trim()
                     
-                    // Parsing Data (Formato: DD.MM.YYYY)
                     let time = new Date()
                     if (chap.date) {
                         const parts = chap.date.split('.')
@@ -83,11 +81,31 @@ export class BatCaveParser {
                         }
                     }
 
-                    // Tentativo di estrarre il numero del capitolo dal titolo
+                    // --- LOGICA NUMERAZIONE POTENZIATA ---
                     let chapNum = 0
-                    const numMatch = title.match(/#(\d+(\.\d+)?)/)
-                    if (numMatch) {
-                        chapNum = parseFloat(numMatch[1])
+                    
+                    // 1. Cerca pattern standard "Issue #123" o "Chapter 123"
+                    const stdMatch = title.match(/(?:Issue|Chapter|Ch\.?|#)\s*(\d+(\.\d+)?)/i)
+                    if (stdMatch) {
+                        chapNum = parseFloat(stdMatch[1])
+                    } 
+                    // 2. Cerca pattern "Part 123" (es. Deluxe Edition Part 4)
+                    else if (title.match(/(?:Part|Pt\.?)\s*(\d+(\.\d+)?)/i)) {
+                        const partMatch = title.match(/(?:Part|Pt\.?)\s*(\d+(\.\d+)?)/i)
+                        chapNum = parseFloat(partMatch![1])
+                    }
+                    // 3. Cerca pattern "Special 123"
+                    else if (title.match(/(?:Special)\s*(\d+(\.\d+)?)/i)) {
+                        const specialMatch = title.match(/(?:Special)\s*(\d+(\.\d+)?)/i)
+                        chapNum = parseFloat(specialMatch![1])
+                    }
+                    // 4. Fallback: Cerca l'ultimo numero presente nel titolo (es. "Vol 3 1999")
+                    else {
+                        const anyNumMatch = title.match(/(\d+(\.\d+)?)/g)
+                        if (anyNumMatch && anyNumMatch.length > 0) {
+                             // Prende l'ultimo numero trovato, sperando sia il capitolo
+                             chapNum = parseFloat(anyNumMatch[anyNumMatch.length - 1])
+                        }
                     }
 
                     chapters.push(App.createChapter({
@@ -109,7 +127,6 @@ export class BatCaveParser {
     parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
 
-        // Estrazione dati JSON dalla pagina del lettore
         const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s)
         
         if (scriptData) {
@@ -140,7 +157,6 @@ export class BatCaveParser {
         $('.readed').each((_: any, item: any) => {
             const link = $('a.readed__img', item)
             const href = link.attr('href')
-            // Estrai ID: prende il nome del file dall'URL (es. "29103-the-sandman.html")
             const id = href?.split('/').pop() 
             
             const title = $('.readed__title a', item).text().trim()
@@ -162,12 +178,12 @@ export class BatCaveParser {
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
         
-        // 1. Hot Comics (Featured)
+        // 1. Hot Comics (MODIFICATO: singleRowLarge per copertine intere)
         const hotSection = App.createHomeSection({ 
             id: 'hot', 
             title: 'Hot New Releases 🔥', 
             containsMoreItems: false, 
-            type: HomeSectionType.featured 
+            type: HomeSectionType.singleRowLarge // <-- Mostra copertina intera grande
         })
         
         const hotItems: PartialSourceManga[] = []
@@ -203,7 +219,7 @@ export class BatCaveParser {
         $('.sect--latest .latest').each((_: any, item: any) => {
             const link = $('a.latest__img', item)
             const href = link.attr('href')
-            const id = href?.split('/').pop() // Es: 33984-thanksgiving-2025.html
+            const id = href?.split('/').pop()
             
             let image = $('img', link).attr('src') ?? ''
             if (image.startsWith('/')) image = BASE_URL + image

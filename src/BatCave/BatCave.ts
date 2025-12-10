@@ -22,7 +22,7 @@ import { BatCaveParser } from './BatCaveParser'
 const DOMAIN = 'https://batcave.biz'
 
 export const BatCaveInfo: SourceInfo = {
-    version: '1.0.0',
+    version: '1.0.1', // Bump versione
     name: 'BatCave',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -68,7 +68,6 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
     }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
-        // mangaId qui è lo slug completo, es: "29103-the-sandman-1989-1996.html"
         const request = App.createRequest({
             url: `${this.baseUrl}/${mangaId}`,
             method: 'GET'
@@ -89,11 +88,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // Costruiamo l'URL del lettore
-        // mangaId è tipo "29103-the-sandman..." -> prendiamo solo l'ID numerico iniziale "29103"
         const mangaNumericId = mangaId.split('-')[0]
-        
-        // URL: https://batcave.biz/reader/{mangaNumericId}/{chapterId}
         const request = App.createRequest({
             url: `${this.baseUrl}/reader/${mangaNumericId}/${chapterId}`,
             method: 'GET'
@@ -103,13 +98,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        // Ricerca URL: https://batcave.biz/search/{query}/
-        // O https://batcave.biz/index.php?do=search&subaction=search&story={query}
-        // Usiamo la forma URL rewrite se possibile, altrimenti query param
-        
         let page = metadata?.page ?? 1
-        
-        // Costruzione URL di ricerca (metodo GET standard di DLE engine)
         const request = App.createRequest({
             url: `${this.baseUrl}/index.php?do=search&subaction=search&story=${encodeURIComponent(query.title ?? '')}&search_start=${page}`,
             method: 'GET'
@@ -119,8 +108,6 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($)
         
-        // Se troviamo risultati, assumiamo ci possa essere una pagina dopo
-        // (Logica semplificata, si può raffinare guardando la paginazione)
         const nextPage = manga.length > 0 ? page + 1 : undefined
 
         return App.createPagedResults({
