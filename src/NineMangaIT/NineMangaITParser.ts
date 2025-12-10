@@ -144,15 +144,13 @@ export class NineMangaITParser {
         baseUrl: string
     ): Promise<ChapterDetails> {
         const pages: string[] = []
-        
-        // 1. Estrai immagine dalla pagina corrente (Pagina 1)
-        const firstImg = $('img.manga_pic').attr('src')
-        if (firstImg) pages.push(firstImg)
 
-        // 2. Trova le altre pagine nel menu a tendina
-        // IMPLEMENTAZIONE LOGICA ANTILOOP DELL'ALTRO AUTORE
-        const otherPagesSet = new Set<string>() // Set per evitare duplicati
+        // --- LOGICA PURE NETSKY ---
+        // NON scaricare immagini dalla pagina corrente per evitare duplicati.
+        // Affidarsi SOLO alla lista delle pagine.
+
         const options = $('select.sl-page option').toArray()
+        const otherPages: string[] = []
         
         let firstPageValue = ''
         
@@ -162,27 +160,30 @@ export class NineMangaITParser {
             
             if (!pageUrl) continue
             
-            // Normalizza URL
             if (pageUrl.startsWith('/')) pageUrl = baseUrl + pageUrl
             
-            // Logica Anti-Loop ispirata all'altro autore:
-            // Salva il valore della prima opzione. Se lo incontriamo di nuovo, STOP.
+            // Logica Anti-Loop: Se ritroviamo la prima pagina, ci fermiamo
             if (i === 0) {
                 firstPageValue = pageUrl
-                continue // Saltiamo la prima pagina perché l'abbiamo già processata (step 1)
+            } else if (pageUrl === firstPageValue) {
+                break 
             }
             
-            if (pageUrl === firstPageValue) break // Loop rilevato!
-            
-            // Aggiungi solo se non è già presente
-            if (!otherPagesSet.has(pageUrl)) {
-                otherPagesSet.add(pageUrl)
-            }
+            otherPages.push(pageUrl)
         }
-        
-        const otherPages = Array.from(otherPagesSet)
 
-        // 3. Scarica le altre pagine in parallelo
+        // Se la lista è vuota (caso strano), prova a prendere l'immagine corrente come fallback
+        if (otherPages.length === 0) {
+             const src = $('img.manga_pic').attr('src')
+             if (src) pages.push(src)
+             return App.createChapterDetails({
+                id: chapterId,
+                mangaId: mangaId,
+                pages: pages
+            })
+        }
+
+        // Scarica TUTTE le pagine trovate nel menu (in parallelo a blocchi)
         const promises = otherPages.map(async (url) => {
             try {
                 const request = App.createRequest({
@@ -196,8 +197,21 @@ export class NineMangaITParser {
                 
                 const response = await requestManager.schedule(request, 1)
                 const $page = cheerio.load(response.data)
-                const imgSrc = $page('img.manga_pic').attr('src')
                 
+                // Cerca l'immagine principale
+                let imgSrc = $page('img.manga_pic').attr('src')
+                
+                // Fallback se manga_pic non c'è
+                if (!imgSrc) {
+                     $page('div[align="center"] img').each((_: any, img: any) => {
+                        const s = $(img).attr('src')
+                        if (s && s.startsWith('http') && !s.includes('logo') && !s.includes('icon')) {
+                            imgSrc = s
+                            return false // break
+                        }
+                    })
+                }
+
                 return imgSrc
             } catch (e) {
                 return null
@@ -213,7 +227,7 @@ export class NineMangaITParser {
         return App.createChapterDetails({
             id: chapterId,
             mangaId: mangaId,
-            pages: [...new Set(pages)] // Doppia sicurezza contro duplicati
+            pages: pages
         })
     }
 
