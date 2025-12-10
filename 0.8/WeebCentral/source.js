@@ -851,7 +851,12 @@ var _Sources = (() => {
         title: "Hot Updates \u{1F525}",
         containsMoreItems: false,
         type: import_types.HomeSectionType.featured
-        // <-- Carosello grande
+      });
+      const recSection = App.createHomeSection({
+        id: "recommendations",
+        title: "Recommendations \u{1F4A1}",
+        containsMoreItems: false,
+        type: import_types.HomeSectionType.singleRowNormal
       });
       const latestSection = App.createHomeSection({
         id: "latest_updates",
@@ -878,6 +883,29 @@ var _Sources = (() => {
       });
       hotSection.items = hotManga;
       sectionCallback(hotSection);
+      const recManga = [];
+      const recContainer = $('section:has(h2:contains("Recommendations"))').first();
+      if (recContainer.length > 0) {
+        $("article", recContainer).each((_, manga) => {
+          const link = $("a", manga).attr("href");
+          const id = link?.split("/series/")?.[1]?.split("/")?.[0];
+          let title = $(manga).attr("data-tip")?.trim();
+          if (!title) title = $(".text-white", manga).first().text().trim();
+          const image = $("img", manga).attr("src") ?? "";
+          if (id && title) {
+            recManga.push(App.createPartialSourceManga({
+              mangaId: id,
+              image,
+              title,
+              subtitle: void 0
+            }));
+          }
+        });
+        if (recManga.length > 0) {
+          recSection.items = recManga;
+          sectionCallback(recSection);
+        }
+      }
       const latestManga = [];
       const latestContainer = $('section:has(h2:contains("Latest Updates"))').first();
       $("article", latestContainer).each((_, manga) => {
