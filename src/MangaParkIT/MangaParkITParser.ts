@@ -38,7 +38,10 @@ export class MangaParkITParser {
         if (!image) image = 'https://paperback.moe/icons/logo-alt.svg'
 
         const author = $('a[href*="/search?word="]').first().text().trim() || 'Unknown'
-        const desc = $('.limit-html-p').text().trim() || $('meta[name="description"]').attr('content') || 'No description'
+        
+        let desc = $('.limit-html-p').text().trim() || $('meta[name="description"]').attr('content') || ''
+        if (!desc || desc.length < 5) desc = 'Nessuna descrizione disponibile.'
+        
         const status = 'Ongoing' 
 
         const arrayTags: Tag[] = []
@@ -50,7 +53,7 @@ export class MangaParkITParser {
         })
         
         const tagSections: TagSection[] = [
-            App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })
+            App.createTagSection({ id: '0', label: 'Generi', tags: arrayTags })
         ]
         
         return App.createSourceManga({
@@ -71,40 +74,30 @@ export class MangaParkITParser {
         const chapters: Chapter[] = []
         const seenIds = new Set<string>()
         
-        // FIX: Selettore corretto per MangaPark v5 (dentro div chapter-list)
-        // I link sono del tipo: /title/ID_MANGA/ID_CAPITOLO
         const chapterNodes = $('div[data-name="chapter-list"] a[href*="/title/"]').toArray()
 
         for (const node of chapterNodes) {
             const $link = $(node)
             const href = $link.attr('href')
             
-            // Assicuriamoci che sia un link al capitolo e contenga l'ID del manga
             if (!href || !href.includes(mangaId)) continue
 
-            // Estrazione ID Capitolo (ultima parte dell'URL)
-            // es: /title/386006-it-usemono-yado/8314523-vol-3-ch-18 -> 8314523-vol-3-ch-18
             const parts = href.split('/')
             const chapterId = parts.pop()
             
-            // Evita link duplicati o che non sono capitoli specifici
             if (!chapterId || seenIds.has(chapterId)) continue
             seenIds.add(chapterId)
 
             const title = $link.text().trim()
             
-            // Data
             const timeNode = $link.closest('.flex').find('time')
             const timeStr = timeNode.text().trim()
-            // Fallback timestamp se disponibile
             const timeTs = timeNode.attr('data-time')
             const time = timeTs ? new Date(Number(timeTs)) : this.convertTime(timeStr)
 
-            // Parsing numero capitolo
             let chapNum = 0
             const chapNumMatch = title.match(/(\d+(\.\d+)?)/g)
             if (chapNumMatch && chapNumMatch.length > 0) {
-                // Prende l'ultimo numero trovato nel titolo (es: Vol.3 Ch.18 -> 18)
                 chapNum = parseFloat(chapNumMatch[chapNumMatch.length - 1] ?? '0')
             }
 
@@ -123,16 +116,13 @@ export class MangaParkITParser {
     parseChapterDetails($: any, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
         
-        // Metodo 1: Estrazione da Script JSON (MangaPark V5)
         const scripts = $('script').toArray()
         for (const script of scripts) {
             const content = $(script).html()
             if (content && (content.includes('srcs') || content.includes('http'))) {
-                // Regex per trovare URL di immagini all'interno di array JSON
                 const matches = content.match(/\"(https?:\/\/[^\"]+\.(?:jpg|jpeg|png|webp))\"/gi)
                 if (matches && matches.length > 0) {
                     for (const m of matches) {
-                         // Rimuovi le virgolette e escape
                          const url = m.replace(/"/g, '').replace(/\\/g, '')
                          pages.push(url)
                     }
@@ -141,7 +131,6 @@ export class MangaParkITParser {
             }
         }
 
-        // Metodo 2: Fallback DOM (Lazy Loading images)
         if (pages.length == 0) {
              const imgs = $('img[loading="lazy"], .main img, #main img').toArray()
              for (const img of imgs) {
@@ -150,13 +139,10 @@ export class MangaParkITParser {
              }
         }
         
-        // Fallback estremo: se ancora 0, non crashare ma restituisci array vuoto
-        // (L'app mostrerà pagina bianca ma non si chiuderà)
-
         return App.createChapterDetails({
             id: chapterId,
             mangaId: mangaId,
-            pages: [...new Set(pages)] // Rimuovi duplicati
+            pages: [...new Set(pages)]
         })
     }
 
@@ -191,8 +177,20 @@ export class MangaParkITParser {
     }
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
-        const popularSection = App.createHomeSection({ id: 'popular', title: 'Popolari in Italia', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
-        const latestSection = App.createHomeSection({ id: 'latest', title: 'Aggiornamenti Recenti (IT)', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
+        // UI IMPROVEMENT: Sezione Popolari in evidenza (Featured)
+        const popularSection = App.createHomeSection({ 
+            id: 'popular', 
+            title: 'Popolari in Italia 🔥', 
+            containsMoreItems: true, 
+            type: HomeSectionType.featured // <-- Cambiato in Featured
+        })
+        
+        const latestSection = App.createHomeSection({ 
+            id: 'latest', 
+            title: 'Aggiornamenti Recenti 🆙', 
+            containsMoreItems: true, 
+            type: HomeSectionType.singleRowNormal 
+        })
 
         const mangas = this.parseSearchResults($)
         

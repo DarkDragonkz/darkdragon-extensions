@@ -23,7 +23,7 @@ import { URLBuilder } from '../helper'
 const MP_DOMAIN = 'https://mangapark.io'
 
 export const MangaParkITInfo: SourceInfo = {
-    version: '1.0.3',
+    version: '1.0.4', // Bump versione
     name: 'MangaPark IT',
     description: 'Estensione per MangaPark (Solo Italiano)',
     author: 'DarkDragonkz',
@@ -88,7 +88,6 @@ export class MangaParkIT implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // L'URL deve essere completo per funzionare con il parser aggiornato
         const url = chapterId.startsWith('http') ? chapterId : `${this.baseUrl}/title/${mangaId}/${chapterId}`
         const request = App.createRequest({
             url: url,
@@ -102,7 +101,6 @@ export class MangaParkIT implements SearchResultsProviding, MangaProviding, Chap
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
         
-        // FIX: MangaPark usa 'word' per le query di ricerca
         const url = new URLBuilder(this.baseUrl)
             .addPathComponent('search')
             .addQueryParameter('lang', 'it')
@@ -126,7 +124,6 @@ export class MangaParkIT implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        // Usiamo la ricerca per popolare la home
         const requestPopular = App.createRequest({
             url: `${this.baseUrl}/search?lang=it&sortby=field_score&page=1`,
             method: 'GET'
@@ -148,11 +145,11 @@ export class MangaParkIT implements SearchResultsProviding, MangaProviding, Chap
         const popularManga = this.parser.parseSearchResults($popular)
         const latestManga = this.parser.parseSearchResults($latest)
         
-        const sectionPopular = App.createHomeSection({id: 'popular', title: 'Popolari (IT)', containsMoreItems: true, type: HomeSectionType.singleRowNormal})
+        const sectionPopular = App.createHomeSection({id: 'popular', title: 'Popolari in Italia 🔥', containsMoreItems: true, type: HomeSectionType.featured})
         sectionPopular.items = popularManga
         sectionCallback(sectionPopular)
 
-        const sectionLatest = App.createHomeSection({id: 'latest', title: 'Recenti (IT)', containsMoreItems: true, type: HomeSectionType.singleRowNormal})
+        const sectionLatest = App.createHomeSection({id: 'latest', title: 'Aggiornamenti Recenti (IT) 🆙', containsMoreItems: true, type: HomeSectionType.singleRowNormal})
         sectionLatest.items = latestManga
         sectionCallback(sectionLatest)
     }
