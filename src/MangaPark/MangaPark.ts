@@ -1,6 +1,5 @@
 import {
     Source,
-    Manga,
     Chapter,
     ChapterDetails,
     HomeSection,
@@ -11,7 +10,6 @@ import {
     BadgeColor,
     SourceIntents,
     SourceManga,
-    TagSection,
     Request
 } from '@paperback/types'
 import { MangaParkParser } from './MangaParkParser'
@@ -19,11 +17,11 @@ import { MangaParkParser } from './MangaParkParser'
 const MP_DOMAIN = 'https://mangapark.net'
 
 export const MangaParkInfo: SourceInfo = {
-    version: '1.0.6',
+    version: '1.1.0', // Bump versione per UI Upgrade
     name: 'MangaPark',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
-    description: 'Extension for MangaPark',
+    description: 'Extension for MangaPark with HD Covers & Infinite Scroll',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: MP_DOMAIN,
     sourceTags: [
@@ -87,9 +85,11 @@ export class MangaPark extends Source {
 
         const pages: string[] = []
 
-        $('div[data-name="image-item"] img').each((_: any, el: any) => {
+        // Parsing migliorato per trovare immagini sia in img tag che in lazy containers
+        $('div[data-name="image-item"] img, .comic-image img').each((_: any, el: any) => {
             const img = $(el)
             let src = img.attr('src')
+            // Fallback su attributi lazy load comuni
             if (!src || src.startsWith('data:') || src.includes('loading')) {
                 src = img.attr('data-src') || img.attr('srcset')
             }
@@ -99,7 +99,9 @@ export class MangaPark extends Source {
         })
 
         if (pages.length === 0) {
-            throw new Error(`No pages found for chapter ${chapterId}`)
+            // Se non trova immagini, potrebbe essere criptato o richiedere login.
+            // Per ora lasciamo l'errore, in futuro si potrebbe analizzare il JSON in pagina.
+            throw new Error(`No pages found for chapter ${chapterId}. Possible Cloudflare or Login issue.`)
         }
 
         return App.createChapterDetails({
@@ -117,7 +119,7 @@ export class MangaPark extends Source {
         })
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
-        const manga = this.parser.parseSearchResults($, MP_DOMAIN)
+        const manga = this.parser.parseSearchResults($)
         
         return App.createPagedResults({
             results: manga,
@@ -132,18 +134,18 @@ export class MangaPark extends Source {
         })
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
-        this.parser.parseHomeSections($, sectionCallback, MP_DOMAIN)
+        this.parser.parseHomeSections($, sectionCallback)
     }
 
-    // FIX: Aggiunta logica per il tasto "Espandi" (View More)
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
         let url = ''
 
+        // Gestione Paginazione "View More"
         if (homepageSectionId === 'latest') {
             url = `${MP_DOMAIN}/latest?page=${page}`
         } else if (homepageSectionId === 'popular') {
-            // Usiamo la ricerca ordinata per rating per simulare i popolari
+            // "Popular" in home è solo una selezione, per vederne di più usiamo la search sortata
             url = `${MP_DOMAIN}/search?sort=rating&page=${page}`
         } else {
             return App.createPagedResults({ results: [] })
@@ -156,7 +158,9 @@ export class MangaPark extends Source {
 
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
-        const manga = this.parser.parseSearchResults($, MP_DOMAIN)
+        
+        // Riusiamo parseSearchResults che ora gestisce sia grid che list items
+        const manga = this.parser.parseSearchResults($)
         
         return App.createPagedResults({
             results: manga,
