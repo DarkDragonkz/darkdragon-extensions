@@ -24,7 +24,7 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '1.1.2', // Bump versione
+    version: '1.1.5',
     name: 'NineMangaIT',
     description: 'Extension that pulls manga from it.ninemanga.com',
     author: 'DarkDragonkzz',
@@ -50,7 +50,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 5, // Aumentato per maggiore velocità
+        requestsPerSecond: 3,
         requestTimeout: 25000,
         interceptor: {
             interceptRequest: async (request: any) => {
@@ -112,6 +112,10 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         }
         if (!url.endsWith('.html')) url += '.html'
 
+        // FIX CRITICO: Aggiungi ?style=list per forzare il caricamento di tutte le immagini
+        // Questo risolve sia il problema delle pagine mancanti che i crash da parsing degli script
+        url += '?style=list'
+
         const request = App.createRequest({
             url: url,
             method: 'GET'
@@ -119,6 +123,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         
         const response = await this.requestManager.schedule(request, 1)
         this.checkResponseError(response)
+        
         const $ = this.cheerio.load(response.data)
         
         return this.parser.parseChapterDetails($, mangaId, chapterId, this.requestManager, this.baseUrl, this.cheerio)
