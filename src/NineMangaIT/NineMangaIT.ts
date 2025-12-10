@@ -24,7 +24,7 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '1.4.0', // Bump version per UI update
+    version: '1.4.0', // Versione aggiornata
     name: 'NineMangaIT',
     description: 'Extension that pulls manga from it.ninemanga.com',
     author: 'DarkDragonkzz',
@@ -45,13 +45,13 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     baseUrl = IT_DOMAIN
     parser = new NineMangaITParser()
 
-    // User-Agent Mobile (Necessario per evitare ban Home)
+    // User-Agent Mobile Android
     readonly userAgent = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
 
-    constructor(public cheerio: any) {} // Reso pubblico per accessibilità dal parser
+    constructor(public cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 3, 
+        requestsPerSecond: 4, 
         requestTimeout: 25000,
         interceptor: {
             interceptRequest: async (request: any) => {
@@ -111,9 +111,9 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
              if (!url.startsWith('/')) url = `/chapter/${mangaId}/${chapterId}`
              url = `${this.baseUrl}${url}`
         }
-        if (url.endsWith('.html')) url = url.replace('.html', '')
+        if (!url.endsWith('.html')) url += '.html'
 
-        // NON aggiungere ?style=list qui (perché usiamo logica mobile)
+        // NESSUN SUFFISSO. URL pulito per scaricare la pagina 1 normalmente.
         const request = App.createRequest({
             url: url,
             method: 'GET'
@@ -124,8 +124,8 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         
         const $ = this.cheerio.load(response.data)
         
-        // Passiamo 'this' come source per usare requestManager e cheerio nel loop
-        return this.parser.parseChapterDetails($, mangaId, chapterId, this.requestManager, this.cheerio, this.baseUrl)
+        // Passiamo 'this' per permettere al parser di fare le chiamate successive
+        return this.parser.parseChapterDetails($, mangaId, chapterId, this)
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {

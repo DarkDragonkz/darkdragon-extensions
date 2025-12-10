@@ -139,77 +139,66 @@ export class NineMangaITParser {
         $: any, 
         mangaId: string, 
         chapterId: string, 
-        requestManager: any, 
-        cheerio: any,
-        baseUrl: string
+        source: any 
     ): Promise<ChapterDetails> {
         const pages: string[] = []
-        
-        // 1. Estrai immagine dalla pagina corrente (Pagina 1)
-        const firstImg = $('img.manga_pic').attr('src')
-        if (firstImg) pages.push(firstImg)
 
-        // 2. Trova le altre pagine nel menu a tendina
-        const otherPagesSet = new Set<string>()
+        // Strategia: Leggere TUTTE le pagine dalla select, inclusa la prima.
+        // Questo garantisce l'ordine corretto e il numero esatto di pagine.
         const options = $('select.sl-page option').toArray()
+        const allPageUrls: string[] = []
         
-        let firstPageValue = ''
-        
-        for (let i = 0; i < options.length; i++) {
-            const option = options[i]
+        for (const option of options) {
             let pageUrl = $(option).attr('value')
-            
             if (!pageUrl) continue
             
-            if (pageUrl.startsWith('/')) pageUrl = baseUrl + pageUrl
-            
-            // Logica Anti-Loop
-            if (i === 0) {
-                firstPageValue = pageUrl
-                continue // Saltiamo la prima pagina già presa
-            }
-            
-            if (pageUrl === firstPageValue) break 
-            
-            if (!otherPagesSet.has(pageUrl)) {
-                otherPagesSet.add(pageUrl)
-            }
+            if (pageUrl.startsWith('/')) pageUrl = source.baseUrl + pageUrl
+            allPageUrls.push(pageUrl)
         }
-        
-        const otherPages = Array.from(otherPagesSet)
 
-        // 3. Scarica le altre pagine in parallelo (Batch)
-        const promises = otherPages.map(async (url) => {
-            try {
-                const request = App.createRequest({
-                    url: url,
-                    method: 'GET',
-                    headers: {
-                        'Referer': baseUrl,
-                        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
-                    }
-                })
-                
-                const response = await requestManager.schedule(request, 1)
-                const $page = cheerio.load(response.data)
-                const imgSrc = $page('img.manga_pic').attr('src')
-                
-                return imgSrc
-            } catch (e) {
-                return null
-            }
-        })
-
-        const results = await Promise.all(promises)
-        
-        for (const img of results) {
+        // Se non c'è menu a tendina, è una pagina singola (one-shot) o la lista è fallita
+        if (allPageUrls.length === 0) {
+            const img = $('img.manga_pic').attr('src')
             if (img) pages.push(img)
+        } else {
+            // Scarica tutte le pagine trovate nel menu
+            // Usiamo map per creare un array di Promises
+            const promises = allPageUrls.map(async (url) => {
+                try {
+                    const request = App.createRequest({
+                        url: url,
+                        method: 'GET',
+                        headers: {
+                            'Referer': source.baseUrl,
+                            'User-Agent': source.userAgent // Usiamo lo stesso user agent mobile
+                        }
+                    })
+                    
+                    // Il requestManager gestirà la coda per non sovraccaricare (3-4 req/s)
+                    const response = await source.requestManager.schedule(request, 1)
+                    const $page = source.cheerio.load(response.data)
+                    
+                    const imgSrc = $page('img.manga_pic').attr('src')
+                    return imgSrc
+                } catch (e) {
+                    console.log(`Failed to load page ${url}`)
+                    return null
+                }
+            })
+
+            // Attende che tutte le pagine siano scaricate
+            const results = await Promise.all(promises)
+            
+            // Filtra i null e aggiunge all'array finale
+            for (const img of results) {
+                if (img) pages.push(img)
+            }
         }
 
         return App.createChapterDetails({
             id: chapterId,
             mangaId: mangaId,
-            pages: [...new Set(pages)]
+            pages: pages
         })
     }
 
@@ -245,28 +234,9 @@ export class NineMangaITParser {
     }
 
     parseHomeSections($home: any, $updates: any, sectionCallback: (section: HomeSection) => void, baseUrl: string): void {
-        
-        // UI IMPROVEMENT: Sezione Popolari in evidenza (Featured)
-        const popularSection = App.createHomeSection({ 
-            id: 'popular', 
-            title: 'Popolari 🔥', 
-            containsMoreItems: true, 
-            type: HomeSectionType.featured // <--- CAMBIATO IN FEATURED
-        })
-
-        const newSection = App.createHomeSection({ 
-            id: 'new', 
-            title: 'Nuove Uscite 🆕', 
-            containsMoreItems: true, 
-            type: HomeSectionType.singleRowNormal 
-        })
-
-        const latestSection = App.createHomeSection({ 
-            id: 'latest', 
-            title: 'Ultimi Aggiornamenti 🆙', 
-            containsMoreItems: true, 
-            type: HomeSectionType.singleRowNormal 
-        })
+        const popularSection = App.createHomeSection({ id: 'popular', title: 'Popolari 🔥', containsMoreItems: true, type: HomeSectionType.singleRowLarge })
+        const newSection = App.createHomeSection({ id: 'new', title: 'Nuove Uscite 🆕', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
+        const latestSection = App.createHomeSection({ id: 'latest', title: 'Ultimi Aggiornamenti 🆙', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
 
         const popularItems: PartialSourceManga[] = []
         const newItems: PartialSourceManga[] = []
