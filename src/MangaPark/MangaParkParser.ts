@@ -19,36 +19,22 @@ export class MangaParkParser {
     private getHighResImage(url: string | undefined): string {
         if (!url) return 'https://paperback.moe/icons/logo-alt.svg'
         
-        // Correzione protocollo
         if (url.startsWith('//')) url = `https:${url}`
         else if (url.startsWith('/')) url = `${MP_DOMAIN}${url}`
 
-        // MangaPark a volte usa suffissi tipo .300x400.jpg o -300x400.jpg
-        // Proviamo a rimuovere pattern comuni di resize
-        // Esempio: cover.png_res_300x400.jpg -> cover.png
         return url.replace(/_(?:res_)?\d+x\d+(?:\.[a-z]+)?$/i, '')
     }
 
     private getImageSrc(element: any): string {
         let img = element.find('img').first()
-        // Priorità a data-src (lazy load)
         let src = img.attr('data-src') || img.attr('srcset') || img.attr('src')
         return this.getHighResImage(src)
     }
 
-    /**
-     * Helper centralizzato per parsare un singolo elemento manga dalla lista/griglia.
-     * Riduce drasticamente la duplicazione del codice.
-     */
     private parseMangaItem($: any, element: any): PartialSourceManga | null {
         const item = $(element)
-        
-        // Logica per trovare il link del titolo
         let link = item.is('a') ? item : item.find('a[href*="/title/"]').first()
         const href = link.attr('href')
-        
-        // Estrazione ID robusta
-        // Supporta formati: /title/12345-nome-manga o /title/12345
         const idMatch = href?.match(/\/title\/(\d+)/)
         const id = idMatch ? idMatch[1] : null
 
@@ -56,14 +42,11 @@ export class MangaParkParser {
 
         const image = this.getImageSrc(item)
 
-        // Logica Titolo: prova vari selettori in ordine di probabilità
         let title = item.find('h3 a, a.font-bold').first().text().trim()
         if (!title) title = item.find('img').attr('title') || item.find('img').attr('alt') || ''
         if (!title) title = link.text().trim()
         if (!title) title = 'Unknown Title'
 
-        // Logica Sottotitolo (es. "Ch. 123" o "1 hour ago")
-        // Cerca il testo nell'angolo o sotto il titolo
         let subtitle = item.find('div.flex.justify-between a, .absolute.bottom-0').first().text().trim()
 
         return App.createPartialSourceManga({
@@ -79,7 +62,6 @@ export class MangaParkParser {
         if (!title) title = $('.comic-detail h3').first().text().trim()
         if (!title) title = $('title').text().split('-')[0]?.trim() ?? 'Unknown Title'
 
-        // Selettore immagine dettaglio più specifico
         let image = this.getImageSrc($('.w-24, .w-52, div.relative').first())
 
         let desc = $('.limit-html-p').text().trim()
@@ -124,7 +106,6 @@ export class MangaParkParser {
 
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
-        // Cerchiamo contenitori di link ai capitoli
         const links = $('div[data-name="chapter-list"] a, .p-2 a.flex').toArray()
 
         for (const el of links) {
@@ -133,46 +114,33 @@ export class MangaParkParser {
             
             if (!href || !href.includes('/title/')) continue
 
-            // Estrazione ID capitolo dall'URL
-            // Url tipico: /title/123456/chapter-123456
             const parts = href.split('/')
             const chapterId = parts.pop() || parts[parts.length - 1]
-            
-            // Validazione base ID
             if (!chapterId) continue
 
             const titleRaw = link.text().trim()
             if (!titleRaw) continue
 
-            // Parsing Data: cerca tag <time> nei genitori
             let timeStr = ''
             let parent = link.parent()
-            // Risale fino a 3 livelli per trovare il time
             const timeTag = parent.find('time').first() || parent.parent().find('time').first()
             if (timeTag.length > 0) timeStr = timeTag.text().trim()
 
-            // Parsing Numeri più robusto
-            // Cerca "Vol. X" e "Ch. Y" o numeri isolati
             const volMatch = titleRaw.match(/Vol\.?\s*(\d+(\.\d+)?)/i)
             const volNum = volMatch ? parseFloat(volMatch[1]) : undefined
 
-            // Regex prioritaria per "Ch. X" o "Chapter X"
             let chapNum = 0
             const chapMatch = titleRaw.match(/(?:ch|chapter|c|episode)\.?\s*(\d+(\.\d+)?)/i)
             if (chapMatch) {
                 chapNum = parseFloat(chapMatch[1])
             } else {
-                // Fallback: cerca l'ultimo numero nella stringa (spesso è il capitolo)
                 const simpleNums = titleRaw.match(/(\d+(\.\d+)?)/g)
                 if (simpleNums && simpleNums.length > 0) {
-                    // Evita di prendere il volume come capitolo se sono uguali/vicini
                     chapNum = parseFloat(simpleNums[simpleNums.length - 1])
                 }
             }
 
-            // Pulizia nome
             let name = titleRaw
-            // Rimuovi prefissi ridondanti se necessario, o aggiungi info extra
             const extraInfo = link.next('span').text().trim().replace(/^:\s*/, '')
             if (extraInfo) name += ` - ${extraInfo}`
 
@@ -189,13 +157,63 @@ export class MangaParkParser {
         return chapters
     }
 
+    // --- NUOVO: Parsing avanzato delle pagine ---
+    parseChapterDetails($: any, mangaId: string, chapterId: string): ChapterDetails {
+        const pages: string[] = []
+
+        // 1. TENTATIVO DOM: Selettori standard
+        $('div[data-name="image-item"] img, .comic-image img').each((_: any, el: any) => {
+            const img = $(el)
+            let src = img.attr('src')
+            if (!src || src.startsWith('data:') || src.includes('loading')) {
+                src = img.attr('data-src') || img.attr('srcset')
+            }
+            if (src && src.startsWith('http')) {
+                pages.push(src)
+            }
+        })
+
+        // 2. TENTATIVO JSON/SCRIPT: Se il DOM è vuoto, cerca nei tag script
+        if (pages.length === 0) {
+            const scripts = $('script').toArray()
+            for (const script of scripts) {
+                const content = $(script).html()
+                if (!content) continue
+
+                // Cerca array di oggetti JSON che contengono url immagini
+                // Esempio pattern: "u": "https://..." o "src": "https://..."
+                // Regex generica per estrarre URL http/https all'interno di stringhe JSON
+                const urlMatches = content.match(/https?:\/\/[^"'\s\\]+\.(?:jpg|jpeg|png|webp)/gi)
+                
+                if (urlMatches && urlMatches.length > 0) {
+                    for (const url of urlMatches) {
+                        // Filtri base per evitare url spazzatura (ads, tracking)
+                        if (!url.includes('google') && !url.includes('facebook') && !url.includes('analytics')) {
+                            // Rimuoviamo backslashes di escape JSON se presenti
+                            const cleanUrl = url.replace(/\\/g, '')
+                            if (!pages.includes(cleanUrl)) {
+                                pages.push(cleanUrl)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (pages.length === 0) {
+            throw new Error(`No pages found for chapter ${chapterId}. Possible Cloudflare or Login issue.`)
+        }
+
+        return App.createChapterDetails({
+            id: chapterId,
+            mangaId: mangaId,
+            pages: pages
+        })
+    }
+
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         const seenIds = new Set<string>()
-
-        // Combina selettori per Grid e List
-        // div.group.relative = elementi griglia
-        // div.flex.border-b = elementi lista
         const selector = 'div.group.relative, div.flex.border-b'
         
         $(selector).each((_: any, element: any) => {
@@ -210,29 +228,24 @@ export class MangaParkParser {
     }
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
-        
-        // 1. POPULAR -> Vetrina (Large)
         const popularSection = App.createHomeSection({ 
             id: 'popular', 
             title: 'Popular Updates 🔥', 
             containsMoreItems: true, 
-            type: HomeSectionType.singleRowLarge // <-- Vetrina
+            type: HomeSectionType.singleRowLarge 
         })
         
-        // 2. LATEST -> Continuous (Scroll infinito)
         const latestSection = App.createHomeSection({ 
             id: 'latest', 
             title: 'Latest Releases 🆕', 
             containsMoreItems: true, 
-            type: HomeSectionType.continuous // <-- Lista verticale
+            type: HomeSectionType.continuous 
         })
         
         const popularItems: PartialSourceManga[] = []
         const latestItems: PartialSourceManga[] = []
         const seenIds = new Set<string>()
 
-        // --- POPULAR (Solitamente nella Grid in alto) ---
-        // Cerchiamo la sezione "Popular Updates" specificamente
         const popularContainer = $('b:contains("Popular Updates")').closest('div.space-y-5')
         popularContainer.find('div.group.relative').each((_: any, el: any) => {
             const item = this.parseMangaItem($, el)
@@ -244,8 +257,6 @@ export class MangaParkParser {
         popularSection.items = popularItems
         sectionCallback(popularSection)
 
-        // --- LATEST (Lista sotto) ---
-        // Cerchiamo la sezione "Latest Releases"
         const latestContainer = $('b:contains("Latest Releases")').closest('div.space-y-5')
         latestContainer.find('div.flex.border-b').each((_: any, el: any) => {
             const item = this.parseMangaItem($, el)
