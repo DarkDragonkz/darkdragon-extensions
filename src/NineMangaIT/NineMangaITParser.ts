@@ -43,17 +43,15 @@ export class NineMangaITParser {
         const author = $('a[itemprop="author"]').first().text().trim() || 'Unknown'
         const artist = author 
 
-        // UI IMPROVEMENT: Pulizia descrizione
         let desc = $('p[itemprop="description"]').text().trim()
         if (!desc) {
             const intro = $('.bookintro').clone()
             intro.find('ul, h1, div, a').remove() 
             desc = intro.text().trim()
         }
-        if (!desc) desc = 'Nessuna descrizione disponibile.'
-        desc = desc.replace(/^Sommario:\s*/i, '') // Rimuove "Sommario:"
+        if (!desc) desc = 'No description available'
+        desc = desc.replace(/^Sommario:\s*/i, '')
         
-        // UI IMPROVEMENT: Status mappato correttamente per i badge dell'app
         let status = 'Ongoing'
         const statusText = $('.red, a[href*="completed"]').text().toLowerCase()
         if (statusText.includes('completato') || statusText.includes('completed')) status = 'Completed'
@@ -87,6 +85,7 @@ export class NineMangaITParser {
         const seenIds = new Set<string>()
 
         let chapterLinks = $('a.chapter_list_a').toArray()
+        // Fallback se il layout cambia
         if (chapterLinks.length === 0) {
             chapterLinks = $('a[href*="/chapter/"]').toArray()
         }
@@ -140,34 +139,34 @@ export class NineMangaITParser {
 
     parseChapterDetails($: any, mangaId: string, chapterId: string, requestManager: any, baseUrl: string, cheerio: any): ChapterDetails {
         const pages: string[] = []
-        let foundInScript = false
         
-        const scripts = $('script').toArray()
-        for (const script of scripts) {
-            const content = $(script).html()
-            if (content && (content.includes('p_urls') || content.includes('img_url'))) {
-                const matches = content.match(/(https?:\/\/[^"']+\.(?:jpg|png|webp|jpeg))/gi)
-                if (matches && matches.length > 0) {
-                    for(const m of matches) pages.push(m)
-                    foundInScript = true
-                    break
+        // 1. Priorità: Cerca immagini nel DOM (grazie a ?style=list)
+        // NineManga in style=list mostra le immagini con classe .manga_pic
+        $('img.manga_pic').each((_: any, img: any) => {
+             const src = $(img).attr('src')
+             if (src) pages.push(src)
+        })
+
+        // 2. Se non trova nulla, prova altri selettori del DOM tipici di NineManga
+        if (pages.length === 0) {
+             $('div[align="center"] img').each((_: any, img: any) => {
+                const src = $(img).attr('src')
+                if (src && src.startsWith('http') && !src.includes('logo') && !src.includes('icon')) {
+                    pages.push(src)
                 }
-            }
+            })
         }
 
-        if (!foundInScript) {
-            const imgElements = $('img.manga_pic').toArray()
-            for (const img of imgElements) {
-                const src = $(img).attr('src')
-                if (src) pages.push(src)
-            }
-            
-            if (pages.length === 0) {
-                 const centerImages = $('div[align="center"] img').toArray()
-                 for (const img of centerImages) {
-                    const src = $(img).attr('src')
-                    if (src && src.startsWith('http') && !src.includes('logo') && !src.includes('icon')) {
-                        pages.push(src)
+        // 3. Fallback: Script Regex (usato solo se i metodi sopra falliscono)
+        if (pages.length === 0) {
+            const scripts = $('script').toArray()
+            for (const script of scripts) {
+                const content = $(script).html()
+                if (content && (content.includes('p_urls') || content.includes('img_url'))) {
+                    const matches = content.match(/(https?:\/\/[^"']+\.(?:jpg|png|webp|jpeg))/gi)
+                    if (matches && matches.length > 0) {
+                        for(const m of matches) pages.push(m)
+                        break
                     }
                 }
             }
@@ -176,7 +175,7 @@ export class NineMangaITParser {
         return App.createChapterDetails({
             id: chapterId,
             mangaId: mangaId,
-            pages: [...new Set(pages)]
+            pages: [...new Set(pages)] // Rimuove duplicati
         })
     }
 
@@ -213,27 +212,10 @@ export class NineMangaITParser {
 
     parseHomeSections($home: any, $updates: any, sectionCallback: (section: HomeSection) => void, baseUrl: string): void {
         
-        // UI IMPROVEMENT: Usiamo 'singleRowLarge' per i Popolari per dare risalto
-        const popularSection = App.createHomeSection({ 
-            id: 'popular', 
-            title: 'Popolari 🔥', 
-            containsMoreItems: true, 
-            type: HomeSectionType.singleRowLarge // <-- Cambiato in Large
-        })
-
-        const newSection = App.createHomeSection({ 
-            id: 'new', 
-            title: 'Nuove Uscite 🆕', 
-            containsMoreItems: true, 
-            type: HomeSectionType.singleRowNormal 
-        })
-
-        const latestSection = App.createHomeSection({ 
-            id: 'latest', 
-            title: 'Ultimi Aggiornamenti 🆙', 
-            containsMoreItems: true, 
-            type: HomeSectionType.singleRowNormal 
-        })
+        // Estetica: Popolari in grande
+        const popularSection = App.createHomeSection({ id: 'popular', title: 'Popolari 🔥', containsMoreItems: true, type: HomeSectionType.singleRowLarge })
+        const newSection = App.createHomeSection({ id: 'new', title: 'Nuove Uscite 🆕', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
+        const latestSection = App.createHomeSection({ id: 'latest', title: 'Ultimi Aggiornamenti 🆙', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
 
         const popularItems: PartialSourceManga[] = []
         const newItems: PartialSourceManga[] = []
