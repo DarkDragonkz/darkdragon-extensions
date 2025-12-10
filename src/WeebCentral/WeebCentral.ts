@@ -13,7 +13,6 @@ import {
     MangaProviding,
     ChapterProviding,
     HomePageSectionsProviding,
-    PartialSourceManga,
 } from '@paperback/types'
 
 import { WeebCentralParser } from './WeebCentralParser'
@@ -22,7 +21,7 @@ import { URLBuilder } from '../helper'
 const DOMAIN = 'https://weebcentral.com'
 
 export const WeebCentralInfo: SourceInfo = {
-    version: '1.0.19', // Bump version
+    version: '1.1.0', // Major Bump per UI update
     name: 'WeebCentral',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
@@ -46,7 +45,7 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 5,
+        requestsPerSecond: 4, // Leggermente ridotto per sicurezza
         requestTimeout: 20000,
         interceptor: {
             interceptRequest: async (request: any) => {
@@ -54,6 +53,7 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
                     ...(request.headers ?? {}),
                     ...{
                         'referer': `${this.baseUrl}/`,
+                        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                     }
                 }
                 return request
@@ -151,6 +151,9 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
         let url = ''
 
         if (homepageSectionId === 'latest_updates') {
+            // WeebCentral usa offset a 32 per pagina (o simili), 
+            // ma l'endpoint /latest-updates/ accetta spesso un numero pagina semplice
+            // Se fallisce, potrebbe richiedere offset = (page-1) * 32
             url = `${this.baseUrl}/latest-updates/${page}`
         } else {
             return App.createPagedResults({ results: [] })
@@ -164,6 +167,7 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         
+        // Usiamo il parser condiviso anche qui
         const manga = this.parser.parseSearchResults($)
         
         if (manga.length > 0) {
