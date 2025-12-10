@@ -24,7 +24,7 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '1.2.5', // Aggiornata versione
+    version: '1.2.0', // Bump version per refresh cache
     name: 'NineMangaIT',
     description: 'Extension that pulls manga from it.ninemanga.com',
     author: 'DarkDragonkzz',
@@ -45,13 +45,12 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     baseUrl = IT_DOMAIN
     parser = new NineMangaITParser()
 
-    // TRUCCO: User Agent Desktop per evitare il sito mobile che rompe tutto
-    readonly userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+    readonly userAgent = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
 
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 5,
+        requestsPerSecond: 4, // Aumentato leggermente per gestire il multipage fetch
         requestTimeout: 25000,
         interceptor: {
             interceptRequest: async (request: any) => {
@@ -63,8 +62,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                         'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
                         'Connection': 'keep-alive',
-                        // Cookie per forzare la visualizzazione corretta
-                        'Cookie': 'is_warning=1; my_limit=1; ninemanga_ninemanga_image_list=1'
+                        'Cookie': 'is_warning=1; my_limit=1'
                     }
                 }
                 return request
@@ -107,26 +105,93 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        let url = chapterId
-        if (!url.startsWith('http')) {
-             if (!url.startsWith('/')) url = `/chapter/${mangaId}/${chapterId}`
-             url = `${this.baseUrl}${url}`
+        let requestUrl = chapterId
+        // Costruzione URL robusta
+        if (!requestUrl.startsWith('http')) {
+             if (!requestUrl.startsWith('/')) requestUrl = `/chapter/${mangaId}/${requestUrl}`
+             requestUrl = `${this.baseUrl}${requestUrl}`
         }
-        if (!url.endsWith('.html')) url += '.html'
+        if (!requestUrl.endsWith('.html')) requestUrl += '.html'
 
-        // Aggiungiamo ?style=list che ora funzionerà grazie allo UserAgent desktop
-        url += '?style=list'
+        // Tentativo 1: Chiediamo style=list
+        const separator = requestUrl.includes('?') ? '&' : '?'
+        const listUrl = requestUrl + separator + 'style=list'
 
         const request = App.createRequest({
-            url: url,
+            url: listUrl,
             method: 'GET'
         })
         
         const response = await this.requestManager.schedule(request, 1)
         this.checkResponseError(response)
         
-        // Passiamo l'HTML grezzo al parser
-        return this.parser.parseChapterDetails(response.data ?? '', mangaId, chapterId)
+        const $ = this.cheerio.load(response.data)
+        
+        // --- LOGICA DI SALVATAGGIO (FIX PER 1 PAGINA) ---
+        // Verifichiamo se il sito ha ignorato style=list
+        // Sintomi: C'è il menu a tendina delle pagine E troviamo solo 1 immagine
+        const hasPagination = $('select[name="page"]').length > 0
+        const imageCount = $('img.manga_pic').length
+        
+        if (hasPagination && imageCount === 1) {
+            // FALLBACK: Scarichiamo manualmente tutte le pagine
+            const pages: string[] = []
+            
+            // 1. Aggiungi l'immagine della pagina corrente (pagina 1)
+            const firstImg = $('img.manga_pic').attr('src')
+            if (firstImg) pages.push(firstImg)
+            
+            // 2. Trova i link di tutte le altre pagine dal menu a tendina
+            const pageLinks: string[] = []
+            $('select[name="page"] option').each((_: any, el: any) => {
+                 // Saltiamo quella selezionata perché l'abbiamo già
+                 if (!$(el).prop('selected')) {
+                     const val = $(el).attr('value')
+                     if (val) pageLinks.push(val)
+                 }
+            })
+            
+            // 3. Scarica le altre pagine in parallelo
+            // Usiamo Promise.all per velocità, il RequestManager gestirà la coda
+            const promises = pageLinks.map(link => {
+                return (async () => {
+                     let pUrl = link
+                     if (!pUrl.startsWith('http')) pUrl = this.baseUrl + pUrl
+                     
+                     const r = App.createRequest({ url: pUrl, method: 'GET' })
+                     const res = await this.requestManager.schedule(r, 1)
+                     const $p = this.cheerio.load(res.data)
+                     
+                     // Estrai l'immagine
+                     let src = $p('img.manga_pic').attr('src')
+                     // Fallback se .manga_pic non esiste nelle sottopagine
+                     if (!src) src = $p('div[align="center"] img').attr('src')
+                     
+                     return src
+                })()
+            })
+            
+            const results = await Promise.all(promises)
+            
+            // 4. Unisci i risultati
+            for (const img of results) {
+                if (img && !img.includes('logo') && !img.includes('icon')) {
+                    pages.push(img)
+                }
+            }
+            
+            // Rimuovi eventuali duplicati
+            const uniquePages = [...new Set(pages)]
+
+            return App.createChapterDetails({
+                id: chapterId,
+                mangaId: mangaId,
+                pages: uniquePages
+            })
+        }
+        
+        // Se style=list ha funzionato o non c'è paginazione, usa il parser normale
+        return this.parser.parseChapterDetails($, mangaId, chapterId, this.requestManager, this.baseUrl, this.cheerio)
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
