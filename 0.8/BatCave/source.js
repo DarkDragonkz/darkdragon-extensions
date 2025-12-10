@@ -734,8 +734,21 @@ var _Sources = (() => {
   var BASE_URL = "https://batcave.biz";
   var BatCaveParser = class {
     /**
+     * Tenta di trasformare l'URL di una miniatura (thumb) nell'URL dell'immagine originale HD.
+     * Rimuove segmenti tipici come '/thumbs/' o suffissi di ridimensionamento.
+     */
+    getHighResImage(url) {
+      if (!url) return "";
+      if (url.startsWith("/")) {
+        url = BASE_URL + url;
+      }
+      if (url.includes("/thumbs/")) {
+        return url.replace("/thumbs/", "/");
+      }
+      return url;
+    }
+    /**
      * Helper per parsare le liste di manga (Grid/List items).
-     * Riduce drasticamente la duplicazione del codice.
      */
     parseGridItems($, selector, subtitleSelector) {
       const items = [];
@@ -744,8 +757,8 @@ var _Sources = (() => {
         const href = link.attr("href");
         const id = href?.split("/").pop();
         const title = $(".poster__title, .latest__title a, .readed__title a, .popular__title", item).first().text().trim() || link.text().trim();
-        let image = $("img", item).attr("data-src") ?? $("img", item).attr("src") ?? "";
-        if (image.startsWith("/")) image = BASE_URL + image;
+        const rawImage = $("img", item).attr("data-src") ?? $("img", item).attr("src");
+        const image = this.getHighResImage(rawImage);
         let subtitle = void 0;
         if (subtitleSelector) {
           const subText = $(subtitleSelector, item).text().trim();
@@ -764,8 +777,8 @@ var _Sources = (() => {
     }
     parseMangaDetails($, mangaId) {
       const title = $("h1.main-page-title").text().trim() || $("h1").first().text().trim() || "Unknown";
-      let image = $(".page__poster img").attr("src") ?? "";
-      if (image.startsWith("/")) image = BASE_URL + image;
+      const rawImage = $(".page__poster img").attr("src");
+      const image = this.getHighResImage(rawImage);
       const desc = $(".page__text").text().trim();
       let author = "Unknown";
       let artist = "Unknown";
@@ -812,18 +825,14 @@ var _Sources = (() => {
             let time = /* @__PURE__ */ new Date();
             if (chap.date) {
               const parts = chap.date.split(".");
-              if (parts.length === 3) {
-                time = /* @__PURE__ */ new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
-              }
+              if (parts.length === 3) time = /* @__PURE__ */ new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
             }
             let chapNum = 0;
             if (chap.posi) {
               chapNum = parseFloat(chap.posi);
             } else {
               const numMatch = titleRaw.match(/(\d+(\.\d+)?)/g);
-              if (numMatch) {
-                chapNum = parseFloat(numMatch[numMatch.length - 1] ?? "0");
-              }
+              if (numMatch) chapNum = parseFloat(numMatch[numMatch.length - 1] ?? "0");
             }
             chapters.push(App.createChapter({
               id,
@@ -907,7 +916,6 @@ var _Sources = (() => {
       latestSection.items = this.parseGridItems($, ".sect--latest .latest", ".latest__chapter");
       sectionCallback(latestSection);
     }
-    // Usato sia per Search che per ViewMore
     parseSearchResults($) {
       return this.parseGridItems($, ".readed");
     }
