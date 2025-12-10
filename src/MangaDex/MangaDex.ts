@@ -22,12 +22,12 @@ import { MangaDexParser } from './MangaDexParser'
 const MD_API = 'https://api.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '2.1.1', // Bump version per fix search
+    version: '2.1.2', // Versione aggiornata con Smart Search
     name: 'MangaDex (EN)',
     icon: 'icon.png',
     author: 'DarkDragonkz',
     authorWebsite: 'https://github.com/DarkDragonkz',
-    description: 'MangaDex source (English Only) with high-res covers and scanlation groups support.',
+    description: 'MangaDex source (English Only) with high-res covers, scanlation groups and Smart Search.',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: 'https://mangadex.org',
     sourceTags: [
@@ -77,7 +77,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        // include scanlation_group per i credits
         const url = `${MD_API}/manga/${mangaId}/feed?limit=500&translatedLanguage[]=en&order[chapter]=desc&includeFutureUpdates=0&includes[]=scanlation_group`
 
         const request = App.createRequest({
@@ -90,7 +89,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         
         const chapters = this.parser.parseChapters(data)
 
-        // Fix Ordinamento volumi misti
         return chapters.sort((a, b) => {
             if ((a.volume ?? 0) !== (b.volume ?? 0)) {
                 return (b.volume ?? 0) - (a.volume ?? 0)
@@ -122,24 +120,29 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const limit = 20
         const offset = metadata?.offset ?? 0
         
-        // Base URL
         let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&includes[]=cover_art`
 
-        // FILTRI:
-        // 1. Content Rating: Fondamentale includere tutto per evitare buchi nei risultati
+        // FILTRI FONDAMENTALI: Includiamo tutto per non nascondere risultati
         url += '&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic'
         
-        // 2. FIX: RIMOSSO '&availableTranslatedLanguage[]=en' 
-        // Questo filtro era il colpevole. Nascondeva i manga se l'API non era sicura al 100% 
-        // che ci fossero capitoli EN, o se volevi solo vedere se l'opera esiste.
-        
-        // Gestione Query
+        // NOTA: Non filtriamo per lingua QUI, perché vogliamo trovare il manga anche se l'API non ha aggiornato i metadata EN.
+        // Il filtro EN si applica solo ai capitoli.
+
         if (query.title) {
-            // Se l'utente sta cercando un titolo specifico
             const safeTitle = query.title.trim()
-            url += `&title=${encodeURIComponent(safeTitle)}&order[relevance]=desc`
+            
+            // SMART SEARCH (Ispirato dal codice che hai inviato)
+            // Controlla se la stringa è un UUID (es. d8a959f7-648e...)
+            const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(safeTitle)
+
+            if (isUUID) {
+                // Se è un ID, cerchiamo direttamente per ID
+                url += `&ids[]=${safeTitle}`
+            } else {
+                // Altrimenti ricerca testuale classica
+                url += `&title=${encodeURIComponent(safeTitle)}&order[relevance]=desc`
+            }
         } else {
-            // Se la query è vuota (es. pulsante 'cerca' senza testo o caricamento iniziale)
             url += '&order[followedCount]=desc' 
         }
         
@@ -147,7 +150,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const response = await this.requestManager.schedule(request, 1)
         const data = JSON.parse(response.data ?? '{}')
         
-        // Parsing dei risultati
         const results = this.parser.parseSearchResults(data, false)
 
         return App.createPagedResults({
