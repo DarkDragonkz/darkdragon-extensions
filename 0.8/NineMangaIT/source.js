@@ -732,7 +732,6 @@ var _Sources = (() => {
   // src/NineMangaIT/NineMangaITParser.ts
   var import_types = __toESM(require_lib());
   var NineMangaITParser = class {
-    // HELPER: Trova l'immagine migliore e corregge HTTPS
     getImageSrc(element) {
       let img = element.find("img").first();
       if (element.is("img")) img = element;
@@ -772,7 +771,7 @@ var _Sources = (() => {
         const $el = $(el);
         const id = $el.attr("href")?.split("/").pop()?.replace(".html", "") ?? "";
         const label = $el.text().trim();
-        if (id && label) arrayTags.push(App.createTag({ id, label }));
+        if (id && label) arrayTags.push({ id, label });
       }
       const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })];
       return App.createSourceManga({
@@ -836,31 +835,27 @@ var _Sources = (() => {
     }
     parseChapterDetails($, mangaId, chapterId, requestManager, baseUrl, cheerio) {
       const pages = [];
-      let foundInScript = false;
-      const scripts = $("script").toArray();
-      for (const script of scripts) {
-        const content = $(script).html();
-        if (content && (content.includes("p_urls") || content.includes("img_url"))) {
-          const matches = content.match(/(https?:\/\/[^"']+\.(?:jpg|png|webp|jpeg))/gi);
-          if (matches && matches.length > 0) {
-            for (const m of matches) pages.push(m);
-            foundInScript = true;
-            break;
-          }
-        }
-      }
-      if (!foundInScript) {
-        const imgElements = $("img.manga_pic").toArray();
-        for (const img of imgElements) {
+      $("img.manga_pic").each((_, img) => {
+        const src = $(img).attr("src");
+        if (src) pages.push(src);
+      });
+      if (pages.length === 0) {
+        $('div[align="center"] img').each((_, img) => {
           const src = $(img).attr("src");
-          if (src) pages.push(src);
-        }
-        if (pages.length === 0) {
-          const centerImages = $('div[align="center"] img').toArray();
-          for (const img of centerImages) {
-            const src = $(img).attr("src");
-            if (src && src.startsWith("http") && !src.includes("logo") && !src.includes("icon")) {
-              pages.push(src);
+          if (src && src.startsWith("http") && !src.includes("logo") && !src.includes("icon")) {
+            pages.push(src);
+          }
+        });
+      }
+      if (pages.length === 0) {
+        const scripts = $("script").toArray();
+        for (const script of scripts) {
+          const content = $(script).html();
+          if (content && (content.includes("p_urls") || content.includes("img_url"))) {
+            const matches = content.match(/(https?:\/\/[^"']+\.(?:jpg|png|webp|jpeg))/gi);
+            if (matches && matches.length > 0) {
+              for (const m of matches) pages.push(m);
+              break;
             }
           }
         }
@@ -896,24 +891,9 @@ var _Sources = (() => {
       return results;
     }
     parseHomeSections($home, $updates, sectionCallback, baseUrl) {
-      const popularSection = App.createHomeSection({
-        id: "popular",
-        title: "Popolari",
-        containsMoreItems: true,
-        type: import_types.HomeSectionType.singleRowLarge
-      });
-      const newSection = App.createHomeSection({
-        id: "new",
-        title: "Nuove Uscite",
-        containsMoreItems: true,
-        type: import_types.HomeSectionType.singleRowNormal
-      });
-      const latestSection = App.createHomeSection({
-        id: "latest",
-        title: "Ultimi Aggiornamenti",
-        containsMoreItems: true,
-        type: import_types.HomeSectionType.singleRowNormal
-      });
+      const popularSection = App.createHomeSection({ id: "popular", title: "Popolari", containsMoreItems: true, type: import_types.HomeSectionType.singleRowLarge });
+      const newSection = App.createHomeSection({ id: "new", title: "Nuove Uscite", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
+      const latestSection = App.createHomeSection({ id: "latest", title: "Ultimi Aggiornamenti", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
       const popularItems = [];
       const newItems = [];
       const latestItems = [];
@@ -993,8 +973,7 @@ var _Sources = (() => {
   // src/NineMangaIT/NineMangaIT.ts
   var IT_DOMAIN = "https://it.ninemanga.com";
   var NineMangaITInfo = {
-    version: "1.1.2",
-    // Bump versione
+    version: "1.1.5",
     name: "NineMangaIT",
     description: "Extension that pulls manga from it.ninemanga.com",
     author: "DarkDragonkzz",
@@ -1017,8 +996,7 @@ var _Sources = (() => {
       this.parser = new NineMangaITParser();
       this.userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
       this.requestManager = App.createRequestManager({
-        requestsPerSecond: 5,
-        // Aumentato per maggiore velocità
+        requestsPerSecond: 3,
         requestTimeout: 25e3,
         interceptor: {
           interceptRequest: async (request) => {
@@ -1075,6 +1053,7 @@ var _Sources = (() => {
         url = `${this.baseUrl}${url}`;
       }
       if (!url.endsWith(".html")) url += ".html";
+      url += "?style=list";
       const request = App.createRequest({
         url,
         method: "GET"
