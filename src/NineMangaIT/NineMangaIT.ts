@@ -13,7 +13,6 @@ import {
     MangaProviding,
     ChapterProviding,
     HomePageSectionsProviding,
-    TagSection,
     Request,
     Response,
 } from '@paperback/types'
@@ -24,7 +23,7 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '1.3.8',
+    version: '1.4.0', // Major bump per l'ottimizzazione parallela
     name: 'NineMangaIT',
     description: 'Extension that pulls manga from it.ninemanga.com',
     author: 'DarkDragonkzz',
@@ -45,10 +44,9 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     baseUrl = IT_DOMAIN
     parser = new NineMangaITParser()
 
-    // User-Agent Mobile (Necessario per evitare ban Home)
     readonly userAgent = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
 
-    constructor(public cheerio: any) {} // Reso pubblico per accessibilità dal parser
+    constructor(public cheerio: any) {} 
 
     requestManager = App.createRequestManager({
         requestsPerSecond: 3, 
@@ -113,7 +111,8 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         }
         if (url.endsWith('.html')) url = url.replace('.html', '')
 
-        // Usiamo il trucco -10-1 per ridurre il numero di pagine da scaricare nel ciclo
+        // Richiediamo la pagina base, il parser poi troverà tutte le altre
+        // Il suffisso -10-1 serviva per forzare un chunk, ma col nuovo parser prendiamo tutto
         url += '-10-1.html'
 
         const request = App.createRequest({
@@ -126,7 +125,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         
         const $ = this.cheerio.load(response.data)
         
-        // Passiamo 'this' come source, così il parser può usare requestManager e cheerio per il ciclo
+        // Passiamo 'this' per permettere al parser di usare il requestManager per il caricamento parallelo
         return this.parser.parseChapterDetails($, mangaId, chapterId, this)
     }
 
@@ -172,7 +171,8 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         let page = metadata?.page ?? 1
         let url = ''
         
-        if (homepageSectionId === 'recent') url = `${this.baseUrl}/list/New-Update/?page=${page}`
+        // Mapping corretto per le sezioni
+        if (homepageSectionId === 'latest') url = `${this.baseUrl}/list/New-Update/?page=${page}`
         else if (homepageSectionId === 'popular') url = `${this.baseUrl}/list/Hot-Book/?page=${page}`
         else if (homepageSectionId === 'new') url = `${this.baseUrl}/list/New-Book/?page=${page}`
         else return App.createPagedResults({ results: [] })
@@ -183,6 +183,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($, this.baseUrl)
 
+        // Paginazione infinita
         if (manga.length > 0) {
              return App.createPagedResults({ results: manga, metadata: { page: page + 1 } })
         }

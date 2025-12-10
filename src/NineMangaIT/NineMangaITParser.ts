@@ -48,7 +48,7 @@ export class NineMangaITParser {
             intro.find('ul, h1, div, a').remove() 
             desc = intro.text().trim()
         }
-        if (!desc) desc = 'No description available'
+        if (!desc) desc = 'Nessuna descrizione disponibile.'
         desc = desc.replace(/^Sommario:\s*/i, '')
         
         let status = 'Ongoing'
@@ -56,14 +56,13 @@ export class NineMangaITParser {
         if (statusText.includes('completato') || statusText.includes('completed')) status = 'Completed'
 
         const arrayTags: Tag[] = []
-        const genreLinks = $('li[itemprop="genre"] a').toArray()
-        for (const el of genreLinks) {
+        $('li[itemprop="genre"] a').each((_: any, el: any) => {
             const $el = $(el)
             const id = $el.attr('href')?.split('/').pop()?.replace('.html', '') ?? ''
             const label = $el.text().trim()
             if (id && label) arrayTags.push({ id, label })
-        }
-        const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
+        })
+        const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Generi', tags: arrayTags })]
 
         return App.createSourceManga({
             id: mangaId,
@@ -84,6 +83,7 @@ export class NineMangaITParser {
         const seenIds = new Set<string>()
 
         let chapterLinks = $('a.chapter_list_a').toArray()
+        // Fallback se il layout cambia
         if (chapterLinks.length === 0) {
             chapterLinks = $('a[href*="/chapter/"]').toArray()
         }
@@ -97,22 +97,26 @@ export class NineMangaITParser {
             const filePart = parts.pop() ?? '' 
             const chapterId = filePart.split('?')[0].replace('.html', '')
 
+            // Evitiamo duplicati o link a pagine specifiche del capitolo (es. -10-1.html)
             if (seenIds.has(chapterId)) continue
             if (filePart.match(/-\d+-\d+\.html$/)) continue 
 
             seenIds.add(chapterId)
 
             let titleRaw = $link.attr('title') || $link.text().trim()
+            // Rimuoviamo il nome del manga dal titolo del capitolo per pulizia
             titleRaw = titleRaw.replace(new RegExp(`^${mangaId.replace(/-/g, ' ')}\\s+`, 'i'), '')
             titleRaw = titleRaw.replace(mangaId, '').trim()
 
             const dateText = $link.parent().find('span').last().text().trim()
             let time = new Date()
             if (dateText) {
-                time = new Date(dateText)
-                if (isNaN(time.getTime())) time = new Date()
+                // Tenta parsing data, fallback a oggi
+                const parsedDate = new Date(dateText)
+                if (!isNaN(parsedDate.getTime())) time = parsedDate
             }
 
+            // Estrazione numero capitolo
             const chapNumMatch = titleRaw.match(/(?:ch|chapter|episode|c)\.?\s*(\d+(\.\d+)?)/i)
             let chapNum = 0
             if (chapNumMatch) {
@@ -135,74 +139,75 @@ export class NineMangaITParser {
         return chapters
     }
 
-    // --- LOGICA DELL'ALTRO AUTORE ADATTATA ---
+    /**
+     * OTTIMIZZAZIONE SENIOR: Caricamento Parallelo
+     */
     async parseChapterDetails(
         $: any, 
         mangaId: string, 
         chapterId: string, 
-        source: any // Passiamo l'intera classe source per usare requestManager
+        source: any 
     ): Promise<ChapterDetails> {
-        const pages: string[] = []
-        
-        // Selettore corretto per il sito IT: select.sl-page
-        const pageArr = $('select.sl-page option').toArray()
-        
-        let firstPageUrl = ''
-        let i = 0
-
-        // Ciclo SEQUENZIALE (non parallelo) come l'altro autore
-        for (const obj of pageArr) {
+        // Raccogliamo tutti gli URL delle pagine dal dropdown
+        const pageUrls: string[] = []
+        $('select.sl-page option').each((_: any, obj: any) => {
             let pageUrl = $(obj).attr('value') ?? ''
             if (pageUrl.startsWith('/')) pageUrl = source.baseUrl + pageUrl
-            
-            // Logica anti-loop dell'autore
-            if (i == 0) firstPageUrl = pageUrl
-            if (i > 0 && pageUrl == firstPageUrl) break
-            
-            // Scarica le immagini di questa pagina
-            const imagesArray = await this.getImage(pageUrl, source)
-            
-            // Aggiungi le immagini uniche
-            for (const image of imagesArray) {
-                if (!pages.includes(image)) {
-                    pages.push(image)
-                }
+            if (pageUrl && !pageUrls.includes(pageUrl)) {
+                pageUrls.push(pageUrl)
             }
-            i++
+        })
+
+        // Se non trova dropdown, prova a parsare la pagina corrente (capitolo monolitico?)
+        if (pageUrls.length === 0) {
+             const singlePageImages = await this.getImageFromCheerio($, source)
+             return App.createChapterDetails({
+                id: chapterId,
+                mangaId: mangaId,
+                pages: singlePageImages
+            })
         }
 
-        // Se il ciclo fallisce (es. pagina singola), prova a prendere le immagini dal $ corrente
-        if (pages.length === 0) {
-             const imagesArray = await this.getImageFromCheerio($, source)
-             for (const image of imagesArray) pages.push(image)
-        }
+        // PARALLEL REQUESTS:
+        // Creiamo una promise per ogni pagina. Il RequestManager di Paperback gestirà la coda
+        // per non superare il rate limit (3 req/s), ma non aspettiamo il parsing di una per iniziare l'altra.
+        const promises = pageUrls.map(url => this.getImage(url, source))
+        
+        // Attendiamo che tutte finiscano
+        const results = await Promise.all(promises)
+        
+        // Appiattiamo l'array di array e rimuoviamo duplicati
+        const allPages = [...new Set(results.flat())]
 
         return App.createChapterDetails({
             id: chapterId,
             mangaId: mangaId,
-            pages: pages
+            pages: allPages
         })
     }
 
-    // Helper per scaricare e parsare una pagina
+    // Helper per scaricare e parsare una singola pagina
     async getImage(url: string, source: any): Promise<string[]> {
-        const request = App.createRequest({
-            url: url,
-            method: 'GET',
-            headers: {
-                'Referer': source.baseUrl,
-                'User-Agent': source.userAgent
-            }
-        })
-        
-        // Timeout e retries come l'altro autore
-        const response = await source.requestManager.schedule(request, 1)
-        const $ = source.cheerio.load(response.data)
-        
-        return this.getImageFromCheerio($, source)
+        try {
+            const request = App.createRequest({
+                url: url,
+                method: 'GET',
+                headers: {
+                    'Referer': source.baseUrl,
+                    'User-Agent': source.userAgent
+                }
+            })
+            
+            const response = await source.requestManager.schedule(request, 1)
+            const $ = source.cheerio.load(response.data)
+            return this.getImageFromCheerio($, source)
+        } catch (e) {
+            console.error(`Failed to load page ${url}: ${e}`)
+            return []
+        }
     }
 
-    // Estrae le immagini da un oggetto Cheerio caricato
+    // Estrae le immagini da un oggetto Cheerio
     async getImageFromCheerio($: any, source: any): Promise<string[]> {
         const arrImages: string[] = []
         
@@ -255,9 +260,10 @@ export class NineMangaITParser {
     }
 
     parseHomeSections($home: any, $updates: any, sectionCallback: (section: HomeSection) => void, baseUrl: string): void {
+        // UI REFRESH: Popular = Large, Latest = Continuous
         const popularSection = App.createHomeSection({ id: 'popular', title: 'Popolari 🔥', containsMoreItems: true, type: HomeSectionType.singleRowLarge })
         const newSection = App.createHomeSection({ id: 'new', title: 'Nuove Uscite 🆕', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
-        const latestSection = App.createHomeSection({ id: 'latest', title: 'Ultimi Aggiornamenti 🆙', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
+        const latestSection = App.createHomeSection({ id: 'latest', title: 'Ultimi Aggiornamenti 🆙', containsMoreItems: true, type: HomeSectionType.continuous })
 
         const popularItems: PartialSourceManga[] = []
         const newItems: PartialSourceManga[] = []
@@ -282,6 +288,7 @@ export class NineMangaITParser {
                 
                 let subtitle = undefined
                 if (subtitlePrefix) {
+                     // Cerca info capitolo
                      const numMatch = rawTitle.match(/(\d+(\.\d+)?)$/)
                      if (numMatch) subtitle = `Ch. ${numMatch[0]}`
                 }
