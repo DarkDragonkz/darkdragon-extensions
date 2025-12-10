@@ -910,8 +910,8 @@ var _Sources = (() => {
   var BASE_URL = "https://comix.to";
   var API_URL = "https://comix.to/api/v2";
   var ComixInfo = {
-    version: "2.0.8",
-    // Bump version (Fix Ricerca GTO)
+    version: "2.0.9",
+    // Bump version (Fix Search Relevance)
     name: "Comix",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -1008,9 +1008,11 @@ var _Sources = (() => {
     }
     async getSearchResults(query, metadata) {
       const page = metadata?.page ?? 1;
-      let url = `${this.apiUrl}/manga?page=${page}&limit=60`;
+      let url = `${this.apiUrl}/manga?page=${page}&limit=100`;
       if (query.title) {
-        url += `&keyword=${encodeURIComponent(query.title)}`;
+        url += `&keyword=${encodeURIComponent(query.title)}&order[relevance]=desc`;
+      } else {
+        url += `&order[followed_count]=desc`;
       }
       const request = App.createRequest({ url, method: "GET" });
       const response = await this.requestManager.schedule(request, 1);
@@ -1027,14 +1029,10 @@ var _Sources = (() => {
           const bStarts = titleB.startsWith(q);
           if (aStarts && !bStarts) return -1;
           if (bStarts && !aStarts) return 1;
-          const aIncludes = titleA.includes(q);
-          const bIncludes = titleB.includes(q);
-          if (aIncludes && !bIncludes) return -1;
-          if (bIncludes && !aIncludes) return 1;
           return 0;
         });
       }
-      const nextPage = manga.length >= 60 ? page + 1 : void 0;
+      const nextPage = manga.length >= 100 ? page + 1 : void 0;
       return App.createPagedResults({
         results: manga,
         metadata: nextPage ? { page: nextPage } : void 0
