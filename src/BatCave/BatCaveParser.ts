@@ -81,7 +81,7 @@ export class BatCaveParser {
                         }
                     }
 
-                    // Usa la posizione del sito per l'ordinamento
+                    // Ordine basato sulla posizione nel sito
                     let chapNum = 0
                     if (chap.posi) {
                         chapNum = parseFloat(chap.posi)
@@ -160,12 +160,12 @@ export class BatCaveParser {
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
         
-        // 1. Hot Comics
+        // 1. Hot Comics -> singleRowNormal (Copertina Intera NON schiacciata)
         const hotSection = App.createHomeSection({ 
             id: 'hot', 
             title: 'Hot New Releases 🔥', 
             containsMoreItems: false, 
-            type: HomeSectionType.singleRowLarge 
+            type: HomeSectionType.singleRowNormal 
         })
         
         const hotItems: PartialSourceManga[] = []
@@ -177,8 +177,9 @@ export class BatCaveParser {
             let image = $('img', item).attr('data-src') ?? $('img', item).attr('src') ?? ''
             if (image.startsWith('/')) image = BASE_URL + image
 
-            // FIX: Assicuriamoci che l'immagine sia di alta qualità anche qui
+            // FIX: Alta qualità
             image = image.replace('/mini/64x96/', '/mini/142x212/')
+            image = image.replace('/mini/131x196/', '/mini/142x212/')
 
             if (id && title) {
                 hotItems.push(App.createPartialSourceManga({
@@ -192,12 +193,12 @@ export class BatCaveParser {
         hotSection.items = hotItems
         sectionCallback(hotSection)
 
-        // 2. Latest Comics
+        // 2. Latest Comics -> singleRowNormal (Copertina Intera NON schiacciata)
         const latestSection = App.createHomeSection({ 
             id: 'latest', 
             title: 'Newest Releases 🆙', 
             containsMoreItems: true, 
-            type: HomeSectionType.singleRowLarge 
+            type: HomeSectionType.singleRowNormal
         })
 
         const latestItems: PartialSourceManga[] = []
@@ -209,9 +210,7 @@ export class BatCaveParser {
             let image = $('img', link).attr('src') ?? ''
             if (image.startsWith('/')) image = BASE_URL + image
             
-            // --- FIX RISOLUZIONE IMMAGINE ---
-            // Sostituiamo il path della miniatura (64x96) con quello più grande (142x212)
-            // L'URL passa da /uploads/mini/64x96/.. a /uploads/mini/142x212/..
+            // FIX: Alta qualità
             image = image.replace('/mini/64x96/', '/mini/142x212/')
             
             const title = $('.latest__title a', item).text().trim()

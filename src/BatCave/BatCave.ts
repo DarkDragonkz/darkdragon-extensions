@@ -22,7 +22,7 @@ import { BatCaveParser } from './BatCaveParser'
 const DOMAIN = 'https://batcave.biz'
 
 export const BatCaveInfo: SourceInfo = {
-    version: '1.0.4', // Bump versione
+    version: '1.0.5',
     name: 'BatCave',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -43,21 +43,20 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
     baseUrl = DOMAIN
     parser = new BatCaveParser()
     
-    // Retries alti per connessioni instabili
-    RETRIES = 10 
+    // User-Agent Mobile Android: Spesso risolve i blocchi "silenziosi" dei siti DLE
+    readonly userAgent = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
 
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 6, // Aumentato a 6 per forzare un caricamento più aggressivo
+        requestsPerSecond: 4,
         requestTimeout: 25000,
         interceptor: {
             interceptRequest: async (request: any) => {
                 request.headers = {
                     ...(request.headers ?? {}),
                     'referer': `${DOMAIN}/`,
-                    'user-agent': await this.requestManager.getDefaultUserAgent(),
-                    // Header per evitare cache vecchie o risposte vuote
+                    'user-agent': this.userAgent, // Usiamo quello fisso mobile
                     'Cache-Control': 'no-cache',
                     'Pragma': 'no-cache'
                 }
@@ -78,7 +77,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             url: `${this.baseUrl}/${mangaId}`,
             method: 'GET'
         })
-        const response = await this.requestManager.schedule(request, this.RETRIES)
+        const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         return this.parser.parseMangaDetails($, mangaId)
     }
@@ -88,7 +87,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             url: `${this.baseUrl}/${mangaId}`,
             method: 'GET'
         })
-        const response = await this.requestManager.schedule(request, this.RETRIES)
+        const response = await this.requestManager.schedule(request, 1)
         return this.parser.parseChapters(response.data ?? '')
     }
 
@@ -98,7 +97,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             url: `${this.baseUrl}/reader/${mangaNumericId}/${chapterId}`,
             method: 'GET'
         })
-        const response = await this.requestManager.schedule(request, this.RETRIES)
+        const response = await this.requestManager.schedule(request, 1)
         return this.parser.parseChapterDetails(response.data ?? '', mangaId, chapterId)
     }
 
@@ -109,7 +108,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             method: 'GET'
         })
 
-        const response = await this.requestManager.schedule(request, this.RETRIES)
+        const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($)
         
@@ -127,16 +126,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             method: 'GET'
         })
 
-        // La richiesta Home è fondamentale, usiamo il retry massimo
-        const response = await this.requestManager.schedule(request, this.RETRIES)
-        
-        // Controllo validità dati
-        if (!response.data || response.data.length < 500) {
-             console.log("BatCave: Empty response on Home Page load")
-             // In caso di risposta vuota, potremmo rilanciare un errore o riprovare, 
-             // ma il requestManager dovrebbe averlo già fatto.
-        }
-
+        const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         this.parser.parseHomeSections($, sectionCallback)
     }
@@ -151,7 +141,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             method: 'GET',
             headers: {
                 'referer': `${this.baseUrl}/`,
-                'user-agent': await this.requestManager.getDefaultUserAgent()
+                'user-agent': this.userAgent
             }
         })
     }
