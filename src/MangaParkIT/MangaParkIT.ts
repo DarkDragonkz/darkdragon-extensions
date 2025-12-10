@@ -13,8 +13,11 @@ import {
     MangaProviding,
     ChapterProviding,
     HomePageSectionsProviding,
+    CloudflareBypassRequestProviding, // Aggiunto import
     TagSection,
-    HomeSectionType
+    HomeSectionType,
+    Request,
+    Response
 } from '@paperback/types'
 
 import { MangaParkITParser } from './MangaParkITParser'
@@ -23,7 +26,7 @@ import { URLBuilder } from '../helper'
 const MP_DOMAIN = 'https://mangapark.io'
 
 export const MangaParkITInfo: SourceInfo = {
-    version: '1.0.4', // Bump versione
+    version: '1.0.5',
     name: 'MangaPark IT',
     description: 'Estensione per MangaPark (Solo Italiano)',
     author: 'DarkDragonkz',
@@ -41,7 +44,7 @@ export const MangaParkITInfo: SourceInfo = {
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,
 }
 
-export class MangaParkIT implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding {
+export class MangaParkIT implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding, CloudflareBypassRequestProviding {
     baseUrl = MP_DOMAIN
     parser = new MangaParkITParser()
     
@@ -145,11 +148,12 @@ export class MangaParkIT implements SearchResultsProviding, MangaProviding, Chap
         const popularManga = this.parser.parseSearchResults($popular)
         const latestManga = this.parser.parseSearchResults($latest)
         
+        // UI Migliorata: Featured per i popolari
         const sectionPopular = App.createHomeSection({id: 'popular', title: 'Popolari in Italia 🔥', containsMoreItems: true, type: HomeSectionType.featured})
         sectionPopular.items = popularManga
         sectionCallback(sectionPopular)
 
-        const sectionLatest = App.createHomeSection({id: 'latest', title: 'Aggiornamenti Recenti (IT) 🆙', containsMoreItems: true, type: HomeSectionType.singleRowNormal})
+        const sectionLatest = App.createHomeSection({id: 'latest', title: 'Recenti (IT) 🆙', containsMoreItems: true, type: HomeSectionType.singleRowNormal})
         sectionLatest.items = latestManga
         sectionCallback(sectionLatest)
     }
@@ -172,6 +176,18 @@ export class MangaParkIT implements SearchResultsProviding, MangaProviding, Chap
         return App.createPagedResults({
             results: manga,
             metadata: manga.length > 0 ? { page: page + 1 } : undefined
+        })
+    }
+
+    // QUESTA E' LA FUNZIONE CHE MANCAVA
+    async getCloudflareBypassRequest(): Promise<Request> {
+        return App.createRequest({
+            url: this.baseUrl,
+            method: 'GET',
+            headers: {
+                'referer': `${this.baseUrl}/`,
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+            }
         })
     }
 }

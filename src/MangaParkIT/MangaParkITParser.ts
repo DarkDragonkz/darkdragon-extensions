@@ -177,12 +177,11 @@ export class MangaParkITParser {
     }
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
-        // UI IMPROVEMENT: Sezione Popolari in evidenza (Featured)
         const popularSection = App.createHomeSection({ 
             id: 'popular', 
             title: 'Popolari in Italia 🔥', 
             containsMoreItems: true, 
-            type: HomeSectionType.featured // <-- Cambiato in Featured
+            type: HomeSectionType.featured 
         })
         
         const latestSection = App.createHomeSection({ 
