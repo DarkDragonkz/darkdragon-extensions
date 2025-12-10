@@ -509,14 +509,14 @@ var _Sources = (() => {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.BadgeColor = void 0;
-      var BadgeColor;
-      (function(BadgeColor2) {
-        BadgeColor2["BLUE"] = "default";
-        BadgeColor2["GREEN"] = "success";
-        BadgeColor2["GREY"] = "info";
-        BadgeColor2["YELLOW"] = "warning";
-        BadgeColor2["RED"] = "danger";
-      })(BadgeColor = exports.BadgeColor || (exports.BadgeColor = {}));
+      var BadgeColor2;
+      (function(BadgeColor3) {
+        BadgeColor3["BLUE"] = "default";
+        BadgeColor3["GREEN"] = "success";
+        BadgeColor3["GREY"] = "info";
+        BadgeColor3["YELLOW"] = "warning";
+        BadgeColor3["RED"] = "danger";
+      })(BadgeColor2 = exports.BadgeColor || (exports.BadgeColor = {}));
     }
   });
 
@@ -613,21 +613,21 @@ var _Sources = (() => {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.ContentRating = exports.SourceIntents = void 0;
-      var SourceIntents;
-      (function(SourceIntents2) {
-        SourceIntents2[SourceIntents2["MANGA_CHAPTERS"] = 1] = "MANGA_CHAPTERS";
-        SourceIntents2[SourceIntents2["MANGA_TRACKING"] = 2] = "MANGA_TRACKING";
-        SourceIntents2[SourceIntents2["HOMEPAGE_SECTIONS"] = 4] = "HOMEPAGE_SECTIONS";
-        SourceIntents2[SourceIntents2["COLLECTION_MANAGEMENT"] = 8] = "COLLECTION_MANAGEMENT";
-        SourceIntents2[SourceIntents2["CLOUDFLARE_BYPASS_REQUIRED"] = 16] = "CLOUDFLARE_BYPASS_REQUIRED";
-        SourceIntents2[SourceIntents2["SETTINGS_UI"] = 32] = "SETTINGS_UI";
-      })(SourceIntents = exports.SourceIntents || (exports.SourceIntents = {}));
-      var ContentRating;
-      (function(ContentRating2) {
-        ContentRating2["EVERYONE"] = "EVERYONE";
-        ContentRating2["MATURE"] = "MATURE";
-        ContentRating2["ADULT"] = "ADULT";
-      })(ContentRating = exports.ContentRating || (exports.ContentRating = {}));
+      var SourceIntents2;
+      (function(SourceIntents3) {
+        SourceIntents3[SourceIntents3["MANGA_CHAPTERS"] = 1] = "MANGA_CHAPTERS";
+        SourceIntents3[SourceIntents3["MANGA_TRACKING"] = 2] = "MANGA_TRACKING";
+        SourceIntents3[SourceIntents3["HOMEPAGE_SECTIONS"] = 4] = "HOMEPAGE_SECTIONS";
+        SourceIntents3[SourceIntents3["COLLECTION_MANAGEMENT"] = 8] = "COLLECTION_MANAGEMENT";
+        SourceIntents3[SourceIntents3["CLOUDFLARE_BYPASS_REQUIRED"] = 16] = "CLOUDFLARE_BYPASS_REQUIRED";
+        SourceIntents3[SourceIntents3["SETTINGS_UI"] = 32] = "SETTINGS_UI";
+      })(SourceIntents2 = exports.SourceIntents || (exports.SourceIntents = {}));
+      var ContentRating2;
+      (function(ContentRating3) {
+        ContentRating3["EVERYONE"] = "EVERYONE";
+        ContentRating3["MATURE"] = "MATURE";
+        ContentRating3["ADULT"] = "ADULT";
+      })(ContentRating2 = exports.ContentRating || (exports.ContentRating = {}));
     }
   });
 
@@ -721,11 +721,15 @@ var _Sources = (() => {
     }
   });
 
-  // src/XoxoComicParser/XoxoComicParser.ts
-  var XoxoComicParser_exports = {};
-  __export(XoxoComicParser_exports, {
-    XoxoComicParser: () => XoxoComicParser
+  // src/XoxoComic/XoxoComic.ts
+  var XoxoComic_exports = {};
+  __export(XoxoComic_exports, {
+    XoxoComic: () => XoxoComic,
+    XoxoComicInfo: () => XoxoComicInfo
   });
+  var import_types2 = __toESM(require_lib());
+
+  // src/XoxoComic/XoxoComicParser.ts
   var import_types = __toESM(require_lib());
   var BASE_URL = "https://xoxocomic.com";
   var XoxoComicParser = class {
@@ -884,6 +888,135 @@ var _Sources = (() => {
       sectionCallback(latestSection);
     }
   };
-  return __toCommonJS(XoxoComicParser_exports);
+
+  // src/XoxoComic/XoxoComic.ts
+  var DOMAIN = "https://xoxocomic.com";
+  var XoxoComicInfo = {
+    version: "1.0.0",
+    name: "XoxoComic",
+    icon: "icon.png",
+    author: "DarkDragonkz",
+    authorWebsite: "https://github.com/DarkDragonkz",
+    description: `Extension that pulls comics from ${DOMAIN}`,
+    contentRating: import_types2.ContentRating.MATURE,
+    websiteBaseURL: DOMAIN,
+    sourceTags: [
+      {
+        text: "Comics",
+        type: import_types2.BadgeColor.GREY
+      }
+    ],
+    intents: import_types2.SourceIntents.MANGA_CHAPTERS | import_types2.SourceIntents.HOMEPAGE_SECTIONS | import_types2.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
+  };
+  var XoxoComic = class {
+    constructor(cheerio) {
+      this.cheerio = cheerio;
+      this.baseUrl = DOMAIN;
+      this.parser = new XoxoComicParser();
+      this.requestManager = App.createRequestManager({
+        requestsPerSecond: 4,
+        requestTimeout: 2e4,
+        interceptor: {
+          interceptRequest: async (request) => {
+            request.headers = {
+              ...request.headers ?? {},
+              "Referer": `${DOMAIN}/`,
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            };
+            return request;
+          },
+          interceptResponse: async (response) => {
+            return response;
+          }
+        }
+      });
+    }
+    getMangaShareUrl(mangaId) {
+      return `${this.baseUrl}/comic/${mangaId}`;
+    }
+    async getMangaDetails(mangaId) {
+      const request = App.createRequest({
+        url: `${this.baseUrl}/comic/${mangaId}`,
+        method: "GET"
+      });
+      const response = await this.requestManager.schedule(request, 1);
+      const $ = this.cheerio.load(response.data);
+      return this.parser.parseMangaDetails($, mangaId);
+    }
+    async getChapters(mangaId) {
+      const request = App.createRequest({
+        url: `${this.baseUrl}/comic/${mangaId}`,
+        method: "GET"
+      });
+      const response = await this.requestManager.schedule(request, 1);
+      const $ = this.cheerio.load(response.data);
+      return this.parser.parseChapters($, mangaId);
+    }
+    async getChapterDetails(mangaId, chapterId) {
+      const url = chapterId.startsWith("http") ? chapterId : `${this.baseUrl}/${chapterId}`;
+      const request = App.createRequest({
+        url,
+        method: "GET"
+      });
+      const response = await this.requestManager.schedule(request, 1);
+      return this.parser.parseChapterDetails(response.data ?? "", mangaId, chapterId);
+    }
+    async getSearchResults(query, metadata) {
+      const page = metadata?.page ?? 1;
+      const request = App.createRequest({
+        url: `${this.baseUrl}/search?keyword=${encodeURIComponent(query.title ?? "")}&page=${page}`,
+        method: "GET"
+      });
+      const response = await this.requestManager.schedule(request, 1);
+      const $ = this.cheerio.load(response.data);
+      const manga = this.parser.parseSearchResults($);
+      const nextPage = manga.length > 0 ? page + 1 : void 0;
+      return App.createPagedResults({
+        results: manga,
+        metadata: nextPage ? { page: nextPage } : void 0
+      });
+    }
+    async getHomePageSections(sectionCallback) {
+      const request = App.createRequest({
+        url: this.baseUrl,
+        method: "GET"
+      });
+      const response = await this.requestManager.schedule(request, 1);
+      const $ = this.cheerio.load(response.data);
+      this.parser.parseHomeSections($, sectionCallback);
+    }
+    async getViewMoreItems(homepageSectionId, metadata) {
+      const page = metadata?.page ?? 1;
+      let url = "";
+      if (homepageSectionId === "latest") {
+        url = `${this.baseUrl}/latest-comic?page=${page}`;
+      } else {
+        return App.createPagedResults({ results: [] });
+      }
+      const request = App.createRequest({
+        url,
+        method: "GET"
+      });
+      const response = await this.requestManager.schedule(request, 1);
+      const $ = this.cheerio.load(response.data);
+      const manga = this.parser.parseSearchResults($);
+      const nextPage = manga.length > 0 ? page + 1 : void 0;
+      return App.createPagedResults({
+        results: manga,
+        metadata: nextPage ? { page: nextPage } : void 0
+      });
+    }
+    async getCloudflareBypassRequestAsync() {
+      return App.createRequest({
+        url: this.baseUrl,
+        method: "GET",
+        headers: {
+          "Referer": `${this.baseUrl}/`,
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+      });
+    }
+  };
+  return __toCommonJS(XoxoComic_exports);
 })();
 this.Sources = _Sources; if (typeof exports === 'object' && typeof module !== 'undefined') {module.exports.Sources = this.Sources;}
