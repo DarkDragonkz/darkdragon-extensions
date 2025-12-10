@@ -858,7 +858,7 @@ var _Sources = (() => {
         id: "hot",
         title: "Hot New Releases \u{1F525}",
         containsMoreItems: false,
-        type: import_types.HomeSectionType.singleRowLarge
+        type: import_types.HomeSectionType.singleRowNormal
       });
       const hotItems = [];
       $(".sect--hot .poster").each((_, item) => {
@@ -868,6 +868,7 @@ var _Sources = (() => {
         let image = $("img", item).attr("data-src") ?? $("img", item).attr("src") ?? "";
         if (image.startsWith("/")) image = BASE_URL + image;
         image = image.replace("/mini/64x96/", "/mini/142x212/");
+        image = image.replace("/mini/131x196/", "/mini/142x212/");
         if (id && title) {
           hotItems.push(App.createPartialSourceManga({
             mangaId: id,
@@ -883,7 +884,7 @@ var _Sources = (() => {
         id: "latest",
         title: "Newest Releases \u{1F199}",
         containsMoreItems: true,
-        type: import_types.HomeSectionType.singleRowLarge
+        type: import_types.HomeSectionType.singleRowNormal
       });
       const latestItems = [];
       $(".sect--latest .latest").each((_, item) => {
@@ -912,8 +913,7 @@ var _Sources = (() => {
   // src/BatCave/BatCave.ts
   var DOMAIN = "https://batcave.biz";
   var BatCaveInfo = {
-    version: "1.0.4",
-    // Bump versione
+    version: "1.0.5",
     name: "BatCave",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -934,19 +934,18 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.baseUrl = DOMAIN;
       this.parser = new BatCaveParser();
-      // Retries alti per connessioni instabili
-      this.RETRIES = 10;
+      // User-Agent Mobile Android: Spesso risolve i blocchi "silenziosi" dei siti DLE
+      this.userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
       this.requestManager = App.createRequestManager({
-        requestsPerSecond: 6,
-        // Aumentato a 6 per forzare un caricamento più aggressivo
+        requestsPerSecond: 4,
         requestTimeout: 25e3,
         interceptor: {
           interceptRequest: async (request) => {
             request.headers = {
               ...request.headers ?? {},
               "referer": `${DOMAIN}/`,
-              "user-agent": await this.requestManager.getDefaultUserAgent(),
-              // Header per evitare cache vecchie o risposte vuote
+              "user-agent": this.userAgent,
+              // Usiamo quello fisso mobile
               "Cache-Control": "no-cache",
               "Pragma": "no-cache"
             };
@@ -966,7 +965,7 @@ var _Sources = (() => {
         url: `${this.baseUrl}/${mangaId}`,
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, this.RETRIES);
+      const response = await this.requestManager.schedule(request, 1);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseMangaDetails($, mangaId);
     }
@@ -975,7 +974,7 @@ var _Sources = (() => {
         url: `${this.baseUrl}/${mangaId}`,
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, this.RETRIES);
+      const response = await this.requestManager.schedule(request, 1);
       return this.parser.parseChapters(response.data ?? "");
     }
     async getChapterDetails(mangaId, chapterId) {
@@ -984,7 +983,7 @@ var _Sources = (() => {
         url: `${this.baseUrl}/reader/${mangaNumericId}/${chapterId}`,
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, this.RETRIES);
+      const response = await this.requestManager.schedule(request, 1);
       return this.parser.parseChapterDetails(response.data ?? "", mangaId, chapterId);
     }
     async getSearchResults(query, metadata) {
@@ -993,7 +992,7 @@ var _Sources = (() => {
         url: `${this.baseUrl}/index.php?do=search&subaction=search&story=${encodeURIComponent(query.title ?? "")}&search_start=${page}`,
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, this.RETRIES);
+      const response = await this.requestManager.schedule(request, 1);
       const $ = this.cheerio.load(response.data);
       const manga = this.parser.parseSearchResults($);
       const nextPage = manga.length > 0 ? page + 1 : void 0;
@@ -1007,10 +1006,7 @@ var _Sources = (() => {
         url: this.baseUrl,
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, this.RETRIES);
-      if (!response.data || response.data.length < 500) {
-        console.log("BatCave: Empty response on Home Page load");
-      }
+      const response = await this.requestManager.schedule(request, 1);
       const $ = this.cheerio.load(response.data);
       this.parser.parseHomeSections($, sectionCallback);
     }
@@ -1023,7 +1019,7 @@ var _Sources = (() => {
         method: "GET",
         headers: {
           "referer": `${this.baseUrl}/`,
-          "user-agent": await this.requestManager.getDefaultUserAgent()
+          "user-agent": this.userAgent
         }
       });
     }
