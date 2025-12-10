@@ -15,17 +15,14 @@ export class ReadAllComicsParser {
 
     /**
      * Helper centralizzato per parsare la griglia dei fumetti.
-     * Gestisce sia il layout standard (.post) che quello di ricerca.
      */
     parseGridItems($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
 
-        // Layout Standard (Home / Search Griglia)
         $('#post-area .post').each((_: any, item: any) => {
             const link = $('.pinbin-copy a', item).first()
             const title = link.text().trim() || link.attr('title')
             
-            // Estrazione ID dalla classe CSS (es. category-batman)
             const classAttr = $(item).attr('class') ?? ''
             const categoryMatch = classAttr.match(/category-([^\s]+)/)
             const id = categoryMatch ? categoryMatch[1] : null
@@ -35,7 +32,6 @@ export class ReadAllComicsParser {
             const img = $('img', item).first()
             let image = img.attr('src') ?? img.attr('data-src') ?? ''
             
-            // Fix per immagini relative ospitate su blogspot
             if (image.startsWith('/')) {
                 image = `https://2.bp.blogspot.com${image}`
             }
@@ -50,7 +46,6 @@ export class ReadAllComicsParser {
             }))
         })
 
-        // Layout Lista (Fallback per alcuni risultati di ricerca)
         if (results.length === 0 && $('.list-story li').length > 0) {
             $('.list-story li').each((_: any, li: any) => {
                 const link = $('a', li).first()
@@ -61,8 +56,6 @@ export class ReadAllComicsParser {
 
                 const urlParts = href.split('/').filter(Boolean)
                 const id = urlParts[urlParts.length - 1]
-
-                // Placeholder perché la lista testuale non ha immagini
                 const image = 'https://readallcomics.com/wp-content/uploads/2020/09/logo.png'
 
                 if (id) {
@@ -94,10 +87,8 @@ export class ReadAllComicsParser {
         const arrayTags: Tag[] = []
 
         const context = $('.description-archive')
-        
-        // Pulizia Descrizione Avanzata
         let tempDesc = context.clone()
-        tempDesc.find('b, strong, div, img, script, style').remove() // Rimuove elementi strutturali
+        tempDesc.find('b, strong, div, img, script, style').remove()
         desc = tempDesc.text().replace(/Publisher:|Genres:|Author:/g, '').trim()
 
         const publisherLabel = context.find('b:contains("Publisher:"), strong:contains("Publisher:")')
@@ -114,7 +105,6 @@ export class ReadAllComicsParser {
                 const label = $(a).text().trim()
                 const href = $(a).attr('href')
                 const id = href?.split('/').filter(Boolean).pop() ?? label
-                
                 if (id && label) {
                     arrayTags.push(App.createTag({ id: String(id), label: String(label) }))
                 }
@@ -136,8 +126,9 @@ export class ReadAllComicsParser {
         })
     }
 
+    // --- LOGICA DI ORDINAMENTO MIGLIORATA ---
     parseChapters($: any, mangaId: string): Chapter[] {
-        const chapters: Chapter[] = []
+        const tempChapters: any[] = []
         
         $('.list-story li').each((_: any, li: any) => {
             const link = $('a', li)
@@ -147,45 +138,72 @@ export class ReadAllComicsParser {
 
             const chapterId = href
 
-            let chapNum = 0
-            // Rimuove l'anno tra parentesi es: (2023) per parsare meglio il numero
+            // 1. ESTRAZIONE ANNO (es. Witchblade (1995))
+            // Usiamo l'anno come "Volume" fittizio per raggruppare visivamente
+            const yearMatch = title.match(/\((\d{4})\)/)
+            const year = yearMatch ? parseInt(yearMatch[1] ?? '0') : 0
+
+            // 2. ESTRAZIONE NUMERO CAPITOLO
+            // Rimuoviamo l'anno per evitare falsi positivi
             const titleClean = title.replace(/\(\d{4}\)/g, '').trim()
-            const numMatch = titleClean.match(/(\d+(\.\d+)?)/g)
             
+            let chapNum = 0
+            // Cerca l'ultimo numero nella stringa (es "Witchblade v3 001" -> prende 001)
+            const numMatch = titleClean.match(/(\d+)(\s|$)/g)
             if (numMatch && numMatch.length > 0) {
-                 chapNum = parseFloat(numMatch[numMatch.length - 1]!)
+                 // Prende l'ultimo match numerico pulito
+                 const lastNum = numMatch[numMatch.length - 1]?.trim()
+                 if(lastNum) chapNum = parseFloat(lastNum)
             }
 
-            chapters.push(App.createChapter({
+            tempChapters.push({
                 id: chapterId,
-                name: title,
+                name: title, // Il nome completo originale
                 chapNum: chapNum,
-                time: new Date(), // Il sito non fornisce date precise nella lista
+                volume: year, // HACK: Assegna l'anno al volume
+                time: new Date(),
                 langCode: 'en'
-            }))
+            })
         })
 
-        return chapters
+        // 3. ORDINAMENTO MANUALE (Sorting Logic)
+        // Ordina PRIMA per Anno (Crescente), POI per Capitolo
+        tempChapters.sort((a, b) => {
+            if (a.volume !== b.volume) {
+                // Ordine cronologico: 1995 prima di 2024
+                // Se vuoi i più recenti in alto, inverti a e b (b.volume - a.volume)
+                return a.volume - b.volume 
+            }
+            return a.chapNum - b.chapNum
+        })
+
+        // 4. MAPPA IN OGGETTI CHAPTER
+        return tempChapters.map((ch, index) => {
+            return App.createChapter({
+                id: ch.id,
+                name: ch.name,
+                chapNum: ch.chapNum,
+                volume: ch.volume > 0 ? ch.volume : undefined, // Mostra "Vol. 1995"
+                time: ch.time,
+                langCode: ch.langCode,
+                sortingIndex: index // Forza l'ordine calcolato sopra
+            })
+        })
     }
 
-    // MODIFICATO: Ora accetta $ (Cheerio) invece di html string per robustezza
     parseChapterDetails($: any, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
         
-        // Cerca tutte le immagini nel content area
         $('img').each((_: any, img: any) => {
             let url = $(img).attr('src') ?? $(img).attr('data-src')
             
             if (url && !url.includes('logo') && !url.includes('facebook') && !url.includes('twitter') && !url.includes('preloader')) {
-                
-                // Normalizzazione URL
                 if (url.startsWith('/')) {
                     url = `https://2.bp.blogspot.com${url}`
                 } else if (!url.startsWith('http')) {
                      url = url.startsWith('//') ? `https:${url}` : BASE_URL + url
                 }
                 
-                // Evita duplicati
                 if (!pages.includes(url.trim())) {
                     pages.push(url.trim())
                 }
@@ -203,8 +221,8 @@ export class ReadAllComicsParser {
         const latestSection = App.createHomeSection({ 
             id: 'latest', 
             title: 'Latest Added 🔥', 
-            containsMoreItems: true, // ABILITATO: Permette "View More"
-            type: HomeSectionType.continuous // MODIFICATO: Scroll verticale infinito
+            containsMoreItems: true,
+            type: HomeSectionType.continuous 
         })
         
         latestSection.items = this.parseGridItems($)
