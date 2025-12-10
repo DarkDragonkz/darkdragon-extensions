@@ -22,7 +22,7 @@ import { MangaDexParser } from './MangaDexParser'
 const MD_API = 'https://api.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '2.1.0', 
+    version: '2.1.1', // Bump version per fix search
     name: 'MangaDex (EN)',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -47,7 +47,7 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
 
     requestManager = App.createRequestManager({
         requestsPerSecond: 5,
-        requestTimeout: 20000, // Timeout ridotto per non bloccare troppo l'UI
+        requestTimeout: 20000,
         interceptor: {
             interceptRequest: async (request: Request) => {
                 request.headers = {
@@ -66,7 +66,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
-        // Aggiungiamo 'includes' necessari
         const request = App.createRequest({
             url: `${MD_API}/manga/${mangaId}?includes[]=author&includes[]=artist&includes[]=cover_art`,
             method: 'GET',
@@ -78,7 +77,7 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        // CRUCIAL: include scanlation_group per vedere CHI ha tradotto
+        // include scanlation_group per i credits
         const url = `${MD_API}/manga/${mangaId}/feed?limit=500&translatedLanguage[]=en&order[chapter]=desc&includeFutureUpdates=0&includes[]=scanlation_group`
 
         const request = App.createRequest({
@@ -89,11 +88,9 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const response = await this.requestManager.schedule(request, 1)
         const data = JSON.parse(response.data ?? '{}')
         
-        // Il parsing ora gestisce gruppi e titoli
         const chapters = this.parser.parseChapters(data)
 
-        // FIX ORDINAMENTO: A volte l'API ordina male i volumi misti.
-        // Ordiniamo manualmente per sicurezza: Volume Desc -> Chapter Desc
+        // Fix Ordinamento volumi misti
         return chapters.sort((a, b) => {
             if ((a.volume ?? 0) !== (b.volume ?? 0)) {
                 return (b.volume ?? 0) - (a.volume ?? 0)
@@ -113,7 +110,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
             const data = JSON.parse(response.data ?? '{}')
             return this.parser.parseChapterDetails(data, mangaId, chapterId)
         } catch (e) {
-            // Fallback elegante
             return App.createChapterDetails({
                 id: chapterId,
                 mangaId: mangaId,
@@ -126,19 +122,35 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const limit = 20
         const offset = metadata?.offset ?? 0
         
-        let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&availableTranslatedLanguage[]=en`
+        // Costruzione URL robusta
+        let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&includes[]=cover_art`
+
+        // FILTRI: Aggiungiamo 'pornographic' se l'app è settata su MATURE, altrimenti alcuni risultati spariscono
+        url += '&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic'
         
+        // Lingua: Solo Inglese
+        url += '&availableTranslatedLanguage[]=en'
+        
+        // Gestione Query Titolo
         if (query.title) {
-            url += `&title=${encodeURIComponent(query.title)}&order[relevance]=desc`
+            const safeTitle = query.title.trim()
+            if (safeTitle.length > 0) {
+                url += `&title=${encodeURIComponent(safeTitle)}&order[relevance]=desc`
+            } else {
+                // Se l'utente cerca stringa vuota o spazi
+                url += '&order[followedCount]=desc'
+            }
         } else {
-            url += `&order[followedCount]=desc` // Default sort se vuoto
+            // Default sort se non c'è query
+            url += '&order[followedCount]=desc' 
         }
         
         const request = App.createRequest({ url, method: 'GET' })
         const response = await this.requestManager.schedule(request, 1)
         const data = JSON.parse(response.data ?? '{}')
         
-        const results = this.parser.parseSearchResults(data, false) // False = Low quality thumbs per liste
+        // Usiamo thumbs low-res per la lista search (più veloce)
+        const results = this.parser.parseSearchResults(data, false)
 
         return App.createPagedResults({
             results: results,
@@ -149,20 +161,18 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
         const sections = [
             App.createHomeSection({ id: 'popular', title: 'Popular 🔥', containsMoreItems: true, type: HomeSectionType.singleRowLarge }),
-            App.createHomeSection({ id: 'latest', title: 'Latest Updates 🆙', containsMoreItems: true, type: HomeSectionType.continuous }), // UX: Continuous per updates
+            App.createHomeSection({ id: 'latest', title: 'Latest Updates 🆙', containsMoreItems: true, type: HomeSectionType.continuous }), 
             App.createHomeSection({ id: 'recently_added', title: 'Recently Added 🆕', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
             App.createHomeSection({ id: 'recommended', title: 'Top Rated ⭐', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
             App.createHomeSection({ id: 'featured', title: 'Featured (Monthly) 🌟', containsMoreItems: true, type: HomeSectionType.singleRowLarge }),
             App.createHomeSection({ id: 'self_published', title: 'Self-Published 🖊️', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
         ]
 
-        // Parametri base comuni
         const baseParams = 'limit=15&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&availableTranslatedLanguage[]=en'
 
-        // Mappa ID -> URL
         const urls: Record<string, string> = {
             popular: `${MD_API}/manga?${baseParams}&order[followedCount]=desc`,
-            latest: `${MD_API}/manga?${baseParams}&order[latestUploadedChapter]=desc`, // Nota: MD non ha un endpoint "feed" globale pulito, questo è il best effort per manga
+            latest: `${MD_API}/manga?${baseParams}&order[latestUploadedChapter]=desc`,
             recently_added: `${MD_API}/manga?${baseParams}&order[createdAt]=desc`,
             recommended: `${MD_API}/manga?${baseParams}&order[rating]=desc`,
             featured: `${MD_API}/manga?${baseParams}&order[followedCount]=desc&createdAtSince=${new Date(Date.now() - 2592000000).toISOString().slice(0, 19)}`,
@@ -178,7 +188,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
                 const response = await this.requestManager.schedule(request, 1)
                 const data = JSON.parse(response.data ?? '{}')
                 
-                // UX Logic: Se la sezione è Large, usa cover HD (.512.jpg), altrimenti SD (.256.jpg)
                 const useHighQuality = (section.type === HomeSectionType.singleRowLarge)
                 section.items = this.parser.parseSearchResults(data, useHighQuality)
                 
@@ -212,7 +221,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const response = await this.requestManager.schedule(request, 1)
         const data = JSON.parse(response.data ?? '{}')
         
-        // In ViewMore, usiamo thumbs normali per caricare veloce la lista
         const results = this.parser.parseSearchResults(data, false)
 
         return App.createPagedResults({
