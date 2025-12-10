@@ -731,8 +731,8 @@ var _Sources = (() => {
   var MD_API = "https://api.mangadex.org";
   var MD_UPLOADS = "https://uploads.mangadex.org";
   var MangaDexInfo = {
-    version: "2.0.8",
-    // Bump version
+    version: "2.0.9",
+    // Bump version per UI update
     name: "MangaDex (EN)",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -753,7 +753,6 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 5,
-        // Aumentato leggermente per gestire il parallelo
         requestTimeout: 25e3
       });
     }
@@ -891,12 +890,14 @@ ${desc}`;
     }
     async getHomePageSections(sectionCallback) {
       const sections = [
-        App.createHomeSection({ id: "popular", title: "Popular", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
-        App.createHomeSection({ id: "latest", title: "Latest Updates", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
-        App.createHomeSection({ id: "recently_added", title: "Recently Added", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
-        App.createHomeSection({ id: "recommended", title: "Recommended (Top Rated)", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
-        App.createHomeSection({ id: "featured", title: "Featured (Monthly)", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
-        App.createHomeSection({ id: "self_published", title: "Self-Published", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal })
+        App.createHomeSection({ id: "popular", title: "Popular \u{1F525}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowLarge }),
+        // Large Cover
+        App.createHomeSection({ id: "latest", title: "Latest Updates \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
+        App.createHomeSection({ id: "recently_added", title: "Recently Added \u{1F195}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
+        App.createHomeSection({ id: "recommended", title: "Recommended (Top Rated) \u2B50", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
+        App.createHomeSection({ id: "featured", title: "Featured (Monthly) \u{1F31F}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowLarge }),
+        // Large Cover
+        App.createHomeSection({ id: "self_published", title: "Self-Published \u{1F58A}\uFE0F", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal })
       ];
       for (const section of sections) {
         sectionCallback(section);
