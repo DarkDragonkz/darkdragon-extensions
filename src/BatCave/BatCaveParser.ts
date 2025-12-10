@@ -62,6 +62,7 @@ export class BatCaveParser {
     parseChapters(html: string): Chapter[] {
         const chapters: Chapter[] = []
         
+        // Estraiamo il JSON che contiene tutti i dati precisi
         const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s)
         if (!scriptData) return []
 
@@ -70,7 +71,9 @@ export class BatCaveParser {
             if (data.chapters && Array.isArray(data.chapters)) {
                 for (const chap of data.chapters) {
                     const id = String(chap.id)
+                    
                     // Pulizia titolo: rimuove underscore e spazi multipli
+                    // Es: "The_Sandman_(1989)_Issue_#75" -> "The Sandman (1989) Issue #75"
                     let title = (chap.title || `Chapter ${chap.id}`).replace(/_/g, ' ').replace(/\s+/g, ' ').trim()
                     
                     let time = new Date()
@@ -81,37 +84,22 @@ export class BatCaveParser {
                         }
                     }
 
-                    // --- LOGICA NUMERAZIONE POTENZIATA ---
+                    // --- SOLUZIONE ORDINE ---
+                    // Usiamo 'posi' (posizione) fornito dal sito.
+                    // Questo garantisce che l'ordine sia IDENTICO a quello del sito web.
                     let chapNum = 0
-                    
-                    // 1. Cerca pattern standard "Issue #123" o "Chapter 123"
-                    const stdMatch = title.match(/(?:Issue|Chapter|Ch\.?|#)\s*(\d+(\.\d+)?)/i)
-                    if (stdMatch) {
-                        chapNum = parseFloat(stdMatch[1])
-                    } 
-                    // 2. Cerca pattern "Part 123" (es. Deluxe Edition Part 4)
-                    else if (title.match(/(?:Part|Pt\.?)\s*(\d+(\.\d+)?)/i)) {
-                        const partMatch = title.match(/(?:Part|Pt\.?)\s*(\d+(\.\d+)?)/i)
-                        chapNum = parseFloat(partMatch![1])
-                    }
-                    // 3. Cerca pattern "Special 123"
-                    else if (title.match(/(?:Special)\s*(\d+(\.\d+)?)/i)) {
-                        const specialMatch = title.match(/(?:Special)\s*(\d+(\.\d+)?)/i)
-                        chapNum = parseFloat(specialMatch![1])
-                    }
-                    // 4. Fallback: Cerca l'ultimo numero presente nel titolo (es. "Vol 3 1999")
-                    else {
-                        const anyNumMatch = title.match(/(\d+(\.\d+)?)/g)
-                        if (anyNumMatch && anyNumMatch.length > 0) {
-                             // Prende l'ultimo numero trovato, sperando sia il capitolo
-                             chapNum = parseFloat(anyNumMatch[anyNumMatch.length - 1])
-                        }
+                    if (chap.posi) {
+                        chapNum = parseFloat(chap.posi)
+                    } else {
+                        // Fallback nel caso rarissimo manchi 'posi'
+                        const numMatch = title.match(/#(\d+(\.\d+)?)/)
+                        chapNum = numMatch ? parseFloat(numMatch[1]) : 0
                     }
 
                     chapters.push(App.createChapter({
                         id: id,
                         name: title,
-                        chapNum: chapNum,
+                        chapNum: chapNum, // L'app ordinerà in base a questo numero
                         time: time,
                         langCode: 'en'
                     }))
@@ -178,12 +166,12 @@ export class BatCaveParser {
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
         
-        // 1. Hot Comics (MODIFICATO: singleRowLarge per copertine intere)
+        // 1. Hot Comics (Featured Large)
         const hotSection = App.createHomeSection({ 
             id: 'hot', 
             title: 'Hot New Releases 🔥', 
             containsMoreItems: false, 
-            type: HomeSectionType.singleRowLarge // <-- Mostra copertina intera grande
+            type: HomeSectionType.singleRowLarge 
         })
         
         const hotItems: PartialSourceManga[] = []
