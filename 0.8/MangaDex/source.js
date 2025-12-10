@@ -960,14 +960,9 @@ ${desc}`;
       const offset = metadata?.offset ?? 0;
       let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&includes[]=cover_art`;
       url += "&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic";
-      url += "&availableTranslatedLanguage[]=en";
       if (query.title) {
         const safeTitle = query.title.trim();
-        if (safeTitle.length > 0) {
-          url += `&title=${encodeURIComponent(safeTitle)}&order[relevance]=desc`;
-        } else {
-          url += "&order[followedCount]=desc";
-        }
+        url += `&title=${encodeURIComponent(safeTitle)}&order[relevance]=desc`;
       } else {
         url += "&order[followedCount]=desc";
       }
