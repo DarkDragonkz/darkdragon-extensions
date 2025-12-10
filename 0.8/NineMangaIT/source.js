@@ -835,53 +835,53 @@ var _Sources = (() => {
     }
     async parseChapterDetails($, mangaId, chapterId, requestManager, cheerio, baseUrl) {
       const pages = [];
-      $("img.manga_pic").each((_, img) => {
-        const src = $(img).attr("src");
-        if (src) pages.push(src);
-      });
-      const otherPages = [];
-      $("select.sl-page option").each((i, option) => {
-        if (i === 0) return;
+      const firstImg = $("img.manga_pic").attr("src");
+      if (firstImg) pages.push(firstImg);
+      const otherPagesSet = /* @__PURE__ */ new Set();
+      const options = $("select.sl-page option").toArray();
+      let firstPageValue = "";
+      for (let i = 0; i < options.length; i++) {
+        const option = options[i];
         let pageUrl = $(option).attr("value");
-        if (pageUrl) {
-          if (pageUrl.startsWith("/")) pageUrl = baseUrl + pageUrl;
-          otherPages.push(pageUrl);
+        if (!pageUrl) continue;
+        if (pageUrl.startsWith("/")) pageUrl = baseUrl + pageUrl;
+        if (i === 0) {
+          firstPageValue = pageUrl;
+          continue;
+        }
+        if (pageUrl === firstPageValue) break;
+        if (!otherPagesSet.has(pageUrl)) {
+          otherPagesSet.add(pageUrl);
+        }
+      }
+      const otherPages = Array.from(otherPagesSet);
+      const promises = otherPages.map(async (url) => {
+        try {
+          const request = App.createRequest({
+            url,
+            method: "GET",
+            headers: {
+              "Referer": baseUrl,
+              "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+            }
+          });
+          const response = await requestManager.schedule(request, 1);
+          const $page = cheerio.load(response.data);
+          const imgSrc = $page("img.manga_pic").attr("src");
+          return imgSrc;
+        } catch (e) {
+          return null;
         }
       });
-      if (otherPages.length > 0) {
-        const promises = otherPages.map(async (url) => {
-          try {
-            const request = App.createRequest({
-              url,
-              method: "GET",
-              headers: {
-                "Referer": baseUrl,
-                // User Agent Mobile coerente
-                "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-              }
-            });
-            const response = await requestManager.schedule(request, 1);
-            const $page = cheerio.load(response.data);
-            const batchImages = [];
-            $page("img.manga_pic").each((_, img) => {
-              const src = $(img).attr("src");
-              if (src) batchImages.push(src);
-            });
-            return batchImages;
-          } catch (e) {
-            return [];
-          }
-        });
-        const results = await Promise.all(promises);
-        for (const batch of results) {
-          if (batch) pages.push(...batch);
-        }
+      const results = await Promise.all(promises);
+      for (const img of results) {
+        if (img) pages.push(img);
       }
       return App.createChapterDetails({
         id: chapterId,
         mangaId,
         pages: [...new Set(pages)]
-        // Rimuove duplicati
+        // Doppia sicurezza contro duplicati
       });
     }
     parseSearchResults($, baseUrl) {
