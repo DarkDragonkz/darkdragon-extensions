@@ -735,7 +735,6 @@ var _Sources = (() => {
   var ReadAllComicsParser = class {
     /**
      * Helper centralizzato per parsare la griglia dei fumetti.
-     * Gestisce sia il layout standard (.post) che quello di ricerca.
      */
     parseGridItems($) {
       const results = [];
@@ -824,32 +823,55 @@ var _Sources = (() => {
         })
       });
     }
+    // --- LOGICA DI ORDINAMENTO MIGLIORATA ---
     parseChapters($, mangaId) {
-      const chapters = [];
+      const tempChapters = [];
       $(".list-story li").each((_, li) => {
         const link = $("a", li);
         const title = link.text().trim();
         const href = link.attr("href");
         if (!href) return;
         const chapterId = href;
-        let chapNum = 0;
+        const yearMatch = title.match(/\((\d{4})\)/);
+        const year = yearMatch ? parseInt(yearMatch[1] ?? "0") : 0;
         const titleClean = title.replace(/\(\d{4}\)/g, "").trim();
-        const numMatch = titleClean.match(/(\d+(\.\d+)?)/g);
+        let chapNum = 0;
+        const numMatch = titleClean.match(/(\d+)(\s|$)/g);
         if (numMatch && numMatch.length > 0) {
-          chapNum = parseFloat(numMatch[numMatch.length - 1]);
+          const lastNum = numMatch[numMatch.length - 1]?.trim();
+          if (lastNum) chapNum = parseFloat(lastNum);
         }
-        chapters.push(App.createChapter({
+        tempChapters.push({
           id: chapterId,
           name: title,
+          // Il nome completo originale
           chapNum,
+          volume: year,
+          // HACK: Assegna l'anno al volume
           time: /* @__PURE__ */ new Date(),
-          // Il sito non fornisce date precise nella lista
           langCode: "en"
-        }));
+        });
       });
-      return chapters;
+      tempChapters.sort((a, b) => {
+        if (a.volume !== b.volume) {
+          return a.volume - b.volume;
+        }
+        return a.chapNum - b.chapNum;
+      });
+      return tempChapters.map((ch, index) => {
+        return App.createChapter({
+          id: ch.id,
+          name: ch.name,
+          chapNum: ch.chapNum,
+          volume: ch.volume > 0 ? ch.volume : void 0,
+          // Mostra "Vol. 1995"
+          time: ch.time,
+          langCode: ch.langCode,
+          sortingIndex: index
+          // Forza l'ordine calcolato sopra
+        });
+      });
     }
-    // MODIFICATO: Ora accetta $ (Cheerio) invece di html string per robustezza
     parseChapterDetails($, mangaId, chapterId) {
       const pages = [];
       $("img").each((_, img) => {
@@ -876,9 +898,7 @@ var _Sources = (() => {
         id: "latest",
         title: "Latest Added \u{1F525}",
         containsMoreItems: true,
-        // ABILITATO: Permette "View More"
         type: import_types.HomeSectionType.continuous
-        // MODIFICATO: Scroll verticale infinito
       });
       latestSection.items = this.parseGridItems($);
       sectionCallback(latestSection);
