@@ -735,10 +735,9 @@ var _Sources = (() => {
   var BatCaveParser = class {
     parseMangaDetails($, mangaId) {
       const title = $("h1.main-page-title").text().trim() || $("h1").first().text().trim() || "Unknown";
-      let image = $(".page__poster img").attr("src") || $(".page__poster img").attr("data-src") || "";
+      let image = $(".page__poster img").attr("src") ?? "";
       if (image.startsWith("/")) image = BASE_URL + image;
       let desc = $(".page__text").text().trim();
-      if (!desc) desc = "No description available";
       let author = "Unknown";
       let artist = "Unknown";
       let status = "Ongoing";
@@ -862,15 +861,13 @@ var _Sources = (() => {
         id: "hot",
         title: "Hot New Releases \u{1F525}",
         containsMoreItems: false,
-        type: import_types.HomeSectionType.featured
-        // Immagini grandi
+        type: import_types.HomeSectionType.singleRowNormal
       });
       const topRatedSection = App.createHomeSection({
         id: "top_rated",
         title: "Top Rated \u2B50",
         containsMoreItems: false,
         type: import_types.HomeSectionType.singleRowNormal
-        // Copertina intera ma più piccola
       });
       const justAddedSection = App.createHomeSection({
         id: "just_added",
@@ -909,7 +906,6 @@ var _Sources = (() => {
         const title = $(".popular__title", item).text().trim();
         let image = $("img", item).attr("data-src") ?? $("img", item).attr("src") ?? "";
         if (image.startsWith("/")) image = BASE_URL + image;
-        image = image.replace("64x96", "142x212");
         if (id && title) {
           topItems.push(App.createPartialSourceManga({
             mangaId: id,
@@ -928,7 +924,6 @@ var _Sources = (() => {
         const title = $(".popular__title", item).text().trim();
         let image = $("img", item).attr("data-src") ?? $("img", item).attr("src") ?? "";
         if (image.startsWith("/")) image = BASE_URL + image;
-        image = image.replace("64x96", "142x212");
         if (id && title) {
           addedItems.push(App.createPartialSourceManga({
             mangaId: id,
@@ -947,7 +942,6 @@ var _Sources = (() => {
         const id = href?.split("/").pop();
         let image = $("img", link).attr("src") ?? "";
         if (image.startsWith("/")) image = BASE_URL + image;
-        image = image.replace("64x96", "142x212");
         const title = $(".latest__title a", item).text().trim();
         const chapter = $(".latest__chapter a", item).text().trim().split("-")[1]?.trim() ?? "";
         if (id && title) {
@@ -967,8 +961,7 @@ var _Sources = (() => {
   // src/BatCave/BatCave.ts
   var DOMAIN = "https://batcave.biz";
   var BatCaveInfo = {
-    version: "1.0.6",
-    // Updated version
+    version: "1.0.7",
     name: "BatCave",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -989,23 +982,17 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.baseUrl = DOMAIN;
       this.parser = new BatCaveParser();
-      // User-Agent Mobile Android: Cruciale per evitare redirect strani o blocchi
-      this.userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
+      this.RETRIES = 5;
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 4,
-        requestTimeout: 25e3,
+        requestTimeout: 2e4,
         interceptor: {
           interceptRequest: async (request) => {
             request.headers = {
               ...request.headers ?? {},
               "Referer": `${DOMAIN}/`,
-              // Referer con la maiuscola per sicurezza
-              "User-Agent": this.userAgent,
-              // Header per forzare contenuto fresco
-              "Cache-Control": "no-cache",
-              "Pragma": "no-cache",
-              // Importante per le immagini se sono su sottodomini
-              "Origin": DOMAIN
+              // Usiamo quello di default per passare meglio i controlli CF dell'app
+              "User-Agent": await this.requestManager.getDefaultUserAgent()
             };
             return request;
           },
@@ -1023,7 +1010,8 @@ var _Sources = (() => {
         url: `${this.baseUrl}/${mangaId}`,
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, 1);
+      const response = await this.requestManager.schedule(request, this.RETRIES);
+      this.checkResponseError(response);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseMangaDetails($, mangaId);
     }
@@ -1032,7 +1020,8 @@ var _Sources = (() => {
         url: `${this.baseUrl}/${mangaId}`,
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, 1);
+      const response = await this.requestManager.schedule(request, this.RETRIES);
+      this.checkResponseError(response);
       return this.parser.parseChapters(response.data ?? "");
     }
     async getChapterDetails(mangaId, chapterId) {
@@ -1041,7 +1030,8 @@ var _Sources = (() => {
         url: `${this.baseUrl}/reader/${mangaNumericId}/${chapterId}`,
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, 1);
+      const response = await this.requestManager.schedule(request, this.RETRIES);
+      this.checkResponseError(response);
       return this.parser.parseChapterDetails(response.data ?? "", mangaId, chapterId);
     }
     async getSearchResults(query, metadata) {
@@ -1050,7 +1040,8 @@ var _Sources = (() => {
         url: `${this.baseUrl}/index.php?do=search&subaction=search&story=${encodeURIComponent(query.title ?? "")}&search_start=${page}`,
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, 1);
+      const response = await this.requestManager.schedule(request, this.RETRIES);
+      this.checkResponseError(response);
       const $ = this.cheerio.load(response.data);
       const manga = this.parser.parseSearchResults($);
       const nextPage = manga.length > 0 ? page + 1 : void 0;
@@ -1064,22 +1055,30 @@ var _Sources = (() => {
         url: this.baseUrl,
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, 1);
+      const response = await this.requestManager.schedule(request, this.RETRIES);
+      this.checkResponseError(response);
       const $ = this.cheerio.load(response.data);
       this.parser.parseHomeSections($, sectionCallback);
     }
     async getViewMoreItems(homepageSectionId, metadata) {
       return App.createPagedResults({ results: [] });
     }
+    // Funzione fondamentale per permettere il bypass Cloudflare dall'app
     async getCloudflareBypassRequestAsync() {
       return App.createRequest({
         url: this.baseUrl,
         method: "GET",
         headers: {
           "Referer": `${this.baseUrl}/`,
-          "User-Agent": this.userAgent
+          "User-Agent": await this.requestManager.getDefaultUserAgent()
         }
       });
+    }
+    // Gestione errori per notificare l'app se serve il Cloudflare Bypass
+    checkResponseError(response) {
+      if (response.status === 403 || response.status === 503) {
+        throw new Error(`Cloudflare Bypass Required. Go to Settings > Sources > BatCave > Cloud Icon.`);
+      }
     }
   };
   return __toCommonJS(BatCave_exports);
