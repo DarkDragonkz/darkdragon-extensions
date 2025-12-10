@@ -23,7 +23,7 @@ import { URLBuilder } from '../helper'
 const MW_DOMAIN = 'https://www.mangaworld.mx'
 
 export const MangaWorldInfo: SourceInfo = {
-    version: '3.2.0', // Bump versione per UI update
+    version: '3.3.0', // Bump versione per UI update
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld.',
     author: 'NmN',

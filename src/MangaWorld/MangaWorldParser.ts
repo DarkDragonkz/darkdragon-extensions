@@ -16,7 +16,6 @@ export class MangaWorldParser {
     private cleanTitle(title: string): string {
         if (!title) return 'Unknown'
         title = title.trim()
-        // Rimuove duplicazioni del titolo (bug noto di alcuni siti)
         if (title.length > 0 && title.length % 2 === 0) {
             const half = title.substring(0, title.length / 2)
             if (half === title.substring(title.length / 2)) {
