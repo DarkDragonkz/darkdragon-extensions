@@ -871,13 +871,13 @@ ${desc}`;
   // src/MangaDex/MangaDex.ts
   var MD_API = "https://api.mangadex.org";
   var MangaDexInfo = {
-    version: "2.1.1",
-    // Bump version per fix search
+    version: "2.1.2",
+    // Versione aggiornata con Smart Search
     name: "MangaDex (EN)",
     icon: "icon.png",
     author: "DarkDragonkz",
     authorWebsite: "https://github.com/DarkDragonkz",
-    description: "MangaDex source (English Only) with high-res covers and scanlation groups support.",
+    description: "MangaDex source (English Only) with high-res covers, scanlation groups and Smart Search.",
     contentRating: import_types.ContentRating.MATURE,
     websiteBaseURL: "https://mangadex.org",
     sourceTags: [
@@ -962,7 +962,12 @@ ${desc}`;
       url += "&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic";
       if (query.title) {
         const safeTitle = query.title.trim();
-        url += `&title=${encodeURIComponent(safeTitle)}&order[relevance]=desc`;
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(safeTitle);
+        if (isUUID) {
+          url += `&ids[]=${safeTitle}`;
+        } else {
+          url += `&title=${encodeURIComponent(safeTitle)}&order[relevance]=desc`;
+        }
       } else {
         url += "&order[followedCount]=desc";
       }
