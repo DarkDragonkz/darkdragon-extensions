@@ -859,7 +859,6 @@ var _Sources = (() => {
         title: "Hot New Releases \u{1F525}",
         containsMoreItems: false,
         type: import_types.HomeSectionType.singleRowLarge
-        // <-- FIX: Immagini grandi intere
       });
       const hotItems = [];
       $(".sect--hot .poster").each((_, item) => {
@@ -868,6 +867,7 @@ var _Sources = (() => {
         const title = $(".poster__title", item).text().trim();
         let image = $("img", item).attr("data-src") ?? $("img", item).attr("src") ?? "";
         if (image.startsWith("/")) image = BASE_URL + image;
+        image = image.replace("/mini/64x96/", "/mini/142x212/");
         if (id && title) {
           hotItems.push(App.createPartialSourceManga({
             mangaId: id,
@@ -884,7 +884,6 @@ var _Sources = (() => {
         title: "Newest Releases \u{1F199}",
         containsMoreItems: true,
         type: import_types.HomeSectionType.singleRowLarge
-        // <-- FIX: Anche qui immagini grandi intere
       });
       const latestItems = [];
       $(".sect--latest .latest").each((_, item) => {
@@ -893,6 +892,7 @@ var _Sources = (() => {
         const id = href?.split("/").pop();
         let image = $("img", link).attr("src") ?? "";
         if (image.startsWith("/")) image = BASE_URL + image;
+        image = image.replace("/mini/64x96/", "/mini/142x212/");
         const title = $(".latest__title a", item).text().trim();
         const chapter = $(".latest__chapter a", item).text().trim().split("-")[1]?.trim() ?? "";
         if (id && title) {
@@ -912,7 +912,7 @@ var _Sources = (() => {
   // src/BatCave/BatCave.ts
   var DOMAIN = "https://batcave.biz";
   var BatCaveInfo = {
-    version: "1.0.3",
+    version: "1.0.4",
     // Bump versione
     name: "BatCave",
     icon: "icon.png",
@@ -934,18 +934,21 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.baseUrl = DOMAIN;
       this.parser = new BatCaveParser();
-      // Aumentato drasticamente per evitare la home bianca all'avvio
+      // Retries alti per connessioni instabili
       this.RETRIES = 10;
       this.requestManager = App.createRequestManager({
-        requestsPerSecond: 5,
-        // Aumentato per caricamenti più rapidi
+        requestsPerSecond: 6,
+        // Aumentato a 6 per forzare un caricamento più aggressivo
         requestTimeout: 25e3,
         interceptor: {
           interceptRequest: async (request) => {
             request.headers = {
               ...request.headers ?? {},
               "referer": `${DOMAIN}/`,
-              "user-agent": await this.requestManager.getDefaultUserAgent()
+              "user-agent": await this.requestManager.getDefaultUserAgent(),
+              // Header per evitare cache vecchie o risposte vuote
+              "Cache-Control": "no-cache",
+              "Pragma": "no-cache"
             };
             return request;
           },
@@ -1005,6 +1008,9 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, this.RETRIES);
+      if (!response.data || response.data.length < 500) {
+        console.log("BatCave: Empty response on Home Page load");
+      }
       const $ = this.cheerio.load(response.data);
       this.parser.parseHomeSections($, sectionCallback);
     }
