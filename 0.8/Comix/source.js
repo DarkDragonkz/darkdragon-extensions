@@ -840,7 +840,8 @@ var _Sources = (() => {
     }
     parseChapters(chaptersData) {
       const chapters = [];
-      for (const chap of chaptersData) {
+      for (let i = 0; i < chaptersData.length; i++) {
+        const chap = chaptersData[i];
         const id = String(chap.chapter_id);
         let title = chap.name || "";
         const num = parseFloat(chap.number) || 0;
@@ -859,7 +860,9 @@ var _Sources = (() => {
           volume: chap.volume || 0,
           time,
           langCode: chap.language || "en",
-          group: chap.scanlation_group?.name || void 0
+          group: chap.scanlation_group?.name || void 0,
+          sortingIndex: i
+          // FIX: Assegna un indice basato sull'ordine dell'API
         }));
       }
       return chapters;
@@ -895,7 +898,6 @@ var _Sources = (() => {
       }
       return results;
     }
-    // Metodo helper per le sezioni della home
     parseHomeSectionItems(data) {
       return this.parseSearchResults(data);
     }
@@ -905,7 +907,8 @@ var _Sources = (() => {
   var BASE_URL = "https://comix.to";
   var API_URL = "https://comix.to/api/v2";
   var ComixInfo = {
-    version: "2.0.2",
+    version: "2.0.4",
+    // Bump version (Order Fix)
     name: "Comix",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -959,24 +962,32 @@ var _Sources = (() => {
       return this.parser.parseMangaDetails(data, mangaId);
     }
     async getChapters(mangaId) {
-      let allChaptersData = [];
-      let page = 1;
       const limit = 100;
-      let hasMore = true;
-      while (hasMore) {
-        const request = App.createRequest({
-          url: `${this.apiUrl}/manga/${mangaId}/chapters?page=${page}&limit=${limit}&order[number]=desc`,
-          method: "GET"
-        });
-        const response = await this.requestManager.schedule(request, 1);
-        const data = JSON.parse(response.data ?? "{}");
-        const items = data.result?.items || [];
-        const pagination = data.result?.pagination;
-        allChaptersData = allChaptersData.concat(items);
-        if (pagination && pagination.last_page && page < pagination.last_page) {
-          page++;
-        } else {
-          hasMore = false;
+      const request = App.createRequest({
+        url: `${this.apiUrl}/manga/${mangaId}/chapters?page=1&limit=${limit}`,
+        method: "GET"
+      });
+      const response = await this.requestManager.schedule(request, 1);
+      const data = JSON.parse(response.data ?? "{}");
+      let allChaptersData = data.result?.items || [];
+      const pagination = data.result?.pagination;
+      const lastPage = pagination?.last_page || 1;
+      if (lastPage > 1) {
+        const promises = [];
+        for (let page = 2; page <= lastPage; page++) {
+          const req = App.createRequest({
+            // Rimosso ordinamento anche qui
+            url: `${this.apiUrl}/manga/${mangaId}/chapters?page=${page}&limit=${limit}`,
+            method: "GET"
+          });
+          promises.push(this.requestManager.schedule(req, 1));
+        }
+        const responses = await Promise.all(promises);
+        for (const res of responses) {
+          const pageData = JSON.parse(res.data ?? "{}");
+          if (pageData.result?.items) {
+            allChaptersData = allChaptersData.concat(pageData.result.items);
+          }
         }
       }
       return this.parser.parseChapters(allChaptersData);
@@ -1015,18 +1026,18 @@ var _Sources = (() => {
       const recentSection = App.createHomeSection({ id: "recent", title: "Recently Added \u{1F195}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
       const updatesHotSection = App.createHomeSection({ id: "updatesHot", title: "Latest Hot Updates \u26A1", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
       const updatesNewSection = App.createHomeSection({ id: "updatesNew", title: "Latest Updates \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
-      const reqPopular = App.createRequest({ url: `${this.apiUrl}/top?type=trending&days=7&limit=15&includes[]=author`, method: "GET" });
-      this.requestManager.schedule(reqPopular, 1).then((res) => {
+      const requestPopular = App.createRequest({ url: `${this.apiUrl}/top?type=trending&days=7&limit=15&includes[]=author`, method: "GET" });
+      this.requestManager.schedule(requestPopular, 1).then((res) => {
         popularSection.items = this.parser.parseHomeSectionItems(JSON.parse(res.data ?? "{}"));
         sectionCallback(popularSection);
       });
-      const reqFollow = App.createRequest({ url: `${this.apiUrl}/top?type=follows&days=7&limit=20&includes[]=author`, method: "GET" });
-      this.requestManager.schedule(reqFollow, 1).then((res) => {
+      const requestFollow = App.createRequest({ url: `${this.apiUrl}/top?type=follows&days=7&limit=20&includes[]=author`, method: "GET" });
+      this.requestManager.schedule(requestFollow, 1).then((res) => {
         followSection.items = this.parser.parseHomeSectionItems(JSON.parse(res.data ?? "{}"));
         sectionCallback(followSection);
       });
-      const reqRecent = App.createRequest({ url: `${this.apiUrl}/manga?order[created_at]=desc&page=1&limit=20&includes[]=author`, method: "GET" });
-      this.requestManager.schedule(reqRecent, 1).then((res) => {
+      const requestRecent = App.createRequest({ url: `${this.apiUrl}/manga?order[created_at]=desc&page=1&limit=20&includes[]=author`, method: "GET" });
+      this.requestManager.schedule(requestRecent, 1).then((res) => {
         recentSection.items = this.parser.parseHomeSectionItems(JSON.parse(res.data ?? "{}"));
         sectionCallback(recentSection);
       });
