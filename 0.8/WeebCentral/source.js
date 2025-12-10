@@ -732,6 +732,31 @@ var _Sources = (() => {
   // src/WeebCentral/WeebCentralParser.ts
   var import_types = __toESM(require_lib());
   var WeebCentralParser = class {
+    /**
+     * Helper centralizzato per estrarre un manga da un elemento HTML.
+     * Gestisce Search, Home e Latest updates in un unico punto.
+     */
+    parseCommonManga($, element, extraSubtitle) {
+      let item = $(element);
+      let link = item.is("a") ? item : item.find('a[href*="/series/"]').first();
+      const href = link.attr("href");
+      const id = href?.split("/series/")[1]?.split("/")[0];
+      if (!id) return null;
+      let title = item.attr("data-tip") ?? item.find("[data-tip]").attr("data-tip") ?? item.find(".text-white, .font-bold").first().text().trim();
+      if (!title) title = "Unknown Title";
+      let image = item.find("img").first().attr("src") ?? item.find("img").first().attr("data-src") ?? "";
+      let subtitle = extraSubtitle;
+      if (!subtitle) {
+        const possibleChapter = item.find('a[href*="/chapters/"] span').last().text().trim();
+        if (possibleChapter) subtitle = possibleChapter;
+      }
+      return App.createPartialSourceManga({
+        mangaId: id,
+        image,
+        title,
+        subtitle
+      });
+    }
     parseMangaDetails($, mangaId) {
       let title = $("h1").first().text().trim();
       if (!title) title = $("section:has(picture)").first().attr("data-tip") ?? "Unknown";
@@ -745,12 +770,10 @@ var _Sources = (() => {
       else if (statusStr.includes("cancel")) status = "Completed";
       const arrayTags = [];
       $('strong:contains("Tags(s)")').nextAll("span").each((_, span) => {
-        const a = $("a", span);
-        const id = a.text().trim();
-        const label = a.text().trim();
-        if (id) arrayTags.push({ id, label });
+        const label = $(span).text().trim();
+        if (label) arrayTags.push({ id: label, label });
       });
-      const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags.map((x) => App.createTag(x)) })];
+      const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })];
       return App.createSourceManga({
         id: mangaId,
         mangaInfo: App.createMangaInfo({
@@ -766,38 +789,37 @@ var _Sources = (() => {
     parseChapters($, mangaId) {
       const chapters = [];
       $('a[href*="/chapters/"]').each((_, element) => {
-        const href = $(element).attr("href");
+        const item = $(element);
+        const href = item.attr("href");
         const id = href?.split("/chapters/")[1];
-        let name = $(element).find(".grow span, span.font-bold").first().text().trim();
+        if (!id) return;
+        let name = item.find(".grow span, span.font-bold").first().text().trim();
         if (!name) {
-          const clone = $(element).clone();
+          const clone = item.clone();
           clone.find("time").remove();
           name = clone.text().trim();
         }
-        name = name.replace(/(\r\n|\n|\r)/gm, " ").replace(/\s+/g, " ").trim();
+        name = name.replace(/\s+/g, " ").trim();
         const numMatch = name.match(/(\d+(\.\d+)?)/g);
         const chapNum = numMatch ? parseFloat(numMatch[numMatch.length - 1] ?? "0") : 0;
-        const timeStr = $(element).find("time").attr("datetime");
+        const timeStr = item.find("time").attr("datetime");
         const time = timeStr ? new Date(timeStr) : /* @__PURE__ */ new Date();
-        if (id) {
-          chapters.push(App.createChapter({
-            id,
-            name,
-            chapNum,
-            langCode: "en",
-            time
-          }));
-        }
+        chapters.push(App.createChapter({
+          id,
+          name,
+          chapNum,
+          langCode: "en",
+          time
+        }));
       });
       return chapters;
     }
     parseChapterDetails($, mangaId, chapterId) {
       const pages = [];
       $("img").each((_, img) => {
-        let src = $(img).attr("src");
-        if (!src) src = $(img).attr("data-src");
+        let src = $(img).attr("src") || $(img).attr("data-src");
         if (src && !src.includes("logo") && !src.includes("icon")) {
-          pages.push(src);
+          pages.push(src.trim());
         }
       });
       return App.createChapterDetails({
@@ -808,38 +830,12 @@ var _Sources = (() => {
     }
     parseSearchResults($) {
       const results = [];
-      $('article, div.bg-base-100, a[href*="/series/"]').each((_, item) => {
-        let linkElement = $(item);
-        if (!linkElement.is("a")) {
-          linkElement = $('a[href*="/series/"]', item).first();
-        }
-        const href = linkElement.attr("href");
-        if (!href) return;
-        const parts = href.split("/series/")[1]?.split("/");
-        const id = parts?.[0];
-        let image = $("img", item).attr("src");
-        if (!image) image = $("img", item).attr("data-src");
-        if (!image) image = linkElement.find("img").attr("src");
-        let title = $(item).attr("data-tip")?.trim();
-        if (!title) {
-          const potentialTitles = [];
-          $(item).find(".text-lg, .font-semibold, .font-bold, .text-white").each((_2, el) => {
-            const t = $(el).text().trim();
-            if (t && t !== "Official" && t !== "Manga" && !t.includes("Chapter")) {
-              potentialTitles.push(t);
-            }
-          });
-          if (potentialTitles.length > 0) title = potentialTitles[0];
-        }
-        if (id && title && title !== "Official") {
-          const exists = results.some((m) => m.mangaId === id);
-          if (!exists) {
-            results.push(App.createPartialSourceManga({
-              mangaId: id,
-              image: image ?? "",
-              title,
-              subtitle: void 0
-            }));
+      $('article, a[href*="/series/"]').each((_, item) => {
+        if ($(item).find("img").length === 0) return;
+        const manga = this.parseCommonManga($, item);
+        if (manga && manga.title !== "Official") {
+          if (!results.some((r) => r.mangaId === manga.mangaId)) {
+            results.push(manga);
           }
         }
       });
@@ -851,7 +847,6 @@ var _Sources = (() => {
         title: "Hot Updates \u{1F525}",
         containsMoreItems: false,
         type: import_types.HomeSectionType.singleRowLarge
-        // <-- CAMBIATO DA featured A singleRowLarge
       });
       const recSection = App.createHomeSection({
         id: "recommendations",
@@ -863,68 +858,33 @@ var _Sources = (() => {
         id: "latest_updates",
         title: "Latest Updates \u{1F199}",
         containsMoreItems: true,
-        type: import_types.HomeSectionType.singleRowNormal
+        type: import_types.HomeSectionType.continuous
+        // UX migliorata
       });
       const hotManga = [];
       const hotContainer = $('section:has(h2:contains("Hot Updates"))').first();
-      $("article", hotContainer).each((_, manga) => {
-        const link = $("a", manga).attr("href");
-        const id = link?.split("/series/")?.[1]?.split("/")?.[0];
-        let title = $(manga).attr("data-tip")?.trim();
-        if (!title) title = $(".text-white", manga).first().text().trim();
-        const image = $("img", manga).attr("src") ?? "";
-        if (id && title) {
-          hotManga.push(App.createPartialSourceManga({
-            mangaId: id,
-            image,
-            title,
-            subtitle: void 0
-          }));
-        }
+      $("article", hotContainer).each((_, item) => {
+        const manga = this.parseCommonManga($, item);
+        if (manga) hotManga.push(manga);
       });
       hotSection.items = hotManga;
       sectionCallback(hotSection);
       const recManga = [];
       const recContainer = $('section:has(h2:contains("Recommendations"))').first();
-      if (recContainer.length > 0) {
-        $("article", recContainer).each((_, manga) => {
-          const link = $("a", manga).attr("href");
-          const id = link?.split("/series/")?.[1]?.split("/")?.[0];
-          let title = $(manga).attr("data-tip")?.trim();
-          if (!title) title = $(".text-white", manga).first().text().trim();
-          const image = $("img", manga).attr("src") ?? "";
-          if (id && title) {
-            recManga.push(App.createPartialSourceManga({
-              mangaId: id,
-              image,
-              title,
-              subtitle: void 0
-            }));
-          }
-        });
-        if (recManga.length > 0) {
-          recSection.items = recManga;
-          sectionCallback(recSection);
-        }
+      $("article", recContainer).each((_, item) => {
+        const manga = this.parseCommonManga($, item);
+        if (manga) recManga.push(manga);
+      });
+      if (recManga.length > 0) {
+        recSection.items = recManga;
+        sectionCallback(recSection);
       }
       const latestManga = [];
       const latestContainer = $('section:has(h2:contains("Latest Updates"))').first();
-      $("article", latestContainer).each((_, manga) => {
-        const linkElement = $('a[href*="/series/"]', manga);
-        const link = linkElement.attr("href");
-        const id = link?.split("/series/")?.[1]?.split("/")?.[0];
-        let title = $(manga).attr("data-tip")?.trim();
-        if (!title) title = $(".font-semibold.text-lg", manga).text().trim();
-        const image = $("img", manga).attr("src") ?? "";
-        const chapter = $("span", manga).last().text().trim();
-        if (id && title) {
-          latestManga.push(App.createPartialSourceManga({
-            mangaId: id,
-            image,
-            title,
-            subtitle: chapter
-          }));
-        }
+      $("article", latestContainer).each((_, item) => {
+        const chapterText = $(item).find("span").last().text().trim();
+        const manga = this.parseCommonManga($, item, chapterText);
+        if (manga) latestManga.push(manga);
       });
       latestSection.items = latestManga;
       sectionCallback(latestSection);
@@ -973,8 +933,8 @@ var _Sources = (() => {
   // src/WeebCentral/WeebCentral.ts
   var DOMAIN = "https://weebcentral.com";
   var WeebCentralInfo = {
-    version: "1.0.19",
-    // Bump version
+    version: "1.1.0",
+    // Major Bump per UI update
     name: "WeebCentral",
     icon: "icon.png",
     author: "DarkDragonkzz",
@@ -996,14 +956,16 @@ var _Sources = (() => {
       this.baseUrl = DOMAIN;
       this.parser = new WeebCentralParser();
       this.requestManager = App.createRequestManager({
-        requestsPerSecond: 5,
+        requestsPerSecond: 4,
+        // Leggermente ridotto per sicurezza
         requestTimeout: 2e4,
         interceptor: {
           interceptRequest: async (request) => {
             request.headers = {
               ...request.headers ?? {},
               ...{
-                "referer": `${this.baseUrl}/`
+                "referer": `${this.baseUrl}/`,
+                "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
               }
             };
             return request;
