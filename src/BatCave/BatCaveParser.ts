@@ -71,7 +71,6 @@ export class BatCaveParser {
                 for (const chap of data.chapters) {
                     const id = String(chap.id)
                     
-                    // Pulizia titolo
                     let title = (chap.title || `Chapter ${chap.id}`).replace(/_/g, ' ').replace(/\s+/g, ' ').trim()
                     
                     let time = new Date()
@@ -82,7 +81,7 @@ export class BatCaveParser {
                         }
                     }
 
-                    // Usa la posizione del sito per l'ordinamento (risolve problemi di numerazione)
+                    // Usa la posizione del sito per l'ordinamento
                     let chapNum = 0
                     if (chap.posi) {
                         chapNum = parseFloat(chap.posi)
@@ -161,12 +160,12 @@ export class BatCaveParser {
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
         
-        // 1. Hot Comics -> SingleRowLarge (Copertina Intera)
+        // 1. Hot Comics
         const hotSection = App.createHomeSection({ 
             id: 'hot', 
             title: 'Hot New Releases 🔥', 
             containsMoreItems: false, 
-            type: HomeSectionType.singleRowLarge // <-- FIX: Immagini grandi intere
+            type: HomeSectionType.singleRowLarge 
         })
         
         const hotItems: PartialSourceManga[] = []
@@ -177,6 +176,9 @@ export class BatCaveParser {
             const title = $('.poster__title', item).text().trim()
             let image = $('img', item).attr('data-src') ?? $('img', item).attr('src') ?? ''
             if (image.startsWith('/')) image = BASE_URL + image
+
+            // FIX: Assicuriamoci che l'immagine sia di alta qualità anche qui
+            image = image.replace('/mini/64x96/', '/mini/142x212/')
 
             if (id && title) {
                 hotItems.push(App.createPartialSourceManga({
@@ -190,12 +192,12 @@ export class BatCaveParser {
         hotSection.items = hotItems
         sectionCallback(hotSection)
 
-        // 2. Latest Comics -> SingleRowLarge (Copertina Intera)
+        // 2. Latest Comics
         const latestSection = App.createHomeSection({ 
             id: 'latest', 
             title: 'Newest Releases 🆙', 
             containsMoreItems: true, 
-            type: HomeSectionType.singleRowLarge // <-- FIX: Anche qui immagini grandi intere
+            type: HomeSectionType.singleRowLarge 
         })
 
         const latestItems: PartialSourceManga[] = []
@@ -206,6 +208,11 @@ export class BatCaveParser {
             
             let image = $('img', link).attr('src') ?? ''
             if (image.startsWith('/')) image = BASE_URL + image
+            
+            // --- FIX RISOLUZIONE IMMAGINE ---
+            // Sostituiamo il path della miniatura (64x96) con quello più grande (142x212)
+            // L'URL passa da /uploads/mini/64x96/.. a /uploads/mini/142x212/..
+            image = image.replace('/mini/64x96/', '/mini/142x212/')
             
             const title = $('.latest__title a', item).text().trim()
             const chapter = $('.latest__chapter a', item).text().trim().split('-')[1]?.trim() ?? ''

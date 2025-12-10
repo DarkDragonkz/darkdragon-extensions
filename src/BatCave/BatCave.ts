@@ -22,7 +22,7 @@ import { BatCaveParser } from './BatCaveParser'
 const DOMAIN = 'https://batcave.biz'
 
 export const BatCaveInfo: SourceInfo = {
-    version: '1.0.3', // Bump versione
+    version: '1.0.4', // Bump versione
     name: 'BatCave',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -43,13 +43,13 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
     baseUrl = DOMAIN
     parser = new BatCaveParser()
     
-    // Aumentato drasticamente per evitare la home bianca all'avvio
+    // Retries alti per connessioni instabili
     RETRIES = 10 
 
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 5, // Aumentato per caricamenti più rapidi
+        requestsPerSecond: 6, // Aumentato a 6 per forzare un caricamento più aggressivo
         requestTimeout: 25000,
         interceptor: {
             interceptRequest: async (request: any) => {
@@ -57,6 +57,9 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
                     ...(request.headers ?? {}),
                     'referer': `${DOMAIN}/`,
                     'user-agent': await this.requestManager.getDefaultUserAgent(),
+                    // Header per evitare cache vecchie o risposte vuote
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
                 }
                 return request
             },
@@ -124,7 +127,16 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             method: 'GET'
         })
 
+        // La richiesta Home è fondamentale, usiamo il retry massimo
         const response = await this.requestManager.schedule(request, this.RETRIES)
+        
+        // Controllo validità dati
+        if (!response.data || response.data.length < 500) {
+             console.log("BatCave: Empty response on Home Page load")
+             // In caso di risposta vuota, potremmo rilanciare un errore o riprovare, 
+             // ma il requestManager dovrebbe averlo già fatto.
+        }
+
         const $ = this.cheerio.load(response.data)
         this.parser.parseHomeSections($, sectionCallback)
     }
