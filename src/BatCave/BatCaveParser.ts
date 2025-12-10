@@ -16,10 +16,12 @@ export class BatCaveParser {
     parseMangaDetails($: any, mangaId: string): SourceManga {
         const title = $('h1.main-page-title').text().trim() || $('h1').first().text().trim() || 'Unknown'
         
-        let image = $('.page__poster img').attr('src') ?? ''
+        // Cerca prima l'immagine nel poster principale
+        let image = $('.page__poster img').attr('src') || $('.page__poster img').attr('data-src') || ''
         if (image.startsWith('/')) image = BASE_URL + image
 
         let desc = $('.page__text').text().trim()
+        if (!desc) desc = 'No description available'
         
         let author = 'Unknown'
         let artist = 'Unknown'
@@ -62,6 +64,7 @@ export class BatCaveParser {
     parseChapters(html: string): Chapter[] {
         const chapters: Chapter[] = []
         
+        // Estrazione dati JSON dalla pagina
         const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s)
         if (!scriptData) return []
 
@@ -70,7 +73,6 @@ export class BatCaveParser {
             if (data.chapters && Array.isArray(data.chapters)) {
                 for (const chap of data.chapters) {
                     const id = String(chap.id)
-                    
                     let title = (chap.title || `Chapter ${chap.id}`).replace(/_/g, ' ').replace(/\s+/g, ' ').trim()
                     
                     let time = new Date()
@@ -81,7 +83,7 @@ export class BatCaveParser {
                         }
                     }
 
-                    // Ordine basato sulla posizione nel sito
+                    // Usa 'posi' per l'ordinamento corretto
                     let chapNum = 0
                     if (chap.posi) {
                         chapNum = parseFloat(chap.posi)
@@ -117,7 +119,12 @@ export class BatCaveParser {
                 if (data.images && Array.isArray(data.images)) {
                     for (const img of data.images) {
                          if (img && !img.includes('logo') && !img.includes('icon')) {
-                             pages.push(img)
+                             // A volte gli URL nel JSON mancano di protocollo
+                             let cleanImg = img
+                             if (cleanImg.startsWith('//')) cleanImg = 'https:' + cleanImg
+                             else if (cleanImg.startsWith('/')) cleanImg = BASE_URL + cleanImg
+                             
+                             pages.push(cleanImg)
                          }
                     }
                 }
@@ -142,6 +149,8 @@ export class BatCaveParser {
             const id = href?.split('/').pop() 
             
             const title = $('.readed__title a', item).text().trim()
+            
+            // Fix per le immagini in ricerca
             let image = $('img', link).attr('data-src') ?? $('img', link).attr('src') ?? ''
             if (image.startsWith('/')) image = BASE_URL + image
 
@@ -160,26 +169,49 @@ export class BatCaveParser {
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
         
-        // 1. Hot Comics -> singleRowNormal (Copertina Intera NON schiacciata)
+        // 1. Hot Comics (Carosello Grande)
+        // Corrisponde alla sezione rossa in alto: "Hot new releases in comics"
         const hotSection = App.createHomeSection({ 
             id: 'hot', 
             title: 'Hot New Releases 🔥', 
             containsMoreItems: false, 
-            type: HomeSectionType.singleRowNormal 
+            type: HomeSectionType.featured // Immagini grandi
         })
         
+        // 2. Top Rated (Colonna laterale 1)
+        const topRatedSection = App.createHomeSection({ 
+            id: 'top_rated', 
+            title: 'Top Rated ⭐', 
+            containsMoreItems: false, 
+            type: HomeSectionType.singleRowNormal // Copertina intera ma più piccola
+        })
+
+        // 3. Just Added (Colonna laterale 2)
+        const justAddedSection = App.createHomeSection({ 
+            id: 'just_added', 
+            title: 'Just Added 🆕', 
+            containsMoreItems: false, 
+            type: HomeSectionType.singleRowNormal 
+        })
+
+        // 4. Latest Updates (Lista principale)
+        const latestSection = App.createHomeSection({ 
+            id: 'latest', 
+            title: 'Latest Updates 🆙', 
+            containsMoreItems: true, 
+            type: HomeSectionType.singleRowNormal 
+        })
+
+        // --- Parsing HOT (Carosello) ---
         const hotItems: PartialSourceManga[] = []
         $('.sect--hot .poster').each((_: any, item: any) => {
             const href = $(item).attr('href')
             const id = href?.split('/').pop()
-            
             const title = $('.poster__title', item).text().trim()
+            
+            // Importante: prendere data-src
             let image = $('img', item).attr('data-src') ?? $('img', item).attr('src') ?? ''
             if (image.startsWith('/')) image = BASE_URL + image
-
-            // FIX: Alta qualità
-            image = image.replace('/mini/64x96/', '/mini/142x212/')
-            image = image.replace('/mini/131x196/', '/mini/142x212/')
 
             if (id && title) {
                 hotItems.push(App.createPartialSourceManga({
@@ -193,25 +225,65 @@ export class BatCaveParser {
         hotSection.items = hotItems
         sectionCallback(hotSection)
 
-        // 2. Latest Comics -> singleRowNormal (Copertina Intera NON schiacciata)
-        const latestSection = App.createHomeSection({ 
-            id: 'latest', 
-            title: 'Newest Releases 🆙', 
-            containsMoreItems: true, 
-            type: HomeSectionType.singleRowNormal
-        })
+        // --- Parsing Top Rated ---
+        // Cerchiamo il blocco laterale con titolo "Top-rated comics"
+        const topItems: PartialSourceManga[] = []
+        $('div.side-block:has(h2:contains("Top-rated")) a.popular').each((_: any, item: any) => {
+            const href = $(item).attr('href')
+            const id = href?.split('/').pop()
+            const title = $('.popular__title', item).text().trim()
+            
+            let image = $('img', item).attr('data-src') ?? $('img', item).attr('src') ?? ''
+            if (image.startsWith('/')) image = BASE_URL + image
+            // Trucco per qualità migliore: sostituisci 64x96 con 142x212
+            image = image.replace('64x96', '142x212')
 
+            if (id && title) {
+                topItems.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image,
+                    title: title,
+                    subtitle: undefined
+                }))
+            }
+        })
+        topRatedSection.items = topItems
+        sectionCallback(topRatedSection)
+
+        // --- Parsing Just Added ---
+        const addedItems: PartialSourceManga[] = []
+        $('div.side-block:has(h2:contains("Just added")) a.popular').each((_: any, item: any) => {
+            const href = $(item).attr('href')
+            const id = href?.split('/').pop()
+            const title = $('.popular__title', item).text().trim()
+            
+            let image = $('img', item).attr('data-src') ?? $('img', item).attr('src') ?? ''
+            if (image.startsWith('/')) image = BASE_URL + image
+            image = image.replace('64x96', '142x212')
+
+            if (id && title) {
+                addedItems.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image,
+                    title: title,
+                    subtitle: undefined
+                }))
+            }
+        })
+        justAddedSection.items = addedItems
+        sectionCallback(justAddedSection)
+
+        // --- Parsing Latest ---
         const latestItems: PartialSourceManga[] = []
         $('.sect--latest .latest').each((_: any, item: any) => {
             const link = $('a.latest__img', item)
             const href = link.attr('href')
             const id = href?.split('/').pop()
             
-            let image = $('img', link).attr('src') ?? ''
+            let image = $('img', link).attr('src') ?? '' // Qui spesso l'src è diretto
             if (image.startsWith('/')) image = BASE_URL + image
-            
-            // FIX: Alta qualità
-            image = image.replace('/mini/64x96/', '/mini/142x212/')
+            // Anche qui proviamo ad alzare la qualità
+            image = image.replace('64x96', '142x212')
             
             const title = $('.latest__title a', item).text().trim()
             const chapter = $('.latest__chapter a', item).text().trim().split('-')[1]?.trim() ?? ''

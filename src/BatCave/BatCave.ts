@@ -22,7 +22,7 @@ import { BatCaveParser } from './BatCaveParser'
 const DOMAIN = 'https://batcave.biz'
 
 export const BatCaveInfo: SourceInfo = {
-    version: '1.0.5',
+    version: '1.0.6', // Updated version
     name: 'BatCave',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -43,7 +43,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
     baseUrl = DOMAIN
     parser = new BatCaveParser()
     
-    // User-Agent Mobile Android: Spesso risolve i blocchi "silenziosi" dei siti DLE
+    // User-Agent Mobile Android: Cruciale per evitare redirect strani o blocchi
     readonly userAgent = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
 
     constructor(private cheerio: any) {}
@@ -55,10 +55,13 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             interceptRequest: async (request: any) => {
                 request.headers = {
                     ...(request.headers ?? {}),
-                    'referer': `${DOMAIN}/`,
-                    'user-agent': this.userAgent, // Usiamo quello fisso mobile
+                    'Referer': `${DOMAIN}/`, // Referer con la maiuscola per sicurezza
+                    'User-Agent': this.userAgent,
+                    // Header per forzare contenuto fresco
                     'Cache-Control': 'no-cache',
-                    'Pragma': 'no-cache'
+                    'Pragma': 'no-cache',
+                    // Importante per le immagini se sono su sottodomini
+                    'Origin': DOMAIN
                 }
                 return request
             },
@@ -140,8 +143,8 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             url: this.baseUrl,
             method: 'GET',
             headers: {
-                'referer': `${this.baseUrl}/`,
-                'user-agent': this.userAgent
+                'Referer': `${this.baseUrl}/`,
+                'User-Agent': this.userAgent
             }
         })
     }
