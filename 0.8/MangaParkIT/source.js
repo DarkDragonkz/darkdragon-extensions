@@ -756,7 +756,8 @@ var _Sources = (() => {
       if (image.startsWith("/")) image = "https://mangapark.io" + image;
       if (!image) image = "https://paperback.moe/icons/logo-alt.svg";
       const author = $('a[href*="/search?word="]').first().text().trim() || "Unknown";
-      const desc = $(".limit-html-p").text().trim() || $('meta[name="description"]').attr("content") || "No description";
+      let desc = $(".limit-html-p").text().trim() || $('meta[name="description"]').attr("content") || "";
+      if (!desc || desc.length < 5) desc = "Nessuna descrizione disponibile.";
       const status = "Ongoing";
       const arrayTags = [];
       $(".opacity-70 span, .genres a").each((_, el) => {
@@ -766,7 +767,7 @@ var _Sources = (() => {
         }
       });
       const tagSections = [
-        App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })
+        App.createTagSection({ id: "0", label: "Generi", tags: arrayTags })
       ];
       return App.createSourceManga({
         id: mangaId,
@@ -840,7 +841,6 @@ var _Sources = (() => {
         id: chapterId,
         mangaId,
         pages: [...new Set(pages)]
-        // Rimuovi duplicati
       });
     }
     parseSearchResults($) {
@@ -867,8 +867,19 @@ var _Sources = (() => {
       return results;
     }
     parseHomeSections($, sectionCallback) {
-      const popularSection = App.createHomeSection({ id: "popular", title: "Popolari in Italia", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
-      const latestSection = App.createHomeSection({ id: "latest", title: "Aggiornamenti Recenti (IT)", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
+      const popularSection = App.createHomeSection({
+        id: "popular",
+        title: "Popolari in Italia \u{1F525}",
+        containsMoreItems: true,
+        type: import_types.HomeSectionType.featured
+        // <-- Cambiato in Featured
+      });
+      const latestSection = App.createHomeSection({
+        id: "latest",
+        title: "Aggiornamenti Recenti \u{1F199}",
+        containsMoreItems: true,
+        type: import_types.HomeSectionType.singleRowNormal
+      });
       const mangas = this.parseSearchResults($);
       popularSection.items = mangas;
       sectionCallback(popularSection);
@@ -916,7 +927,8 @@ var _Sources = (() => {
   // src/MangaParkIT/MangaParkIT.ts
   var MP_DOMAIN = "https://mangapark.io";
   var MangaParkITInfo = {
-    version: "1.0.3",
+    version: "1.0.4",
+    // Bump versione
     name: "MangaPark IT",
     description: "Estensione per MangaPark (Solo Italiano)",
     author: "DarkDragonkz",
@@ -1019,10 +1031,10 @@ var _Sources = (() => {
       const $latest = this.cheerio.load(responseLatest.data);
       const popularManga = this.parser.parseSearchResults($popular);
       const latestManga = this.parser.parseSearchResults($latest);
-      const sectionPopular = App.createHomeSection({ id: "popular", title: "Popolari (IT)", containsMoreItems: true, type: import_types2.HomeSectionType.singleRowNormal });
+      const sectionPopular = App.createHomeSection({ id: "popular", title: "Popolari in Italia \u{1F525}", containsMoreItems: true, type: import_types2.HomeSectionType.featured });
       sectionPopular.items = popularManga;
       sectionCallback(sectionPopular);
-      const sectionLatest = App.createHomeSection({ id: "latest", title: "Recenti (IT)", containsMoreItems: true, type: import_types2.HomeSectionType.singleRowNormal });
+      const sectionLatest = App.createHomeSection({ id: "latest", title: "Aggiornamenti Recenti (IT) \u{1F199}", containsMoreItems: true, type: import_types2.HomeSectionType.singleRowNormal });
       sectionLatest.items = latestManga;
       sectionCallback(sectionLatest);
     }
