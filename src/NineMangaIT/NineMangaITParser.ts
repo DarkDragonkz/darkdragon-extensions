@@ -11,7 +11,6 @@ import {
 
 export class NineMangaITParser {
 
-    // HELPER: Trova l'immagine migliore e corregge HTTPS
     private getImageSrc(element: any): string {
         let img = element.find('img').first()
         if (element.is('img')) img = element
@@ -49,7 +48,7 @@ export class NineMangaITParser {
             intro.find('ul, h1, div, a').remove() 
             desc = intro.text().trim()
         }
-        if (!desc) desc = 'Nessuna descrizione disponibile.'
+        if (!desc) desc = 'No description available'
         desc = desc.replace(/^Sommario:\s*/i, '')
         
         let status = 'Ongoing'
@@ -119,9 +118,9 @@ export class NineMangaITParser {
             if (chapNumMatch) {
                 chapNum = parseFloat(chapNumMatch[1] ?? '0')
             } else {
-                const simpleNums = titleRaw.match(/(\d+(\.\d+)?)/g).map(Number)
+                const simpleNums = titleRaw.match(/(\d+(\.\d+)?)/g)
                 if (simpleNums && simpleNums.length > 0) {
-                    chapNum = simpleNums[simpleNums.length - 1] ?? 0
+                    chapNum = parseFloat(simpleNums[simpleNums.length - 1] ?? '0')
                 }
             }
 
@@ -136,34 +135,73 @@ export class NineMangaITParser {
         return chapters
     }
 
-    // LOGICA CORRETTA: Utilizza il selettore desktop del modello fornito
-    parseChapterDetails($: any, mangaId: string, chapterId: string): ChapterDetails {
+    // --- NUOVA LOGICA PER IL MOBILE ---
+    // Scarica le pagine una ad una
+    async parseChapterDetails(
+        $: any, 
+        mangaId: string, 
+        chapterId: string, 
+        requestManager: any, // Serve per fare le chiamate alle altre pagine
+        cheerio: any,        // Serve per parsare le altre pagine
+        baseUrl: string
+    ): Promise<ChapterDetails> {
         const pages: string[] = []
         
-        // Selettore primario basato sulla logica del file NineMangaParser.ts
-        const imgSelector = $('div.pic_box img.manga_pic').toArray()
-        
-        for (const obj of imgSelector) {
-            const i = $(obj).attr('src') ?? ''
-            
-            // Filtro per evitare immagini non valide (es. loghi, icone caricamento)
-            if (i && i.startsWith('http') && !i.includes('logo') && !i.includes('icon') && !i.includes('button')) {
-                pages.push(i.trim())
-            }
-        }
+        // 1. Estrai immagine dalla pagina corrente (Pagina 1)
+        const firstPageImg = $('img.manga_pic').attr('src')
+        if (firstPageImg) pages.push(firstPageImg)
 
-        // Fallback: se il selettore specifico desktop fallisce, tenta quello generico
-        if (pages.length === 0) {
-            $('img.manga_pic').each((_: any, img: any) => {
-                const src = $(img).attr('src')
-                if (src && src.startsWith('http')) pages.push(src.trim())
-            })
+        // 2. Trova tutte le altre pagine nel menu a tendina
+        const otherPages: string[] = []
+        
+        // Cerca il select delle pagine (sl-page)
+        $('select.sl-page option').each((i: number, option: any) => {
+            // Saltiamo la prima (già caricata)
+            if (i === 0) return 
+            
+            let pageUrl = $(option).attr('value')
+            if (pageUrl) {
+                if (pageUrl.startsWith('/')) pageUrl = baseUrl + pageUrl
+                otherPages.push(pageUrl)
+            }
+        })
+
+        // 3. Scarica le altre pagine in parallelo (con limite per non essere bannati)
+        // Usiamo un batch size di 5 richieste alla volta
+        const promises = otherPages.map(async (url) => {
+            try {
+                const request = App.createRequest({
+                    url: url,
+                    method: 'GET',
+                    headers: {
+                        'Referer': baseUrl,
+                        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
+                    }
+                })
+                
+                const response = await requestManager.schedule(request, 1)
+                const $page = cheerio.load(response.data)
+                const imgSrc = $page('img.manga_pic').attr('src')
+                
+                return imgSrc
+            } catch (e) {
+                console.log(`Failed to load page ${url}`)
+                return null
+            }
+        })
+
+        // Attendi tutte le promesse
+        const results = await Promise.all(promises)
+        
+        // Aggiungi i risultati validi all'array finale
+        for (const img of results) {
+            if (img) pages.push(img)
         }
 
         return App.createChapterDetails({
             id: chapterId,
             mangaId: mangaId,
-            pages: [...new Set(pages)] // Rimuove eventuali duplicati
+            pages: pages
         })
     }
 
@@ -198,7 +236,7 @@ export class NineMangaITParser {
         return results
     }
 
-    parseHomeSections($home: any, sectionCallback: (section: HomeSection) => void, baseUrl: string): void {
+    parseHomeSections($home: any, $updates: any, sectionCallback: (section: HomeSection) => void, baseUrl: string): void {
         const popularSection = App.createHomeSection({ id: 'popular', title: 'Popolari 🔥', containsMoreItems: true, type: HomeSectionType.singleRowLarge })
         const newSection = App.createHomeSection({ id: 'new', title: 'Nuove Uscite 🆕', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
         const latestSection = App.createHomeSection({ id: 'latest', title: 'Ultimi Aggiornamenti 🆙', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
