@@ -734,14 +734,15 @@ var _Sources = (() => {
   var WeebCentralParser = class {
     parseMangaDetails($, mangaId) {
       let title = $("h1").first().text().trim();
-      if (!title) title = $("section:has(picture)").first().attr("data-tip") ?? "";
+      if (!title) title = $("section:has(picture)").first().attr("data-tip") ?? "Unknown";
       const image = $('img[alt$=" cover"]').attr("src") ?? "https://paperback.moe/icons/logo-alt.svg";
-      const desc = $(".whitespace-pre-wrap").text().trim();
-      const author = $('strong:contains("Author(s)")').next().find("a").text().trim();
-      const statusStr = $('strong:contains("Status")').next("a").text().trim();
-      let status = "Unknown";
-      if (statusStr.toLowerCase().includes("ongoing")) status = "Ongoing";
-      else if (statusStr.toLowerCase().includes("complete")) status = "Completed";
+      const desc = $(".whitespace-pre-wrap").text().trim() || "No description available";
+      const author = $('strong:contains("Author(s)")').next().find("a").text().trim() || "Unknown";
+      const statusStr = $('strong:contains("Status")').next("a").text().trim().toLowerCase();
+      let status = "Ongoing";
+      if (statusStr.includes("complete")) status = "Completed";
+      else if (statusStr.includes("hiatus")) status = "Hiatus";
+      else if (statusStr.includes("cancel")) status = "Completed";
       const arrayTags = [];
       $('strong:contains("Tags(s)")').nextAll("span").each((_, span) => {
         const a = $("a", span);
@@ -758,7 +759,7 @@ var _Sources = (() => {
           status,
           author,
           tags: tagSections,
-          desc: desc || "No description available"
+          desc
         })
       });
     }
@@ -847,13 +848,14 @@ var _Sources = (() => {
     parseHomeSections($, sectionCallback) {
       const hotSection = App.createHomeSection({
         id: "hot_updates",
-        title: "Hot Updates",
+        title: "Hot Updates \u{1F525}",
         containsMoreItems: false,
-        type: import_types.HomeSectionType.singleRowNormal
+        type: import_types.HomeSectionType.featured
+        // <-- Carosello grande
       });
       const latestSection = App.createHomeSection({
         id: "latest_updates",
-        title: "Latest Updates",
+        title: "Latest Updates \u{1F199}",
         containsMoreItems: true,
         type: import_types.HomeSectionType.singleRowNormal
       });
@@ -942,7 +944,7 @@ var _Sources = (() => {
   // src/WeebCentral/WeebCentral.ts
   var DOMAIN = "https://weebcentral.com";
   var WeebCentralInfo = {
-    version: "1.0.17",
+    version: "1.0.18",
     name: "WeebCentral",
     icon: "icon.png",
     author: "DarkDragonkzz",
@@ -972,7 +974,6 @@ var _Sources = (() => {
               ...request.headers ?? {},
               ...{
                 "referer": `${this.baseUrl}/`
-                // RIMOSSO User-Agent forzato
               }
             };
             return request;
