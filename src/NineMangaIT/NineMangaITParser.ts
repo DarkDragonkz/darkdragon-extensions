@@ -135,7 +135,6 @@ export class NineMangaITParser {
         return chapters
     }
 
-    // --- NUOVA LOGICA ALLINEATA ALL'AUTORE NETSKY ---
     async parseChapterDetails(
         $: any, 
         mangaId: string, 
@@ -146,17 +145,19 @@ export class NineMangaITParser {
     ): Promise<ChapterDetails> {
         const pages: string[] = []
         
-        // 1. Estrai immagine dalla pagina corrente (Pagina 1)
-        const firstImg = $('img.manga_pic').attr('src')
-        if (firstImg) pages.push(firstImg)
+        // 1. Estrai le prime 10 immagini (o meno) dalla pagina corrente
+        $('img.manga_pic').each((_: any, img: any) => {
+            const src = $(img).attr('src')
+            if (src) pages.push(src)
+        })
 
-        // 2. Trova le altre pagine dal menu a tendina <select class="sl-page">
-        // Nel codice HTML fornito: <select class="sl-page" ...>
+        // 2. Controlla il menu a tendina per vedere se ci sono altre pagine
+        // Grazie al parametro -10-1, le pagine saranno in blocchi da 10 (es. 1, 11, 21...)
+        // L'HTML avrà una select con classe 'sl-page' o id 'page'
         const otherPages: string[] = []
         
         $('select.sl-page option').each((i: number, option: any) => {
-            // Saltiamo la prima opzione perché è la pagina corrente
-            if (i === 0) return 
+            if (i === 0) return // La prima è quella corrente
             
             let pageUrl = $(option).attr('value')
             if (pageUrl) {
@@ -165,39 +166,45 @@ export class NineMangaITParser {
             }
         })
 
-        // 3. Scarica le altre pagine (Concurrency controllata da requestManager)
-        // Usiamo Promise.all per parallelizzare ma il requestManager limiterà a 4req/s
-        const promises = otherPages.map(async (url) => {
-            try {
-                const request = App.createRequest({
-                    url: url,
-                    method: 'GET',
-                    headers: {
-                        'Referer': baseUrl,
-                        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
-                    }
-                })
-                
-                const response = await requestManager.schedule(request, 1)
-                const $page = cheerio.load(response.data)
-                const imgSrc = $page('img.manga_pic').attr('src')
-                
-                return imgSrc
-            } catch (e) {
-                return null
-            }
-        })
+        // 3. Se ci sono altre pagine, scaricale in parallelo
+        if (otherPages.length > 0) {
+            const promises = otherPages.map(async (url) => {
+                try {
+                    const request = App.createRequest({
+                        url: url,
+                        method: 'GET',
+                        headers: {
+                            'Referer': baseUrl,
+                            // User Agent Mobile coerente
+                            'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
+                        }
+                    })
+                    
+                    const response = await requestManager.schedule(request, 1)
+                    const $page = cheerio.load(response.data)
+                    const batchImages: string[] = []
+                    
+                    $page('img.manga_pic').each((_: any, img: any) => {
+                        const src = $(img).attr('src')
+                        if (src) batchImages.push(src)
+                    })
+                    
+                    return batchImages
+                } catch (e) {
+                    return []
+                }
+            })
 
-        const results = await Promise.all(promises)
-        
-        for (const img of results) {
-            if (img) pages.push(img)
+            const results = await Promise.all(promises)
+            for (const batch of results) {
+                if (batch) pages.push(...batch)
+            }
         }
 
         return App.createChapterDetails({
             id: chapterId,
             mangaId: mangaId,
-            pages: pages
+            pages: [...new Set(pages)] // Rimuove duplicati
         })
     }
 

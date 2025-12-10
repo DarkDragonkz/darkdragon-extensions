@@ -24,7 +24,7 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '1.3.0',
+    version: '1.3.5',
     name: 'NineMangaIT',
     description: 'Extension that pulls manga from it.ninemanga.com',
     author: 'DarkDragonkzz',
@@ -45,13 +45,16 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     baseUrl = IT_DOMAIN
     parser = new NineMangaITParser()
 
-    // User-Agent Mobile (Android) per evitare blocchi e caricare la versione leggera
+    // User-Agent Mobile Android (Mantenuto come richiesto per evitare ban e caricare la home)
     readonly userAgent = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
+
+    // Aumentiamo i retries per risolvere il problema "Homepage non carica al primo colpo"
+    RETRIES = 5 
 
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 4, // Bilanciato per scaricare le pagine senza essere bannati
+        requestsPerSecond: 5, // Aumentato per velocità
         requestTimeout: 25000,
         interceptor: {
             interceptRequest: async (request: any) => {
@@ -61,6 +64,8 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
                         'Referer': `${this.baseUrl}/`,
                         'User-Agent': this.userAgent,
                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
+                        'Connection': 'keep-alive',
                     }
                 }
                 return request
@@ -85,7 +90,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
             url: this.getMangaUrl(mangaId) + '?waring=1',
             method: 'GET'
         })
-        const response = await this.requestManager.schedule(request, 1)
+        const response = await this.requestManager.schedule(request, this.RETRIES)
         this.checkResponseError(response)
         const $ = this.cheerio.load(response.data)
         return this.parser.parseMangaDetails($, mangaId)
@@ -96,7 +101,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
             url: this.getMangaUrl(mangaId) + '?waring=1',
             method: 'GET'
         })
-        const response = await this.requestManager.schedule(request, 1)
+        const response = await this.requestManager.schedule(request, this.RETRIES)
         this.checkResponseError(response)
         const $ = this.cheerio.load(response.data)
         return this.parser.parseChapters($, mangaId)
@@ -108,20 +113,25 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
              if (!url.startsWith('/')) url = `/chapter/${mangaId}/${chapterId}`
              url = `${this.baseUrl}${url}`
         }
-        if (!url.endsWith('.html')) url += '.html'
+        
+        // Pulisce l'URL base
+        if (url.endsWith('.html')) url = url.replace('.html', '')
 
-        // NOTA: Non aggiungiamo più ?style=list. Usiamo la paginazione naturale.
+        // TRUCCO DEL PRO: Aggiungiamo -10-1.html
+        // Questo dice al server: "Dammi 10 immagini per pagina partendo dalla 1"
+        // Così invece di 20 richieste ne faremo solo 2. Molto più veloce e stabile.
+        url += '-10-1.html'
+
         const request = App.createRequest({
             url: url,
             method: 'GET'
         })
         
-        const response = await this.requestManager.schedule(request, 1)
+        const response = await this.requestManager.schedule(request, this.RETRIES)
         this.checkResponseError(response)
         
         const $ = this.cheerio.load(response.data)
         
-        // Passiamo tutto il necessario al parser per scaricare le altre pagine
         return this.parser.parseChapterDetails($, mangaId, chapterId, this.requestManager, this.cheerio, this.baseUrl)
     }
 
@@ -140,7 +150,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
             method: 'GET'
         })
 
-        const response = await this.requestManager.schedule(request, 1)
+        const response = await this.requestManager.schedule(request, this.RETRIES)
         this.checkResponseError(response)
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($, this.baseUrl)
@@ -156,7 +166,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
         const requestHome = App.createRequest({ url: this.baseUrl, method: 'GET' })
-        const responseHome = await this.requestManager.schedule(requestHome, 1)
+        const responseHome = await this.requestManager.schedule(requestHome, this.RETRIES)
         this.checkResponseError(responseHome)
         const $home = this.cheerio.load(responseHome.data)
         
@@ -173,7 +183,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         else return App.createPagedResults({ results: [] })
 
         const request = App.createRequest({ url, method: 'GET' })
-        const response = await this.requestManager.schedule(request, 1)
+        const response = await this.requestManager.schedule(request, this.RETRIES)
         this.checkResponseError(response)
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($, this.baseUrl)
@@ -192,6 +202,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
                 'User-Agent': this.userAgent,
                 'Referer': `${this.baseUrl}/`,
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7'
             }
         })
     }
