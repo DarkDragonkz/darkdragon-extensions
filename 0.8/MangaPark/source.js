@@ -747,10 +747,6 @@ var _Sources = (() => {
       let src = img.attr("data-src") || img.attr("srcset") || img.attr("src");
       return this.getHighResImage(src);
     }
-    /**
-     * Helper centralizzato per parsare un singolo elemento manga dalla lista/griglia.
-     * Riduce drasticamente la duplicazione del codice.
-     */
     parseMangaItem($, element) {
       const item = $(element);
       let link = item.is("a") ? item : item.find('a[href*="/title/"]').first();
@@ -852,6 +848,46 @@ var _Sources = (() => {
       }
       return chapters;
     }
+    // --- NUOVO: Parsing avanzato delle pagine ---
+    parseChapterDetails($, mangaId, chapterId) {
+      const pages = [];
+      $('div[data-name="image-item"] img, .comic-image img').each((_, el) => {
+        const img = $(el);
+        let src = img.attr("src");
+        if (!src || src.startsWith("data:") || src.includes("loading")) {
+          src = img.attr("data-src") || img.attr("srcset");
+        }
+        if (src && src.startsWith("http")) {
+          pages.push(src);
+        }
+      });
+      if (pages.length === 0) {
+        const scripts = $("script").toArray();
+        for (const script of scripts) {
+          const content = $(script).html();
+          if (!content) continue;
+          const urlMatches = content.match(/https?:\/\/[^"'\s\\]+\.(?:jpg|jpeg|png|webp)/gi);
+          if (urlMatches && urlMatches.length > 0) {
+            for (const url of urlMatches) {
+              if (!url.includes("google") && !url.includes("facebook") && !url.includes("analytics")) {
+                const cleanUrl = url.replace(/\\/g, "");
+                if (!pages.includes(cleanUrl)) {
+                  pages.push(cleanUrl);
+                }
+              }
+            }
+          }
+        }
+      }
+      if (pages.length === 0) {
+        throw new Error(`No pages found for chapter ${chapterId}. Possible Cloudflare or Login issue.`);
+      }
+      return App.createChapterDetails({
+        id: chapterId,
+        mangaId,
+        pages
+      });
+    }
     parseSearchResults($) {
       const results = [];
       const seenIds = /* @__PURE__ */ new Set();
@@ -871,14 +907,12 @@ var _Sources = (() => {
         title: "Popular Updates \u{1F525}",
         containsMoreItems: true,
         type: import_types.HomeSectionType.singleRowLarge
-        // <-- Vetrina
       });
       const latestSection = App.createHomeSection({
         id: "latest",
         title: "Latest Releases \u{1F195}",
         containsMoreItems: true,
         type: import_types.HomeSectionType.continuous
-        // <-- Lista verticale
       });
       const popularItems = [];
       const latestItems = [];
@@ -927,8 +961,8 @@ var _Sources = (() => {
   // src/MangaPark/MangaPark.ts
   var MP_DOMAIN2 = "https://mangapark.net";
   var MangaParkInfo = {
-    version: "1.1.0",
-    // Bump versione per UI Upgrade
+    version: "1.1.1",
+    // Bump versione per fix parsing
     name: "MangaPark",
     icon: "icon.png",
     author: "DarkDragonkzz",
@@ -993,25 +1027,7 @@ var _Sources = (() => {
       });
       const response = await this.requestManager.schedule(request, 1);
       const $ = this.cheerio.load(response.data);
-      const pages = [];
-      $('div[data-name="image-item"] img, .comic-image img').each((_, el) => {
-        const img = $(el);
-        let src = img.attr("src");
-        if (!src || src.startsWith("data:") || src.includes("loading")) {
-          src = img.attr("data-src") || img.attr("srcset");
-        }
-        if (src && src.startsWith("http")) {
-          pages.push(src);
-        }
-      });
-      if (pages.length === 0) {
-        throw new Error(`No pages found for chapter ${chapterId}. Possible Cloudflare or Login issue.`);
-      }
-      return App.createChapterDetails({
-        id: chapterId,
-        mangaId,
-        pages
-      });
+      return this.parser.parseChapterDetails($, mangaId, chapterId);
     }
     async getSearchResults(query, metadata) {
       const page = metadata?.page ?? 1;
