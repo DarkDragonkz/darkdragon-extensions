@@ -13,37 +13,28 @@ export class WeebCentralParser {
 
     /**
      * Helper centralizzato per estrarre un manga da un elemento HTML.
-     * Gestisce Search, Home e Latest updates in un unico punto.
      */
     private parseCommonManga($: any, element: any, extraSubtitle?: string): PartialSourceManga | null {
-        // WeebCentral usa <article> o <div> o <a> a seconda del contesto
         let item = $(element)
         
-        // Cerca il link principale
         let link = item.is('a') ? item : item.find('a[href*="/series/"]').first()
         const href = link.attr('href')
         
-        // Estrazione ID
         const id = href?.split('/series/')[1]?.split('/')[0]
         if (!id) return null
 
-        // Estrazione Titolo: data-tip è spesso il più affidabile su WC
         let title = item.attr('data-tip') ?? 
                     item.find('[data-tip]').attr('data-tip') ?? 
                     item.find('.text-white, .font-bold').first().text().trim()
 
         if (!title) title = 'Unknown Title'
 
-        // Estrazione Immagine
         let image = item.find('img').first().attr('src') ?? 
                     item.find('img').first().attr('data-src') ?? 
                     ''
         
-        // Sottotitolo opzionale (es. Ultimo capitolo)
         let subtitle = extraSubtitle
         if (!subtitle) {
-            // Cerca il capitolo se non fornito esplicitamente
-            // WC mette il capitolo in span o time a volte
             const possibleChapter = item.find('a[href*="/chapters/"] span').last().text().trim()
             if (possibleChapter) subtitle = possibleChapter
         }
@@ -66,17 +57,20 @@ export class WeebCentralParser {
         
         const author = $('strong:contains("Author(s)")').next().find('a').text().trim() || 'Unknown'
 
-        // Parsing Status
         const statusStr = $('strong:contains("Status")').next('a').text().trim().toLowerCase()
         let status = 'Ongoing'
         if (statusStr.includes('complete')) status = 'Completed'
         else if (statusStr.includes('hiatus')) status = 'Hiatus'
         else if (statusStr.includes('cancel')) status = 'Completed' 
 
+        // FIX ERRORE 305: Uso esplicito di App.createTag
         const arrayTags: Tag[] = []
         $('strong:contains("Tags(s)")').nextAll('span').each((_: any, span: any) => {
             const label = $(span).text().trim()
-            if (label) arrayTags.push({ id: label, label: label })
+            if (label) {
+                // Questo risolve l'errore "Invalid type for key tags"
+                arrayTags.push(App.createTag({ id: label, label: label }))
+            }
         })
         const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
 
@@ -102,8 +96,6 @@ export class WeebCentralParser {
             const id = href?.split('/chapters/')[1]
             if (!id) return
 
-            // Parsing Titolo
-            // Cerca span specifici o usa fallback
             let name = item.find('.grow span, span.font-bold').first().text().trim()
             
             if (!name) {
@@ -112,14 +104,11 @@ export class WeebCentralParser {
                 name = clone.text().trim()
             }
 
-            // Pulizia spazi multipli e newlines
             name = name.replace(/\s+/g, " ").trim()
 
-            // Parsing Numero Capitolo
             const numMatch = name.match(/(\d+(\.\d+)?)/g)
             const chapNum = numMatch ? parseFloat(numMatch[numMatch.length - 1] ?? '0') : 0
 
-            // Parsing Data
             const timeStr = item.find('time').attr('datetime')
             const time = timeStr ? new Date(timeStr) : new Date()
 
@@ -154,14 +143,11 @@ export class WeebCentralParser {
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         
-        // Selettore generico per griglia di ricerca
         $('article, a[href*="/series/"]').each((_: any, item: any) => {
-            // Filtra elementi troppo piccoli o non pertinenti (es. link tag)
             if ($(item).find('img').length === 0) return
 
             const manga = this.parseCommonManga($, item)
             if (manga && manga.title !== 'Official') {
-                // Evita duplicati
                 if (!results.some(r => r.mangaId === manga.mangaId)) {
                     results.push(manga)
                 }
@@ -172,8 +158,6 @@ export class WeebCentralParser {
     }
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
-        
-        // 1. Hot Updates (Vetrina Large)
         const hotSection = App.createHomeSection({
             id: 'hot_updates',
             title: 'Hot Updates 🔥',
@@ -181,7 +165,6 @@ export class WeebCentralParser {
             type: HomeSectionType.singleRowLarge, 
         })
         
-        // 2. Recommendations (Normale)
         const recSection = App.createHomeSection({
             id: 'recommendations',
             title: 'Recommendations 💡',
@@ -189,15 +172,13 @@ export class WeebCentralParser {
             type: HomeSectionType.singleRowNormal, 
         })
 
-        // 3. Latest Updates (Scroll Infinito Verticale)
         const latestSection = App.createHomeSection({
             id: 'latest_updates',
             title: 'Latest Updates 🆙',
             containsMoreItems: true,
-            type: HomeSectionType.continuous, // UX migliorata
+            type: HomeSectionType.continuous,
         })
 
-        // --- Hot Updates ---
         const hotManga: PartialSourceManga[] = []
         const hotContainer = $('section:has(h2:contains("Hot Updates"))').first()
         $('article', hotContainer).each((_: any, item: any) => {
@@ -207,7 +188,6 @@ export class WeebCentralParser {
         hotSection.items = hotManga
         sectionCallback(hotSection)
 
-        // --- Recommendations ---
         const recManga: PartialSourceManga[] = []
         const recContainer = $('section:has(h2:contains("Recommendations"))').first()
         $('article', recContainer).each((_: any, item: any) => {
@@ -219,11 +199,9 @@ export class WeebCentralParser {
             sectionCallback(recSection)
         }
 
-        // --- Latest Updates ---
         const latestManga: PartialSourceManga[] = []
         const latestContainer = $('section:has(h2:contains("Latest Updates"))').first()
         $('article', latestContainer).each((_: any, item: any) => {
-            // Passiamo un selettore per trovare specificamente l'info del capitolo
             const chapterText = $(item).find('span').last().text().trim()
             const manga = this.parseCommonManga($, item, chapterText)
             if (manga) latestManga.push(manga)
