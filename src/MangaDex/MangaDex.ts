@@ -22,7 +22,7 @@ import { MangaDexParser } from './MangaDexParser'
 const MD_API = 'https://api.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '2.1.2', // Versione aggiornata con Smart Search
+    version: '2.1.3', // Bump per fix capitoli nascosti
     name: 'MangaDex (EN)',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -77,7 +77,10 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        const url = `${MD_API}/manga/${mangaId}/feed?limit=500&translatedLanguage[]=en&order[chapter]=desc&includeFutureUpdates=0&includes[]=scanlation_group`
+        // FIX: Aggiunto contentRating[] anche nel feed per sicurezza assoluta
+        // Alcuni manga potrebbero essere taggati in modo tale che l'API li nasconde di default
+        let url = `${MD_API}/manga/${mangaId}/feed?limit=500&translatedLanguage[]=en&order[chapter]=desc&includeFutureUpdates=0&includes[]=scanlation_group`
+        url += '&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic'
 
         const request = App.createRequest({
             url: url,
@@ -122,24 +125,20 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         
         let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&includes[]=cover_art`
 
-        // FILTRI FONDAMENTALI: Includiamo tutto per non nascondere risultati
+        // FILTRI FONDAMENTALI
         url += '&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic'
         
-        // NOTA: Non filtriamo per lingua QUI, perché vogliamo trovare il manga anche se l'API non ha aggiornato i metadata EN.
-        // Il filtro EN si applica solo ai capitoli.
-
+        // NOTA: Nessun filtro lingua qui per permettere la discovery globale
+        
         if (query.title) {
             const safeTitle = query.title.trim()
             
-            // SMART SEARCH (Ispirato dal codice che hai inviato)
-            // Controlla se la stringa è un UUID (es. d8a959f7-648e...)
+            // SMART SEARCH (UUID Detection)
             const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(safeTitle)
 
             if (isUUID) {
-                // Se è un ID, cerchiamo direttamente per ID
                 url += `&ids[]=${safeTitle}`
             } else {
-                // Altrimenti ricerca testuale classica
                 url += `&title=${encodeURIComponent(safeTitle)}&order[relevance]=desc`
             }
         } else {
