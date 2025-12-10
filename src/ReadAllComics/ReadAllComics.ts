@@ -20,7 +20,7 @@ import { ReadAllComicsParser } from './ReadAllComicsParser'
 const DOMAIN = 'https://readallcomics.com'
 
 export const ReadAllComicsInfo: SourceInfo = {
-    version: '1.5.1', // Bump versione per UI update
+    version: '1.5.2', // Bump versione
     name: 'ReadAllComics',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -93,10 +93,14 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        return this.parser.parseChapterDetails(response.data ?? '', mangaId, chapterId)
+        // CARICHIAMO CHEERIO QUI: Più sicuro della regex su stringa
+        const $ = this.cheerio.load(response.data)
+        return this.parser.parseChapterDetails($, mangaId, chapterId)
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
+        // Nota: La ricerca su ReadAllComics sembra supportare la paginazione, ma è complessa.
+        // Manteniamo la logica base per ora.
         const searchUrl = `${this.baseUrl}/?story=${encodeURIComponent(query.title ?? '')}&s=&type=comic`
 
         const request = App.createRequest({
@@ -126,7 +130,34 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     }
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
-        return App.createPagedResults({ results: [] })
+        const page = metadata?.page ?? 1
+        let url = ''
+
+        // Gestione Paginazione "Latest"
+        // Pattern tipico WordPress: /page/2/
+        if (homepageSectionId === 'latest') {
+            url = `${this.baseUrl}/page/${page}/`
+        } else {
+            return App.createPagedResults({ results: [] })
+        }
+
+        const request = App.createRequest({
+            url: url,
+            method: 'GET'
+        })
+
+        const response = await this.requestManager.schedule(request, 1)
+        const $ = this.cheerio.load(response.data)
+        
+        // Riusiamo parseSearchResults/parseGridItems che gestisce i post
+        const manga = this.parser.parseSearchResults($)
+        
+        const nextPage = manga.length > 0 ? page + 1 : undefined
+
+        return App.createPagedResults({
+            results: manga,
+            metadata: nextPage ? { page: nextPage } : undefined
+        })
     }
     
     async getCloudflareBypassRequestAsync() {
