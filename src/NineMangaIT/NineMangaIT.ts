@@ -24,7 +24,7 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '1.3.1',
+    version: '1.3.8',
     name: 'NineMangaIT',
     description: 'Extension that pulls manga from it.ninemanga.com',
     author: 'DarkDragonkzz',
@@ -45,12 +45,13 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     baseUrl = IT_DOMAIN
     parser = new NineMangaITParser()
 
+    // User-Agent Mobile (Necessario per evitare ban Home)
     readonly userAgent = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
 
-    constructor(private cheerio: any) {}
+    constructor(public cheerio: any) {} // Reso pubblico per accessibilità dal parser
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 5,
+        requestsPerSecond: 3, 
         requestTimeout: 25000,
         interceptor: {
             interceptRequest: async (request: any) => {
@@ -62,6 +63,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                         'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
                         'Connection': 'keep-alive',
+                        'Cookie': 'is_warning=1; my_limit=1'
                     }
                 }
                 return request
@@ -111,7 +113,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         }
         if (url.endsWith('.html')) url = url.replace('.html', '')
 
-        // Usiamo -10-1 per coerenza con l'altro autore, ma il parser gestirà tutto
+        // Usiamo il trucco -10-1 per ridurre il numero di pagine da scaricare nel ciclo
         url += '-10-1.html'
 
         const request = App.createRequest({
@@ -124,7 +126,8 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         
         const $ = this.cheerio.load(response.data)
         
-        return this.parser.parseChapterDetails($, mangaId, chapterId, this.requestManager, this.cheerio, this.baseUrl)
+        // Passiamo 'this' come source, così il parser può usare requestManager e cheerio per il ciclo
+        return this.parser.parseChapterDetails($, mangaId, chapterId, this)
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
@@ -194,6 +197,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
                 'User-Agent': this.userAgent,
                 'Referer': `${this.baseUrl}/`,
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7'
             }
         })
     }
