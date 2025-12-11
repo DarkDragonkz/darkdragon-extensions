@@ -734,8 +734,7 @@ var _Sources = (() => {
   var BASE_URL = "https://batcave.biz";
   var BatCaveParser = class {
     /**
-     * Tenta di trasformare l'URL di una miniatura (thumb) nell'URL dell'immagine originale HD.
-     * Rimuove segmenti tipici come '/thumbs/' o suffissi di ridimensionamento.
+     * Ottimizzazione URL Immagini
      */
     getHighResImage(url) {
       if (!url) return "https://paperback.moe/icons/logo-alt.svg";
@@ -743,7 +742,7 @@ var _Sources = (() => {
         if (url.startsWith("/")) {
           url = BASE_URL + url;
         } else {
-          url = BASE_URL + "/" + url;
+          url = `${BASE_URL}/${url}`;
         }
       }
       if (url.includes("/thumbs/")) {
@@ -752,7 +751,7 @@ var _Sources = (() => {
       return url;
     }
     /**
-     * Helper per parsare le liste di manga (Grid/List items).
+     * Helper centralizzato per il parsing delle griglie
      */
     parseGridItems($, containerSelector, itemSelector) {
       const manga = [];
@@ -781,7 +780,6 @@ var _Sources = (() => {
       return manga;
     }
     parseMangaDetails($, mangaId) {
-      const infoBlock = $(".f-desc");
       let title = $("h1.title").text().trim();
       if (!title) title = $(".f-desc h1").text().trim() || "Unknown";
       const imageSrc = $(".f-desc img").first().attr("src");
@@ -850,7 +848,7 @@ var _Sources = (() => {
     }
     parseChapterDetails(html, mangaId, chapterId) {
       const pages = [];
-      const scriptMatch = html.match(/imgArr\s*=\s*(\[.*?\])/s) || html.match(/var\s+images\s*=\s*(\[.*?\])/s);
+      const scriptMatch = html.match(/(?:imgArr|images)\s*=\s*(\[.*?\])/s);
       if (scriptMatch && scriptMatch[1]) {
         try {
           const jsonStr = scriptMatch[1].replace(/'/g, '"');
@@ -867,15 +865,11 @@ var _Sources = (() => {
             pages.push(this.getHighResImage(match[1]));
           }
         }
-      }
-      if (pages.length === 0) {
-        const imgRegex = /<img[^>]+(?:data-src|src)=["']([^"']+)["']/g;
+      } else {
+        const imgRegex = /<img[^>]+data-src=["']([^"']+)["']/g;
         let match;
         while ((match = imgRegex.exec(html)) !== null) {
-          const url = match[1];
-          if (url && !url.includes("logo") && !url.includes("icon") && !url.includes("design")) {
-            pages.push(this.getHighResImage(url));
-          }
+          pages.push(this.getHighResImage(match[1]));
         }
       }
       return App.createChapterDetails({
@@ -890,7 +884,7 @@ var _Sources = (() => {
         id: "hot",
         title: "Hot Releases \u{1F525}",
         containsMoreItems: false,
-        type: import_types.HomeSectionType.singleRowLarge
+        type: import_types.HomeSectionType.singleRowNormal
       });
       hotSection.items = this.parseGridItems($, ".sect--hot", ".poster");
       sectionCallback(hotSection);
@@ -932,7 +926,7 @@ var _Sources = (() => {
   var DOMAIN = "https://batcave.biz";
   var BatCaveInfo = {
     version: "1.1.0",
-    // Bump version (UI Improvement)
+    // Bump version (Code Optimization)
     name: "BatCave",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -953,8 +947,8 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.baseUrl = DOMAIN;
       this.parser = new BatCaveParser();
-      // Ottimizzazione: 2-3 tentativi sono sufficienti. 10 rallenta troppo.
-      this.RETRIES = 3;
+      // 2 tentativi sono sufficienti per una buona UX
+      this.RETRIES = 2;
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 3,
         requestTimeout: 2e4,
@@ -963,7 +957,6 @@ var _Sources = (() => {
             request.headers = {
               ...request.headers ?? {},
               "Referer": `${DOMAIN}/`,
-              // User Agent Desktop Moderno
               "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             };
             return request;
@@ -1042,7 +1035,7 @@ var _Sources = (() => {
       });
       const response = await this.requestManager.schedule(request, this.RETRIES);
       const $ = this.cheerio.load(response.data);
-      let manga = this.parser.parseGridItems($, ".sect--latest .latest, .content", ".latest__chapter, .short");
+      let manga = this.parser.parseGridItems($, ".sect--latest .latest, .content .short", ".latest__chapter");
       if (manga.length === 0) {
         manga = this.parser.parseSearchResults($);
       }
