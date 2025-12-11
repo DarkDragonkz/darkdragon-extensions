@@ -7,7 +7,7 @@ import {
     TagSection,
 } from '@paperback/types'
 
-// Definizioni costanti spostate per pulizia
+// Mappatura generi statica per evitare chiamate API inutili
 const GENRES = [
     { id: "6", value: "Action" }, { id: "87264", value: "Adult" }, { id: "7", value: "Adventure" },
     { id: "8", value: "Boys Love" }, { id: "9", value: "Comedy" }, { id: "10", value: "Crime" },
@@ -16,108 +16,103 @@ const GENRES = [
     { id: "15", value: "Horror" }, { id: "16", value: "Isekai" }, { id: "17", value: "Magical Girls" },
     { id: "87267", value: "Mature" }, { id: "18", value: "Mecha" }, { id: "19", value: "Medical" },
     { id: "20", value: "Mystery" }, { id: "21", value: "Philosophical" }, { id: "22", value: "Psychological" },
-    { id: "23", value: "Romance" }, { id: "24", value: "Sci-Fi" }, { id: "25", value: "Slice of Life" },
-    { id: "87268", value: "Smut" }, { id: "26", value: "Sports" }, { id: "27", value: "Superhero" },
-    { id: "28", value: "Thriller" }, { id: "29", value: "Tragedy" }, { id: "30", value: "Wuxia" }
-]
-
-const THEMES = [
-    { id: "31", value: "Aliens" }, { id: "32", value: "Animals" }, { id: "33", value: "Cooking" },
-    { id: "34", value: "Crossdressing" }, { id: "35", value: "Delinquents" }, { id: "36", value: "Demons" },
-    { id: "37", value: "Genderswap" }, { id: "38", value: "Ghosts" }, { id: "39", value: "Gyaru" },
-    { id: "40", value: "Harem" }, { id: "41", value: "Incest" }, { id: "42", value: "Loli" },
-    { id: "43", value: "Mafia" }, { id: "44", value: "Magic" }, { id: "45", value: "Martial Arts" },
-    { id: "46", value: "Military" }, { id: "47", value: "Monster Girls" }, { id: "48", value: "Monsters" },
-    { id: "49", value: "Music" }, { id: "50", value: "Ninja" }, { id: "51", value: "Office Workers" },
-    { id: "52", value: "Police" }, { id: "53", value: "Post-Apocalyptic" }, { id: "54", value: "Reincarnation" },
-    { id: "55", value: "Reverse Harem" }, { id: "56", value: "Samurai" }, { id: "57", value: "School Life" },
-    { id: "58", value: "Shota" }, { id: "59", value: "Supernatural" }, { id: "60", value: "Survival" },
-    { id: "61", value: "Time Travel" }, { id: "62", value: "Traditional Games" }, { id: "63", value: "Vampires" },
-    { id: "64", value: "Video Games" }, { id: "65", value: "Villainess" }, { id: "66", value: "Virtual Reality" },
-    { id: "67", value: "Zombies" }
+    { id: "23", value: "Romance" }, { id: "87268", value: "Sci-Fi" }, { id: "25", value: "Seinen" },
+    { id: "26", value: "Shoujo" }, { id: "27", value: "Shoujo Ai" }, { id: "28", value: "Shounen" },
+    { id: "29", value: "Shounen Ai" }, { id: "30", value: "Slice of Life" }, { id: "87269", value: "Smut" },
+    { id: "32", value: "Sports" }, { id: "33", value: "Superhero" }, { id: "34", value: "Thriller" },
+    { id: "35", value: "Tragedy" }, { id: "36", value: "Wuxia" }, { id: "37", value: "Yaoi" },
+    { id: "38", value: "Yuri" }
 ]
 
 export class ComixParser {
 
     parseMangaDetails(data: any, mangaId: string): SourceManga {
-        const manga = data.result
+        const item = data.result
         
-        const title = manga.title || 'Unknown'
-        // Priorità all'immagine Large
-        const image = manga.poster?.large || manga.poster?.medium || manga.poster?.small || 'https://paperback.moe/icons/logo-alt.svg'
-        const desc = manga.synopsis || 'No description available'
+        // Titoli e Autori
+        const titles = [item.title]
+        if (item.alt_titles && Array.isArray(item.alt_titles)) {
+            titles.push(...item.alt_titles)
+        }
+
+        const authors = item.author?.map((a: any) => a.title) || []
+        const artists = item.artist?.map((a: any) => a.title) || []
+
+        // Immagine
+        const image = item.poster?.large || item.poster?.medium || 'https://paperback.moe/icons/logo-alt.svg'
+
+        // Descrizione Arricchita
+        let desc = item.synopsis || 'No synopsis available.'
         
+        // Aggiungiamo info extra alla descrizione per l'utente
+        if (item.rated_avg) {
+            desc = `⭐ Rating: ${item.rated_avg}/10\n\n${desc}`
+        }
+        if (item.alt_titles && item.alt_titles.length > 0) {
+            desc += `\n\nAlt Titles:\n${item.alt_titles.join(', ')}`
+        }
+
+        // Status
         let status = 'Ongoing'
-        if (manga.status === 'finished') status = 'Completed'
-        else if (manga.status === 'on_hiatus') status = 'Hiatus'
-        else if (manga.status === 'discontinued') status = 'Discontinued'
+        if (item.status === 'finished') status = 'Completed'
+        if (item.status === 'canceled') status = 'Dropped' // Mapping extra se supportato
 
-        // Mapping degli autori con fallback
-        const authors = Array.isArray(manga.author) ? manga.author.map((a: any) => a.title).join(', ') : 'Unknown'
-        const artists = Array.isArray(manga.artist) ? manga.artist.map((a: any) => a.title).join(', ') : 'Unknown'
-
-        const termIds: number[] = manga.term_ids || []
-        const genresTags: Tag[] = []
-        const themesTags: Tag[] = []
-
-        GENRES.forEach(g => {
-            if (termIds.includes(Number(g.id))) genresTags.push(App.createTag({ id: g.id, label: g.value }))
-        })
-        THEMES.forEach(t => {
-            if (termIds.includes(Number(t.id))) themesTags.push(App.createTag({ id: t.id, label: t.value }))
-        })
+        // Tags
+        const tags: Tag[] = []
+        if (item.term_ids && Array.isArray(item.term_ids)) {
+            for (const id of item.term_ids) {
+                const genre = GENRES.find(g => g.id === String(id))
+                if (genre) {
+                    tags.push(App.createTag({ id: genre.id, label: genre.value }))
+                }
+            }
+        }
         
-        const tagSections: TagSection[] = []
-        if (genresTags.length > 0) tagSections.push(App.createTagSection({ id: 'genres', label: 'Genres', tags: genresTags }))
-        if (themesTags.length > 0) tagSections.push(App.createTagSection({ id: 'themes', label: 'Themes', tags: themesTags }))
+        // Aggiunge flag NSFW come tag se necessario
+        if (item.is_nsfw) {
+            tags.push(App.createTag({ id: 'nsfw', label: 'NSFW' }))
+        }
 
         return App.createSourceManga({
             id: mangaId,
             mangaInfo: App.createMangaInfo({
-                titles: [title],
+                titles: titles,
                 image: image,
                 status: status,
-                author: authors,
-                artist: artists,
-                tags: tagSections,
-                desc: desc
+                author: authors.join(', '),
+                artist: artists.join(', '),
+                tags: [App.createTagSection({ id: '0', label: 'Genres', tags: tags })],
+                desc: desc,
+                rating: item.rated_avg ? parseFloat(item.rated_avg) : undefined
             })
         })
     }
 
-    parseChapters(chaptersData: any[]): Chapter[] {
+    parseChapters(items: any[]): Chapter[] {
         const chapters: Chapter[] = []
-
-        for (let i = 0; i < chaptersData.length; i++) {
-            const chap = chaptersData[i]
-            const id = String(chap.chapter_id)
+        
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i]
             
-            // Logica titoli migliorata
-            const num = parseFloat(chap.number) || 0
-            const volume = chap.volume || 0
-            
-            let name = ''
-            if (volume > 0) name += `Vol.${volume} `
-            name += `Ch.${num}`
-            
-            if (chap.name) {
-                // Evita ripetizioni tipo "Ch.1 - Chapter 1"
-                const cleanChapName = chap.name.replace(/chapter\s*\d+/gi, '').trim()
-                if (cleanChapName) {
-                    name += ` - ${cleanChapName}`
-                }
+            // Gestione Data: Le API PHP di solito ritornano secondi, JS vuole millisecondi
+            let time = new Date()
+            if (item.created_at) {
+                time = new Date(item.created_at * 1000) 
             }
 
-            const time = new Date(chap.updated_at * 1000)
+            // Nome Capitolo Pulito
+            let name = item.name ? `${item.name}` : `Chapter ${item.number}`
+            if (item.number && !name.includes(String(item.number))) {
+                name = `Ch. ${item.number} - ${name}`
+            }
 
             chapters.push(App.createChapter({
-                id: id,
+                id: String(item.chapter_id),
                 name: name,
-                chapNum: num,
-                volume: volume,
+                chapNum: parseFloat(item.number),
+                volume: item.volume ? parseFloat(item.volume) : undefined, // Supporto Volumi
                 time: time,
-                langCode: chap.language || 'en',
-                group: chap.scanlation_group?.name || undefined,
+                langCode: item.language || 'en',
                 sortingIndex: i 
             }))
         }
@@ -140,7 +135,8 @@ export class ComixParser {
         })
     }
 
-    parseSearchResults(data: any): PartialSourceManga[] {
+    // Aggiunto parametro 'context' per sottotitoli intelligenti
+    parseSearchResults(data: any, context: 'search' | 'popular' | 'latest' = 'search'): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         const items = data.result?.items || []
 
@@ -149,11 +145,21 @@ export class ComixParser {
             const title = item.title
             const image = item.poster?.large || item.poster?.medium || 'https://paperback.moe/icons/logo-alt.svg'
             
+            // SOTTOTITOLI INTELLIGENTI
             let subtitle = undefined
-            if (item.latest_chapter) {
-                subtitle = `Ch. ${item.latest_chapter}`
-            } else if (item.status) {
-                subtitle = item.status === 'finished' ? 'Completed' : 'Ongoing'
+            
+            if (context === 'latest' || context === 'search') {
+                // Per gli ultimi aggiornamenti, l'utente vuole vedere il numero del capitolo
+                if (item.latest_chapter) {
+                    subtitle = `Ch. ${item.latest_chapter}`
+                }
+            } else if (context === 'popular') {
+                // Per i popolari, è meglio vedere l'autore o lo stato
+                if (item.author && item.author.length > 0) {
+                    subtitle = item.author[0].title
+                } else if (item.status) {
+                    subtitle = item.status === 'finished' ? 'Completed' : 'Ongoing'
+                }
             }
 
             if (id && title) {
@@ -165,6 +171,7 @@ export class ComixParser {
                 }))
             }
         }
+        
         return results
     }
 }
