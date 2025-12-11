@@ -637,13 +637,13 @@ var _Sources = (() => {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.HomeSectionType = void 0;
-      var HomeSectionType;
-      (function(HomeSectionType2) {
-        HomeSectionType2["singleRowNormal"] = "singleRowNormal";
-        HomeSectionType2["singleRowLarge"] = "singleRowLarge";
-        HomeSectionType2["doubleRow"] = "doubleRow";
-        HomeSectionType2["featured"] = "featured";
-      })(HomeSectionType = exports.HomeSectionType || (exports.HomeSectionType = {}));
+      var HomeSectionType2;
+      (function(HomeSectionType3) {
+        HomeSectionType3["singleRowNormal"] = "singleRowNormal";
+        HomeSectionType3["singleRowLarge"] = "singleRowLarge";
+        HomeSectionType3["doubleRow"] = "doubleRow";
+        HomeSectionType3["featured"] = "featured";
+      })(HomeSectionType2 = exports.HomeSectionType || (exports.HomeSectionType = {}));
     }
   });
 
@@ -979,8 +979,8 @@ var _Sources = (() => {
   // src/XoxoComic/XoxoComic.ts
   var DOMAIN = "https://xoxocomic.com";
   var XoxoComicInfo = {
-    version: "1.3.2",
-    // Bump versione per fix ReferenceError
+    version: "1.3.3",
+    // Bump versione per Fix Pagination Completa
     name: "XoxoComic",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -1034,22 +1034,37 @@ var _Sources = (() => {
       const request = App.createRequest({ url: urlBase, method: "GET" });
       const response = await this.requestManager.schedule(request, 1);
       const $ = this.cheerio.load(response.data);
-      const totalPages = this.parser.getChapterPageCount($);
       let allChapters = this.parser.parseChapters($, mangaId);
-      if (totalPages > 1) {
-        const promises = [];
-        for (let i = 2; i <= totalPages; i++) {
-          const req = App.createRequest({
-            url: `${urlBase}?page=${i}`,
-            method: "GET"
-          });
-          promises.push(this.requestManager.schedule(req, 1));
+      let maxPage = this.parser.getChapterPageCount($);
+      const fetchedPages = /* @__PURE__ */ new Set([1]);
+      let keepChecking = true;
+      while (keepChecking) {
+        const pagesToFetch = [];
+        for (let i = 2; i <= maxPage; i++) {
+          if (!fetchedPages.has(i)) {
+            pagesToFetch.push(i);
+            fetchedPages.add(i);
+          }
         }
-        const responses = await Promise.all(promises);
-        for (const res of responses) {
+        if (pagesToFetch.length === 0) {
+          keepChecking = false;
+          break;
+        }
+        const promises = pagesToFetch.map(
+          (page) => this.requestManager.schedule(
+            App.createRequest({ url: `${urlBase}?page=${page}`, method: "GET" }),
+            1
+          ).then((res) => ({ page, data: res.data }))
+        );
+        const results = await Promise.all(promises);
+        for (const res of results) {
           const $page = this.cheerio.load(res.data);
           const pageChapters = this.parser.parseChapters($page, mangaId);
           allChapters = allChapters.concat(pageChapters);
+          const foundMax = this.parser.getChapterPageCount($page);
+          if (foundMax > maxPage) {
+            maxPage = foundMax;
+          }
         }
       }
       return allChapters.map((chapter, index) => {
@@ -1079,30 +1094,10 @@ var _Sources = (() => {
       });
     }
     async getHomePageSections(sectionCallback) {
-      const trendingSection = App.createHomeSection({
-        id: "trending",
-        title: "Trending Comics \u{1F525}",
-        containsMoreItems: false,
-        type: "singleRowLarge"
-      });
-      const latestSection = App.createHomeSection({
-        id: "latest",
-        title: "Latest Updates \u{1F199}",
-        containsMoreItems: true,
-        type: "continuous"
-      });
-      const topMonthSection = App.createHomeSection({
-        id: "top_month",
-        title: "Top Month \u2B50",
-        containsMoreItems: false,
-        type: "singleRowNormal"
-      });
-      const topWeekSection = App.createHomeSection({
-        id: "top_week",
-        title: "Top Week \u26A1",
-        containsMoreItems: false,
-        type: "singleRowNormal"
-      });
+      const trendingSection = App.createHomeSection({ id: "trending", title: "Trending Comics \u{1F525}", containsMoreItems: false, type: "singleRowLarge" });
+      const latestSection = App.createHomeSection({ id: "latest", title: "Latest Updates \u{1F199}", containsMoreItems: true, type: "continuous" });
+      const topMonthSection = App.createHomeSection({ id: "top_month", title: "Top Month \u2B50", containsMoreItems: false, type: "singleRowNormal" });
+      const topWeekSection = App.createHomeSection({ id: "top_week", title: "Top Week \u26A1", containsMoreItems: false, type: "singleRowNormal" });
       const requestHome = App.createRequest({ url: this.baseUrl, method: "GET" });
       const requestNew = App.createRequest({ url: `${this.baseUrl}/new-comic`, method: "GET" });
       sectionCallback(trendingSection);
