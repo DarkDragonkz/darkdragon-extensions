@@ -13,9 +13,6 @@ const BASE_URL = 'https://www.mangaworld.mx'
 
 export class MangaWorldParser {
 
-    /**
-     * Mappa dei mesi italiani per il parsing delle date
-     */
     private months: Record<string, string> = {
         'gennaio': 'January', 'febbraio': 'February', 'marzo': 'March',
         'aprile': 'April', 'maggio': 'May', 'giugno': 'June',
@@ -23,13 +20,9 @@ export class MangaWorldParser {
         'ottobre': 'October', 'novembre': 'November', 'dicembre': 'December'
     }
 
-    /**
-     * Pulisce i titoli duplicati (es. "NarutoNaruto" -> "Naruto")
-     */
     private cleanTitle(title: string): string {
         if (!title) return 'Unknown'
         title = title.trim()
-        // Rimuovi duplicazioni speculari (es. "One PieceOne Piece")
         if (title.length > 0 && title.length % 2 === 0) {
             const half = title.substring(0, title.length / 2)
             if (half === title.substring(title.length / 2)) {
@@ -39,9 +32,6 @@ export class MangaWorldParser {
         return title
     }
 
-    /**
-     * Helper per le date italiane
-     */
     private parseDate(dateStr: string): Date {
         dateStr = dateStr.trim().toLowerCase()
         const now = new Date()
@@ -50,7 +40,6 @@ export class MangaWorldParser {
         if (dateStr.includes('oggi')) return now
         if (dateStr.includes('ieri')) return new Date(now.setDate(now.getDate() - 1))
 
-        // Traduzione mesi
         for (const [it, en] of Object.entries(this.months)) {
             if (dateStr.includes(it)) {
                 dateStr = dateStr.replace(it, en)
@@ -160,24 +149,20 @@ export class MangaWorldParser {
 
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
-        const addedIds = new Set<string>() // Per evitare duplicati se il sito è buggato
+        const addedIds = new Set<string>()
 
-        // Recuperiamo il titolo della serie per pulirlo dai nomi dei capitoli
         let seriesName = $('.name.bigger').text().trim()
         seriesName = this.cleanTitle(seriesName)
 
-        [cite_start]// 1. LOGICA VOLUMI (Prioritaria) [cite: 1, 9]
-        // Cerca elementi con classe .volume-element (One Piece, Naruto, ecc.)
+        // Logica Volumi
         const volumeElements = $('.volume-element').toArray()
         
         if (volumeElements.length > 0) {
             for (const volumeEl of volumeElements) {
-                [cite_start]// Estrai numero volume: "Volume 113" -> 113 [cite: 1]
                 const volName = $('.volume-name', volumeEl).text().trim()
                 const volMatch = volName.match(/Volume\s+(\d+)/i)
                 const volumeNumber = volMatch ? Number(volMatch[1]) : undefined
 
-                [cite_start]// Itera i capitoli dentro questo volume [cite: 1]
                 const chapterNodes = $('.chapter', volumeEl).toArray()
                 for (const node of chapterNodes) {
                     this.processChapter($, node, mangaId, seriesName, chapters, addedIds, volumeNumber)
@@ -185,20 +170,16 @@ export class MangaWorldParser {
             }
         } 
         
-        // 2. LOGICA FLAT (Fallback)
-        // Se non ci sono volumi O se ci sono capitoli orfani fuori dai volumi (Webtoons come Martial Peak)
-        // Seleziona tutti i capitoli e processa solo quelli non ancora aggiunti
+        // Logica Fallback (Webtoon senza volumi o capitoli orfani)
         const allChapters = $('.chapter').toArray()
         for (const node of allChapters) {
+            // processChapter controlla internamente se l'ID è già stato aggiunto
             this.processChapter($, node, mangaId, seriesName, chapters, addedIds, undefined)
         }
 
         return chapters
     }
 
-    /**
-     * Logica unificata per processare un singolo nodo capitolo HTML
-     */
     private processChapter($: any, item: any, mangaId: string, seriesName: string, chapters: Chapter[], addedIds: Set<string>, volume?: number) {
         const link = $('a.chap', item)
         const href = link.attr('href')
@@ -206,34 +187,24 @@ export class MangaWorldParser {
 
         const id = href.replace(`${BASE_URL}/manga/${mangaId}/read/`, '')
         
-        // Evita duplicati
         if (addedIds.has(id)) return
         addedIds.add(id)
 
-        // Parsing numero capitolo dal testo "Capitolo 1168"
         const chapText = $('.d-inline-block', item).text().trim()
         const chapNumMatch = chapText.match(/(\d+(\.\d+)?)/)
         const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0
 
-        // PULIZIA NOME (Name Cleaning)
-        // Titolo grezzo: "Martial Peak Capitolo 01 Scan ITA"
         let rawName = link.attr('title') ?? ''
         
-        // 1. Rimuovi il nome della serie (Case Insensitive)
+        // Pulizia nome capitolo
         let name = rawName.replace(new RegExp(seriesName, 'gi'), '').trim()
-        
-        // 2. Rimuovi "Scan ITA", "ITA", "Capitolo X"
         name = name.replace(/scan ita/gi, '')
                    .replace(/ita/gi, '')
-                   .replace(/capitolo\s*\d+(\.\d+)?/gi, '') // Rimuove "Capitolo 123" dal nome, dato che Paperback lo mette da solo
-                   .replace(/-|\s+$/g, '') // Rimuovi trattini finali
+                   .replace(/capitolo\s*\d+(\.\d+)?/gi, '')
+                   .replace(/-|\s+$/g, '')
                    .trim()
 
-        // Se il nome è rimasto vuoto (molto probabile), mettiamo un placeholder vuoto o il titolo originale pulito
-        // Se lasciamo 'undefined', Paperback userà "Chapter X". Se mettiamo stringa vuota, userà "Chapter X".
-        // Se c'è un titolo reale (es. "L'inizio dell'avventura"), rimarrà quello.
         if (!name || name.length < 2) {
-            // Se vogliamo forzare "Capitolo X", possiamo farlo, ma Paperback gestisce "Ch. X" nativamente.
             name = '' 
         }
 
@@ -243,9 +214,9 @@ export class MangaWorldParser {
         chapters.push(
             App.createChapter({
                 id,
-                name, // Ora sarà pulito (es. "" o "Titolo del capitolo")
+                name,
                 chapNum,
-                volume, // Se trovato nel blocco volume, Paperback raggrupperà correttamente
+                volume,
                 time,
                 langCode: 'it',
             })
