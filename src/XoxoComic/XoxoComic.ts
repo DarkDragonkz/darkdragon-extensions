@@ -20,7 +20,7 @@ import { XoxoComicParser } from './XoxoComicParser'
 const DOMAIN = 'https://xoxocomic.com'
 
 export const XoxoComicInfo: SourceInfo = {
-    version: '1.1.0',
+    version: '1.1.1', // Bump versione per fix pagination
     name: 'XoxoComic',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -66,7 +66,6 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
     }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
-        // Gestione ID pulita
         const url = mangaId.includes('/') ? `${this.baseUrl}/${mangaId}` : `${this.baseUrl}/comic/${mangaId}`
         const request = App.createRequest({ url: url, method: 'GET' })
         const response = await this.requestManager.schedule(request, 1)
@@ -75,20 +74,43 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        const url = mangaId.includes('/') ? `${this.baseUrl}/${mangaId}` : `${this.baseUrl}/comic/${mangaId}`
-        const request = App.createRequest({ url: url, method: 'GET' })
+        const urlBase = mangaId.includes('/') ? `${this.baseUrl}/${mangaId}` : `${this.baseUrl}/comic/${mangaId}`
+        
+        // 1. Scarica la prima pagina
+        const request = App.createRequest({ url: urlBase, method: 'GET' })
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
-        return this.parser.parseChapters($, mangaId)
+        
+        // 2. Controlla quante pagine ci sono
+        const totalPages = this.parser.getChapterPageCount($)
+        let allChapters = this.parser.parseChapters($, mangaId)
+
+        // 3. Se ci sono più pagine, scaricale tutte in parallelo
+        if (totalPages > 1) {
+            const promises = []
+            for (let i = 2; i <= totalPages; i++) {
+                const req = App.createRequest({
+                    url: `${urlBase}?page=${i}`,
+                    method: 'GET'
+                })
+                promises.push(this.requestManager.schedule(req, 1))
+            }
+
+            const responses = await Promise.all(promises)
+            for (const res of responses) {
+                const $page = this.cheerio.load(res.data)
+                const pageChapters = this.parser.parseChapters($page, mangaId)
+                allChapters = allChapters.concat(pageChapters)
+            }
+        }
+
+        return allChapters
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // FIX CRITICO: Forza la modalità "All pages" per scaricare tutto il capitolo
         let url = chapterId.startsWith('http') ? chapterId : `${this.baseUrl}/${chapterId}`
-        
-        if (!url.endsWith('/all')) {
-            url = `${url}/all`
-        }
+        // Assicurati di richiedere "all" pages
+        if (!url.endsWith('/all')) url = `${url}/all`
 
         const request = App.createRequest({ url: url, method: 'GET' })
         const response = await this.requestManager.schedule(request, 1)
@@ -103,7 +125,8 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         })
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
-        const manga = this.parser.parseSearchResults($)
+        const manga = this.parser.parseGridItems($)
+        
         return App.createPagedResults({
             results: manga,
             metadata: manga.length > 0 ? { page: page + 1 } : undefined
@@ -125,7 +148,8 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         const request = App.createRequest({ url: url, method: 'GET' })
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
-        const manga = this.parser.parseSearchResults($)
+        
+        const manga = this.parser.parseGridItems($)
         return App.createPagedResults({
             results: manga,
             metadata: manga.length > 0 ? { page: page + 1 } : undefined
