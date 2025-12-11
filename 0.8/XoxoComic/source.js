@@ -841,8 +841,8 @@ var _Sources = (() => {
         cleanName = cleanName.replace(/^_+|_+$/g, "");
         let name = cleanName;
         let chapNum = 0;
-        const multiPartMatch = cleanName.match(/_?([a-zA-Z_]+)_(\d+)_?\(Part_(\d+)\)/i);
-        const specialMatch = cleanName.match(/_?([a-zA-Z_]+)_(\d+)/i);
+        const multiPartMatch = cleanName.match(/_?([a-zA-Z_\s]+)[\s_](\d+)[\s_]?\(?Part[\s_](\d+)\)?/i);
+        const specialMatch = cleanName.match(/_?([a-zA-Z_\s]+)[\s_](\d+)/i);
         if (multiPartMatch && (cleanName.toLowerCase().includes("part") || cleanName.toLowerCase().includes("edition"))) {
           let type = multiPartMatch[1]?.replace(/_/g, " ").trim() ?? "Vol";
           const volNum = parseInt(multiPartMatch[2] ?? "0");
@@ -872,7 +872,7 @@ var _Sources = (() => {
           name,
           chapNum,
           volume: void 0,
-          // Disabilitato per evitare prefissi doppi
+          // Nessun volume per evitare prefissi doppi
           time,
           langCode: "en"
         }));
