@@ -732,7 +732,7 @@ var _Sources = (() => {
   // src/XoxoComic/XoxoComicParser.ts
   var BASE_URL = "https://xoxocomic.com";
   var XoxoComicParser = class {
-    // --- HELPER UTILITY ---
+    // --- UTILITY ---
     decodeHTMLEntity(str) {
       return str.replace(/&#(\d+);/g, (_match, dec) => String.fromCharCode(dec)).replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#039;/g, "'").replace(/&apos;/g, "'").replace(/&nbsp;/g, " ");
     }
@@ -746,86 +746,74 @@ var _Sources = (() => {
       if (!url || url.includes("logo") || url.includes("placeholder")) return "https://paperback.moe/icons/logo-alt.svg";
       if (url.startsWith("data:")) return "https://paperback.moe/icons/logo-alt.svg";
       url = url.trim();
-      if (url.startsWith("//")) {
-        url = `https:${url}`;
-      } else if (url.startsWith("/")) {
-        url = BASE_URL + url;
-      }
+      if (url.startsWith("//")) return `https:${url}`;
+      if (url.startsWith("/")) return BASE_URL + url;
       return url;
     }
-    // --- PARSER SEZIONI ---
-    // 1. TRENDING (OwlCarousel)
+    // --- HOME PAGE PARSERS ---
     parseTrendingItems($) {
       const items = [];
       $(".items-slide .item").each((_, item) => {
         if ($(item).closest(".cloned").length > 0) return;
         const link = $(item).find("a").first();
         const id = link.attr("href")?.split("/").pop();
-        let rawTitle = $(item).find(".slide-caption h3 a").text().trim() || link.attr("title") || "Unknown";
-        const title = this.cleanTitle(rawTitle);
+        let rawTitle = $(item).find(".slide-caption h3 a").text().trim();
+        if (!rawTitle) rawTitle = link.attr("title") ?? "Unknown";
         let imageSrc = $(item).find("img").attr("data-src") || $(item).find("img").attr("src");
-        const image = this.getImageSrc(imageSrc);
-        if (id && title) {
+        if (!imageSrc) imageSrc = $(item).find(".lazyOwl").attr("data-src");
+        if (id) {
           items.push(App.createPartialSourceManga({
             mangaId: id,
-            image,
-            title,
+            image: this.getImageSrc(imageSrc),
+            title: this.cleanTitle(rawTitle),
             subtitle: "Trending"
           }));
         }
       });
       return items;
     }
-    // 2. LATEST UPDATES (Layout /new-comic)
     parseLatestItems($) {
       const items = [];
       $(".items .row .item").each((_, item) => {
         const el = $(item);
         const imgLink = el.find(".image a").first();
         let rawTitle = imgLink.attr("title");
-        if (!rawTitle) {
-          rawTitle = el.find('.message_main label:contains("Alternate Name:")').parent().text().replace("Alternate Name:", "");
-        }
-        const title = this.cleanTitle(rawTitle || "Unknown");
+        if (!rawTitle) rawTitle = el.find('.message_main label:contains("Alternate Name:")').parent().text().replace("Alternate Name:", "");
         const href = imgLink.attr("href");
         const id = href?.split("/").filter((p) => p && p !== "comic").pop();
         const imageSrc = el.find("img").attr("data-original") || el.find("img").attr("src");
-        const image = this.getImageSrc(imageSrc);
         const released = el.find('.message_main p:contains("Released:")').text().replace("Released:", "").trim();
         const subtitle = released ? `Released: ${released}` : void 0;
-        if (id && title) {
+        if (id) {
           items.push(App.createPartialSourceManga({
             mangaId: id,
-            image,
-            title,
+            image: this.getImageSrc(imageSrc),
+            title: this.cleanTitle(rawTitle || "Unknown"),
             subtitle
           }));
         }
       });
       return items;
     }
-    // 3. TOP MONTH / WEEK
     parseTopSectionItems($, selector) {
       const items = [];
       $(selector + " li").each((_, item) => {
         const link = $(item).find("h3.title a");
         const id = link.attr("href")?.split("/").pop();
-        const title = this.cleanTitle(link.text().trim());
+        const rawTitle = link.text().trim();
         let imageSrc = $(item).find("img").attr("data-original") || $(item).find("img").attr("src");
-        const image = this.getImageSrc(imageSrc);
         const chapter = $(item).find("p.chapter a").text().trim();
-        if (id && title) {
+        if (id) {
           items.push(App.createPartialSourceManga({
             mangaId: id,
-            image,
-            title,
+            image: this.getImageSrc(imageSrc),
+            title: this.cleanTitle(rawTitle),
             subtitle: chapter
           }));
         }
       });
       return items;
     }
-    // --- GRID GENERIC (Search/ViewMore) ---
     parseGridItems($) {
       const results = [];
       const seenIds = /* @__PURE__ */ new Set();
@@ -837,37 +825,35 @@ var _Sources = (() => {
         const id = href?.split("/").filter((p) => p && p !== "comic").pop();
         if (!id || seenIds.has(id)) return;
         let rawTitle = el.find("h3").text().trim() || link.attr("title") || "Unknown";
-        const title = this.cleanTitle(rawTitle);
         let imageSrc = el.find("img").attr("data-original") || el.find("img").attr("src");
-        const image = this.getImageSrc(imageSrc);
-        const subtitle = el.find(".chapter a").first().text().trim();
         seenIds.add(id);
         results.push(App.createPartialSourceManga({
           mangaId: id,
-          image,
-          title,
-          subtitle: subtitle || void 0
+          image: this.getImageSrc(imageSrc),
+          title: this.cleanTitle(rawTitle),
+          subtitle: el.find(".chapter a").first().text().trim()
         }));
       });
       return results;
     }
-    // --- DETTAGLI E CAPITOLI ---
+    // --- DETTAGLI ---
     parseMangaDetails($, mangaId) {
       let rawTitle = $(".title-detail").text().trim();
       if (!rawTitle) rawTitle = $("h1").first().text().trim();
       if (!rawTitle) rawTitle = $("title").text().trim();
       const title = this.cleanTitle(rawTitle);
-      const imageSrc = $(".col-image img").attr("src");
-      const image = this.getImageSrc(imageSrc);
-      let desc = $(".detail-content p").text().trim();
+      const image = this.getImageSrc($(".col-image img").attr("src"));
+      let desc = $(".detail-content p").first().text().trim();
       if (!desc) desc = $('meta[name="description"]').attr("content") ?? "No description";
       desc = this.decodeHTMLEntity(desc);
       let author = "Unknown";
       let status = "Ongoing";
-      const authorText = $(".list-info li.author p.col-xs-8").text().trim();
-      if (authorText) author = authorText;
-      const statusText = $(".list-info li.status p.col-xs-8").text().trim();
-      if (statusText.toLowerCase().includes("completed")) status = "Completed";
+      $(".list-info li").each((_, row) => {
+        const label = $(row).find(".name").text().toLowerCase();
+        const value = $(row).find(".col-xs-8").text().trim();
+        if (label.includes("author")) author = value;
+        if (label.includes("status") && value.toLowerCase().includes("completed")) status = "Completed";
+      });
       const arrayTags = [];
       $(".list-info .kind a").each((_, a) => {
         const label = $(a).text().trim();
@@ -887,20 +873,15 @@ var _Sources = (() => {
         })
       });
     }
+    // --- LOGICA CAPITOLI E PAGINAZIONE (FIX SPAWN) ---
     getChapterPageCount($) {
       let maxPage = 1;
       $(".pagination li a").each((_, el) => {
         const href = $(el).attr("href");
-        const text = $(el).text().trim();
-        const textNum = parseInt(text);
-        if (!isNaN(textNum)) {
-          if (textNum > maxPage) maxPage = textNum;
-        } else if (href) {
-          const match = href.match(/page=(\d+)/);
-          if (match) {
-            const num = parseInt(match[1]);
-            if (num > maxPage) maxPage = num;
-          }
+        const match = href?.match(/[?&]page=(\d+)/);
+        if (match) {
+          const num = parseInt(match[1]);
+          if (num > maxPage) maxPage = num;
         }
       });
       return maxPage;
@@ -998,7 +979,8 @@ var _Sources = (() => {
   // src/XoxoComic/XoxoComic.ts
   var DOMAIN = "https://xoxocomic.com";
   var XoxoComicInfo = {
-    version: "1.3.0",
+    version: "1.3.1",
+    // Bump versione finale
     name: "XoxoComic",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -1097,10 +1079,10 @@ var _Sources = (() => {
       });
     }
     async getHomePageSections(sectionCallback) {
-      const trendingSection = App.createHomeSection({ id: "trending", title: "Trending Comics \u{1F525}", containsMoreItems: false, type: import_types.HomeSectionType.singleRowLarge });
-      const latestSection = App.createHomeSection({ id: "latest", title: "Latest Updates \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.continuous });
-      const topMonthSection = App.createHomeSection({ id: "top_month", title: "Top Month \u2B50", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
-      const topWeekSection = App.createHomeSection({ id: "top_week", title: "Top Week \u26A1", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
+      const trendingSection = App.createHomeSection({ id: "trending", title: "Trending Comics \u{1F525}", containsMoreItems: false, type: HomeSectionType.singleRowLarge });
+      const latestSection = App.createHomeSection({ id: "latest", title: "Latest Updates \u{1F199}", containsMoreItems: true, type: HomeSectionType.continuous });
+      const topMonthSection = App.createHomeSection({ id: "top_month", title: "Top Month \u2B50", containsMoreItems: false, type: HomeSectionType.singleRowNormal });
+      const topWeekSection = App.createHomeSection({ id: "top_week", title: "Top Week \u26A1", containsMoreItems: false, type: HomeSectionType.singleRowNormal });
       const requestHome = App.createRequest({ url: this.baseUrl, method: "GET" });
       const requestNew = App.createRequest({ url: `${this.baseUrl}/new-comic`, method: "GET" });
       sectionCallback(trendingSection);
