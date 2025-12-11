@@ -806,13 +806,18 @@ var _Sources = (() => {
         })
       });
     }
+    // FIX PAGINAZIONE: Scansiona tutti i numeri per trovare il massimo
     getChapterPageCount($) {
-      const lastPageLink = $(".pagination li a").last().attr("href");
-      if (lastPageLink) {
-        const match = lastPageLink.match(/page=(\d+)/);
-        if (match) return parseInt(match[1]);
-      }
-      return 1;
+      let maxPage = 1;
+      $(".pagination li a").each((_, el) => {
+        const href = $(el).attr("href");
+        const match = href?.match(/page=(\d+)/);
+        if (match) {
+          const pageNum = parseInt(match[1]);
+          if (pageNum > maxPage) maxPage = pageNum;
+        }
+      });
+      return maxPage;
     }
     parseChapters($, mangaId) {
       const chapters = [];
@@ -837,16 +842,14 @@ var _Sources = (() => {
         cleanName = cleanName.replace(/^_+|_+$/g, "");
         let name = cleanName;
         let chapNum = 0;
-        let volume = void 0;
-        const multiPartMatch = cleanName.match(/([a-zA-Z_\s]+)[_\s](\d+)[_\s]?\(?Part[_\s](\d+)\)?/i);
-        const specialMatch = cleanName.match(/([a-zA-Z_\s]+)[_\s](\d+)/i);
+        const multiPartMatch = cleanName.match(/_?([a-zA-Z_]+)_(\d+)_?\(Part_(\d+)\)/i);
+        const specialMatch = cleanName.match(/_?([a-zA-Z_]+)_(\d+)/i);
         if (multiPartMatch && (cleanName.toLowerCase().includes("part") || cleanName.toLowerCase().includes("edition"))) {
           let type = multiPartMatch[1]?.replace(/_/g, " ").trim() ?? "Vol";
           const volNum = parseInt(multiPartMatch[2] ?? "0");
           const partNum = parseFloat(multiPartMatch[3] ?? "0");
           name = `Vol. ${type} ${volNum} Ch.${partNum}`;
           chapNum = partNum;
-          volume = volNum;
         } else if (specialMatch && !cleanName.toLowerCase().includes("issue") && !cleanName.toLowerCase().includes("chapter")) {
           let type = specialMatch[1]?.replace(/_/g, " ").trim();
           const num = parseFloat(specialMatch[2] ?? "0");
@@ -869,7 +872,8 @@ var _Sources = (() => {
           id: chapterId,
           name,
           chapNum,
-          volume,
+          volume: void 0,
+          // IMPORTANTE: Undefined = Nessun prefisso automatico
           time,
           langCode: "en"
         }));
@@ -935,8 +939,8 @@ var _Sources = (() => {
   // src/XoxoComic/XoxoComic.ts
   var DOMAIN = "https://xoxocomic.com";
   var XoxoComicInfo = {
-    version: "1.1.2",
-    // Bump versione
+    version: "1.1.3",
+    // Bump versione per fix duplicazione nomi
     name: "XoxoComic",
     icon: "icon.png",
     author: "DarkDragonkz",
