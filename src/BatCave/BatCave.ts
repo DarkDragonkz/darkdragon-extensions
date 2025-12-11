@@ -20,7 +20,7 @@ import { BatCaveParser } from './BatCaveParser'
 const DOMAIN = 'https://batcave.biz'
 
 export const BatCaveInfo: SourceInfo = {
-    version: '1.1.0', // Bump version (UI Improvement)
+    version: '1.1.0', // Bump version (Code Optimization)
     name: 'BatCave',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -41,8 +41,8 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
     baseUrl = DOMAIN
     parser = new BatCaveParser()
     
-    // Ottimizzazione: 2-3 tentativi sono sufficienti. 10 rallenta troppo.
-    RETRIES = 3
+    // 2 tentativi sono sufficienti per una buona UX
+    RETRIES = 2 
 
     constructor(private cheerio: any) {}
 
@@ -54,7 +54,6 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
                 request.headers = {
                     ...(request.headers ?? {}),
                     'Referer': `${DOMAIN}/`,
-                    // User Agent Desktop Moderno
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 }
                 return request
@@ -95,14 +94,13 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, this.RETRIES)
-        // Passiamo i dati grezzi per gestire il fallback nel parser
         return this.parser.parseChapterDetails(response.data ?? '', mangaId, chapterId)
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
         
-        // BatCave Search URL Pattern
+        // URL di ricerca standard DLE
         const searchUrl = `${this.baseUrl}/index.php?do=search&subaction=search&story=${encodeURIComponent(query.title ?? '')}&page=${page}`
 
         const request = App.createRequest({
@@ -151,10 +149,8 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
         const response = await this.requestManager.schedule(request, this.RETRIES)
         const $ = this.cheerio.load(response.data)
         
-        // Usa il parser specifico per la griglia delle pagine (simile alla Home latest)
-        let manga = this.parser.parseGridItems($, '.sect--latest .latest, .content', '.latest__chapter, .short')
-
-        // Fallback
+        // Fallback intelligente per il parsing della griglia
+        let manga = this.parser.parseGridItems($, '.sect--latest .latest, .content .short', '.latest__chapter')
         if (manga.length === 0) {
              manga = this.parser.parseSearchResults($)
         }
