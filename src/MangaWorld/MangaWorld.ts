@@ -23,7 +23,7 @@ import { URLBuilder } from '../helper'
 const MW_DOMAIN = 'https://www.mangaworld.mx'
 
 export const MangaWorldInfo: SourceInfo = {
-    version: '3.4.0', // Major bump per refactoring e UI
+    version: '3.5.0', // Bump version per fix date e status
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld.',
     author: 'NmN & DarkDragonkz',
@@ -46,23 +46,28 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
     
     constructor(private cheerio: any) {}
     
-    // RIDOTTO A 2: 10 retry causano blocchi infiniti se il sito è down
     RETRIES = 2
     parser = new MangaWorldParser()
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 5, // Abbassato leggermente per sicurezza
+        requestsPerSecond: 4, // 4-5 è safe per MangaWorld
         requestTimeout: 20000,
         interceptor: {
             interceptRequest: async (request: any) => {
                 request.headers = {
                     ...(request.headers ?? {}),
                     'referer': `${this.baseUrl}/`,
-                    'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    // Usa UserAgent dinamico se possibile, altrimenti un fallback recente
+                    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 }
                 return request
             },
             interceptResponse: async (response: any) => {
+                const data = response.data
+                // Check per Cloudflare Challenge
+                if (typeof data === 'string' && (data.includes('Just a moment...') || data.includes('Cloudflare'))) {
+                    throw new Error('Cloudflare check required')
+                }
                 return response
             }
         }
@@ -114,7 +119,6 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         let page = metadata?.page ?? 1
-        // Se page è -1, abbiamo finito i risultati
         if (page === -1) return App.createPagedResults({ results: [], metadata: undefined })
         
         const request = this.constructSearchRequest(page, query)
@@ -123,7 +127,6 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($)
         
-        // Logica paginazione
         const nextPage = manga.length > 0 ? page + 1 : undefined
 
         return App.createPagedResults({
@@ -147,13 +150,11 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
         let url = ''
 
         switch (homepageSectionId) {
-            case '1': // Ultimi capitoli (corrisponde alla home paginata)
+            case '1': 
                 url = `${this.baseUrl}/?page=${page}`
                 break
-            case '2': // Manga del mese (archivio most_read)
-                url = `${this.baseUrl}/archive?sort=most_read&page=${page}`
-                break
-            case '3': // In tendenza (archivio most_read fallback)
+            case '2': 
+            case '3': 
                 url = `${this.baseUrl}/archive?sort=most_read&page=${page}`
                 break
             default:
@@ -183,7 +184,7 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
             headers: {
                 'referer': `${this.baseUrl}/`,
                 'origin': `${this.baseUrl}/`,
-                'user-agent': await this.requestManager.getDefaultUserAgent()
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
         })
     }
@@ -198,7 +199,6 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
         }
 
         if (query.includedTags && query.includedTags.length > 0) {
-            // Seleziona il primo tag per filtrare (MangaWorld solitamente supporta 1 filtro genere alla volta via GET semplice)
             builder.addQueryParameter('genre', query.includedTags[0]?.id)
         }
 
