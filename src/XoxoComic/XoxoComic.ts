@@ -14,8 +14,7 @@ import {
     ChapterProviding,
     HomePageSectionsProviding,
     HomeSectionType,
-    Request,
-    PartialSourceManga
+    Request
 } from '@paperback/types'
 
 import { XoxoComicParser } from './XoxoComicParser'
@@ -23,7 +22,7 @@ import { XoxoComicParser } from './XoxoComicParser'
 const DOMAIN = 'https://xoxocomic.com'
 
 export const XoxoComicInfo: SourceInfo = {
-    version: '1.2.6', // Bump versione
+    version: '1.3.0',
     name: 'XoxoComic',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -94,12 +93,15 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
                 })
                 promises.push(this.requestManager.schedule(req, 1))
             }
+
             const responses = await Promise.all(promises)
             for (const res of responses) {
                 const $page = this.cheerio.load(res.data)
-                allChapters = allChapters.concat(this.parser.parseChapters($page, mangaId))
+                const pageChapters = this.parser.parseChapters($page, mangaId)
+                allChapters = allChapters.concat(pageChapters)
             }
         }
+
         return allChapters.map((chapter, index) => {
             chapter.sortingIndex = index
             return chapter
@@ -108,7 +110,9 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
         let url = chapterId.startsWith('http') ? chapterId : `${this.baseUrl}/${chapterId}`
+        // Assicura il caricamento di tutte le pagine
         if (!url.endsWith('/all')) url = `${url}/all`
+
         const request = App.createRequest({ url: url, method: 'GET' })
         const response = await this.requestManager.schedule(request, 1)
         return this.parser.parseChapterDetails(response.data ?? '', mangaId, chapterId)
@@ -123,7 +127,11 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseGridItems($)
-        return App.createPagedResults({ results: manga, metadata: manga.length > 0 ? { page: page + 1 } : undefined })
+        
+        return App.createPagedResults({
+            results: manga,
+            metadata: manga.length > 0 ? { page: page + 1 } : undefined
+        })
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
@@ -132,11 +140,10 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         const topMonthSection = App.createHomeSection({ id: 'top_month', title: 'Top Month ⭐', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
         const topWeekSection = App.createHomeSection({ id: 'top_week', title: 'Top Week ⚡', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
 
-        // Eseguiamo le richieste Home e New Comic in parallelo
         const requestHome = App.createRequest({ url: this.baseUrl, method: 'GET' })
         const requestNew = App.createRequest({ url: `${this.baseUrl}/new-comic`, method: 'GET' })
 
-        // Mostra placeholder
+        // Invia scheletro sezioni
         sectionCallback(trendingSection)
         sectionCallback(latestSection)
         sectionCallback(topMonthSection)
@@ -150,51 +157,31 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         const $home = this.cheerio.load(responseHome.data)
         const $new = this.cheerio.load(responseNew.data)
 
-        // 1. Trending (da Home)
-        trendingSection.items = this.parser.parseTrendingItems($home)
-        sectionCallback(trendingSection)
-
-        // 2. Latest (da New Comic)
-        latestSection.items = this.parser.parseLatestItems($new)
-        sectionCallback(latestSection)
-
-        // 3. & 4. Top Month / Week (da Home + Arricchimento HD)
-        const rawMonthItems = this.parser.parseTopSectionItems($home, '#topMonth')
-        const rawWeekItems = this.parser.parseTopSectionItems($home, '#topWeek')
+        // Parse Trending, Top Month, Top Week (dalla Home)
+        this.parser.parseHomeSections($home, trendingSection, topMonthSection, topWeekSection)
         
-        // Funzione per scaricare cover HD in parallelo
-        const enrichItems = async (items: PartialSourceManga[]) => {
-            const promises = items.map(async (manga) => {
-                try {
-                    const details = await this.getMangaDetails(manga.mangaId)
-                    // Aggiorna l'immagine con quella HD
-                    manga.image = details.image
-                    return manga
-                } catch (e) {
-                    return manga // Fallback su low-res se fallisce
-                }
-            })
-            return await Promise.all(promises)
-        }
+        // Parse Latest (da New Comic page)
+        const latestItems = this.parser.parseGridItems($new)
+        latestSection.items = latestItems
 
-        // Lanciamo l'arricchimento (non blocchiamo le altre sezioni)
-        topMonthSection.items = await enrichItems(rawMonthItems)
+        // Aggiorna UI
+        sectionCallback(trendingSection)
         sectionCallback(topMonthSection)
-
-        topWeekSection.items = await enrichItems(rawWeekItems)
         sectionCallback(topWeekSection)
+        sectionCallback(latestSection)
     }
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
         
+        // Solo Latest ha il view more
         if (homepageSectionId === 'latest') {
             const url = `${this.baseUrl}/new-comic?page=${page}`
             const request = App.createRequest({ url: url, method: 'GET' })
             const response = await this.requestManager.schedule(request, 1)
             const $ = this.cheerio.load(response.data)
             
-            const manga = this.parser.parseLatestItems($)
+            const manga = this.parser.parseGridItems($)
             const nextPage = manga.length > 0 ? page + 1 : undefined
 
             return App.createPagedResults({

@@ -14,9 +14,11 @@ const BASE_URL = 'https://xoxocomic.com'
 export class XoxoComicParser {
 
     private getImageSrc(url: string | undefined): string {
-        if (!url || url.includes('logo') || url.includes('placeholder')) return 'https://paperback.moe/icons/logo-alt.svg'
+        if (!url) return 'https://paperback.moe/icons/logo-alt.svg'
+        // FIX: Rifiuta stringhe base64 (placeholder)
         if (url.startsWith('data:')) return 'https://paperback.moe/icons/logo-alt.svg'
-        
+        if (url.includes('logo') || url.includes('placeholder')) return 'https://paperback.moe/icons/logo-alt.svg'
+
         url = url.trim()
         if (url.startsWith('//')) {
             url = `https:${url}`
@@ -43,14 +45,9 @@ export class XoxoComicParser {
         if (!title) title = 'Unknown Title'
 
         let img = item.find('img').first()
+        // Cerca data-original PRIMA di src per evitare il base64
         let imageSrc = img.attr('data-original') || img.attr('data-src') || img.attr('src')
         
-        if (!imageSrc || imageSrc.startsWith('data:')) {
-            const style = item.find('.div-poster, .image').attr('style')
-            const match = style?.match(/url\(['"]?(.*?)['"]?\)/)
-            if (match) imageSrc = match[1]
-        }
-
         const image = this.getImageSrc(imageSrc)
         const subtitle = item.find('.chapter a').first().text().trim()
 
@@ -66,7 +63,7 @@ export class XoxoComicParser {
         let title = $('.title-detail').text().trim()
         if (!title) title = $('h1').first().text().trim()
         
-        // Estrazione HD per dettagli (e per l'arricchimento Home)
+        // Dettaglio: immagine cover
         const imageSrc = $('.col-image img').attr('src')
         const image = this.getImageSrc(imageSrc)
 
@@ -113,8 +110,8 @@ export class XoxoComicParser {
             const href = $(el).attr('href')
             const match = href?.match(/page=(\d+)/)
             if (match) {
-                const pageNum = parseInt(match[1])
-                if (pageNum > maxPage) maxPage = pageNum
+                const num = parseInt(match[1])
+                if (num > maxPage) maxPage = num
             }
         })
         return maxPage
@@ -151,7 +148,6 @@ export class XoxoComicParser {
             let name = cleanName
             let chapNum = 0
             
-            // Regex flessibile: Accetta sia '_' che spazi ' ' come separatori
             const multiPartMatch = cleanName.match(/_?([a-zA-Z_\s]+)[\s_](\d+)[\s_]?\(?Part[\s_](\d+)\)?/i)
             const specialMatch = cleanName.match(/_?([a-zA-Z_\s]+)[\s_](\d+)/i)
 
@@ -198,21 +194,39 @@ export class XoxoComicParser {
 
     parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
-        const imgRegex = /<img[^>]+data-original=["']([^"']+)["']/g
-        let match
-        while ((match = imgRegex.exec(html)) !== null) {
-            const url = match[1]
-            if (url) pages.push(this.getImageSrc(url))
-        }
+        
+        // 1. Estrazione Array JS (se presente)
+        const scriptMatch = html.match(/var\s+lstImages\s*=\s*new\s+Array\((.*?)\);/)
+        if (scriptMatch && scriptMatch[1]) {
+            const urls = scriptMatch[1].split(',').map((u: string) => u.trim().replace(/['"]/g, ''))
+            for (const url of urls) {
+                const clean = this.getImageSrc(url)
+                if (clean && !clean.includes('logo-alt')) pages.push(clean)
+            }
+        } 
+        
+        // 2. Fallback: regex data-original
         if (pages.length === 0) {
-            const genericRegex = /<img[^>]+src=["']([^"']+)["']/g
-            while ((match = genericRegex.exec(html)) !== null) {
+            const imgRegex = /<img[^>]+data-original=["']([^"']+)["']/g
+            let match
+            while ((match = imgRegex.exec(html)) !== null) {
                 const url = match[1]
-                if (url && !url.startsWith('data:') && !url.includes('loading') && !url.includes('logo')) {
-                    pages.push(this.getImageSrc(url))
-                }
+                const clean = this.getImageSrc(url)
+                if (clean && !clean.includes('logo-alt')) pages.push(clean)
             }
         }
+
+        // 3. Ultimo Fallback: regex src (ma filtra data:)
+        if (pages.length === 0) {
+            const genericRegex = /<img[^>]+src=["']([^"']+)["']/g
+            let match
+            while ((match = genericRegex.exec(html)) !== null) {
+                const url = match[1]
+                const clean = this.getImageSrc(url)
+                if (clean && !clean.includes('logo-alt')) pages.push(clean)
+            }
+        }
+
         return App.createChapterDetails({
             id: chapterId,
             mangaId: mangaId,
@@ -220,12 +234,11 @@ export class XoxoComicParser {
         })
     }
 
-    // --- NUOVI METODI PER HOME REVAMP ---
-
     parseGridItems($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         const seenIds = new Set<string>()
 
+        // Selettore universale
         $('.item, .list-truyen-item-wrap, .search-story-item').each((_: any, item: any) => {
             const manga = this.parseMangaItem($, item)
             if (manga && !seenIds.has(manga.mangaId)) {
@@ -237,81 +250,34 @@ export class XoxoComicParser {
         return results
     }
 
-    // Parser specifico per Trending (Fix copertine che non caricavano)
-    parseTrendingItems($: any): PartialSourceManga[] {
-        const items: PartialSourceManga[] = []
-        // Selettore semplificato: cerca direttamente .item dentro items-slide
-        // Ignora .owl-item cloned per evitare duplicati
+    parseHomeSections($: any, trending: HomeSection, topMonth: HomeSection, topWeek: HomeSection): void {
+        
+        // 1. TRENDING (Dalla Home)
+        const trendingItems: PartialSourceManga[] = []
+        // Selettore basato su "Trending Comics.txt"
         $('.items-slide .item').each((_: any, item: any) => {
-            if ($(item).parents('.cloned').length > 0) return
+            // Ignora cloni owl
+            if ($(item).parent('.cloned').length > 0) return
 
-            const link = $(item).find('a').first()
-            const id = link.attr('href')?.split('/').pop()
-            
-            // Titolo dal caption
-            const title = $(item).find('.slide-caption h3 a').text().trim() || link.attr('title') || 'Unknown'
-            
-            // Immagine: Cerca src standard, data-src (lazyOwl)
-            const img = $(item).find('img')
-            let imageSrc = img.attr('src') || img.attr('data-src')
-            const image = this.getImageSrc(imageSrc)
-
-            if (id && title) {
-                items.push(App.createPartialSourceManga({
-                    mangaId: id,
-                    image: image,
-                    title: title,
-                    subtitle: 'Trending'
-                }))
-            }
+            const manga = this.parseMangaItem($, item)
+            if (manga) trendingItems.push(manga)
         })
-        return items
-    }
+        trending.items = trendingItems
 
-    // Parser specifico per Top Month/Week (Estrae per arricchimento)
-    parseTopSectionItems($: any, selector: string): PartialSourceManga[] {
-        const items: PartialSourceManga[] = []
-        $(selector + ' li').each((_: any, item: any) => {
+        // 2. TOP MONTH (Dalla Home)
+        const monthItems: PartialSourceManga[] = []
+        $('#topMonth li').each((_: any, item: any) => {
             const link = $(item).find('h3.title a')
             const id = link.attr('href')?.split('/').pop()
             const title = link.text().trim()
             
-            // Questa immagine è quella piccola (thumbnail)
-            // La sostituiremo in XoxoComic.ts
+            // Su Top Month usano data-original
             let imageSrc = $(item).find('img').attr('data-original') || $(item).find('img').attr('src')
             const image = this.getImageSrc(imageSrc)
-            
             const chapter = $(item).find('p.chapter a').text().trim()
 
             if (id && title) {
-                items.push(App.createPartialSourceManga({
-                    mangaId: id,
-                    image: image, // Sarà aggiornata a HD
-                    title: title,
-                    subtitle: chapter
-                }))
-            }
-        })
-        return items
-    }
-
-    // Parser specifico per Latest Updates (da /new-comic)
-    parseLatestItems($: any): PartialSourceManga[] {
-        const items: PartialSourceManga[] = []
-        
-        $('.Module-163 .items .row .item').each((_: any, item: any) => {
-            const el = $(item)
-            const titleLink = el.find('h3 a').first()
-            const id = titleLink.attr('href')?.split('/').pop()
-            const title = titleLink.text().trim()
-            
-            const imageSrc = el.find('img').attr('data-original') || el.find('img').attr('src')
-            const image = this.getImageSrc(imageSrc)
-            
-            const chapter = el.find('ul li a').first().text().trim()
-
-            if (id && title) {
-                items.push(App.createPartialSourceManga({
+                monthItems.push(App.createPartialSourceManga({
                     mangaId: id,
                     image: image,
                     title: title,
@@ -319,6 +285,28 @@ export class XoxoComicParser {
                 }))
             }
         })
-        return items
+        topMonth.items = monthItems
+
+        // 3. TOP WEEK (Dalla Home)
+        const weekItems: PartialSourceManga[] = []
+        $('#topWeek li').each((_: any, item: any) => {
+            const link = $(item).find('h3.title a')
+            const id = link.attr('href')?.split('/').pop()
+            const title = link.text().trim()
+            
+            let imageSrc = $(item).find('img').attr('data-original') || $(item).find('img').attr('src')
+            const image = this.getImageSrc(imageSrc)
+            const chapter = $(item).find('p.chapter a').text().trim()
+
+            if (id && title) {
+                weekItems.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image,
+                    title: title,
+                    subtitle: chapter
+                }))
+            }
+        })
+        topWeek.items = weekItems
     }
 }
