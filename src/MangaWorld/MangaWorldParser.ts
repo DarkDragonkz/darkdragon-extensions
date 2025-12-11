@@ -6,8 +6,7 @@ import {
     SourceManga,
     PartialSourceManga,
     Tag,
-    TagSection,
-    MangaStatus
+    TagSection
 } from '@paperback/types'
 
 const BASE_URL = 'https://www.mangaworld.mx'
@@ -123,10 +122,10 @@ export class MangaWorldParser {
         let hentai = false
         let author = 'Unknown'
         let artist = 'Unknown'
-        let status = MangaStatus.ONGOING
+        // FIX: Usiamo stringhe dirette invece di MangaStatus.ONGOING per evitare crash runtime
+        let status = 'Ongoing'
 
         // Parsing dinamico dei metadati
-        // Cerchiamo autore, artista e status iterando sui blocchi col-12
         $('.meta-data.row.px-1 .col-12').each((_: any, obj: any) => {
             const text = $(obj).text().trim()
             
@@ -137,9 +136,9 @@ export class MangaWorldParser {
             } else if (text.toLowerCase().includes('stato:')) {
                 const statusText = $('a', obj).text().trim().toLowerCase()
                 if (statusText.includes('finito') || statusText.includes('completato')) {
-                    status = MangaStatus.COMPLETED
+                    status = 'Completed'
                 } else {
-                    status = MangaStatus.ONGOING
+                    status = 'Ongoing'
                 }
             }
         })
@@ -160,7 +159,7 @@ export class MangaWorldParser {
             mangaInfo: App.createMangaInfo({
                 titles: [title],
                 image,
-                status, 
+                status: status as any, // Cast a any per bypassare controlli TS strict se necessario, ma passa la stringa corretta
                 artist,
                 author,
                 tags: tagSections,
@@ -172,22 +171,17 @@ export class MangaWorldParser {
 
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
-        
-        // Seleziona tutti gli elementi con classe 'chapter'
-        // MangaWorld usa <div class="chapter">...<a class="chap">...</a></div>
         const arrChapters = $('.chapter').toArray()
 
         for (const item of arrChapters) {
-            const link = $('a.chap', item) // Selettore specifico per il link
+            const link = $('a.chap', item)
             const id = link.attr('href')?.replace(`${BASE_URL}/manga/${mangaId}/read/`, '') ?? ''
             const name = link.attr('title') ?? ''
             
-            // Parsing numero capitolo
-            const chapText = $('.d-inline-block', item).text().trim() // Es: "Capitolo 1168"
+            const chapText = $('.d-inline-block', item).text().trim()
             const chapNumMatch = chapText.match(/(\d+(\.\d+)?)/)
             const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0
 
-            // Parsing Data usando il selettore specifico fornito: <i class="... chap-date">
             const dateText = $('.chap-date', item).text().trim()
             const time = this.parseDate(dateText)
 
