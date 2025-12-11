@@ -733,7 +733,7 @@ var _Sources = (() => {
   var BASE_URL = "https://www.mangaworld.mx";
   var MangaWorldParser = class {
     /**
-     * Corregge il bug di MangaWorld che a volte raddoppia i titoli (es. "NarutoNaruto")
+     * Pulisce i titoli duplicati (es. "NarutoNaruto" -> "Naruto")
      */
     cleanTitle(title) {
       if (!title) return "Unknown";
@@ -746,9 +746,6 @@ var _Sources = (() => {
       }
       return title;
     }
-    /**
-     * Gestisce URL relativi e lazy loading
-     */
     getImageSrc(element) {
       let image = element.attr("src") ?? "";
       if (!image || image.includes("loading") || image.startsWith("data:")) {
@@ -759,9 +756,6 @@ var _Sources = (() => {
       }
       return image || "https://paperback.moe/icons/logo-alt.svg";
     }
-    /**
-     * Converte date italiane (es. "12 Ottobre 2023") in Date object
-     */
     parseItalianDate(dateStr) {
       const months = {
         "gennaio": 0,
@@ -810,7 +804,8 @@ var _Sources = (() => {
     // --- PARSERS ---
     parseMangaDetails($, mangaId) {
       const infoBox = $(".comic-info");
-      const rawTitle = $(".comic-title", infoBox).text().trim();
+      let rawTitle = $("h1.name", infoBox).text().trim();
+      if (!rawTitle) rawTitle = $(".comic-title", infoBox).text().trim();
       const title = this.cleanTitle(rawTitle);
       const image = this.getImageSrc($(".comic-thumb img", infoBox));
       let desc = $("#noidungm").text().trim();
@@ -818,8 +813,8 @@ var _Sources = (() => {
       let author = "Unknown";
       let status = "Ongoing";
       let artist = "Unknown";
-      $(".meta-data .row").each((_, row) => {
-        const label = $(row).find("label").text().toLowerCase();
+      $(".specs .row", infoBox).each((_, row) => {
+        const label = $(row).find("strong").text().toLowerCase();
         const value = $(row).find("span, a").text().trim();
         if (label.includes("autore")) author = value;
         if (label.includes("artista")) artist = value;
@@ -830,7 +825,7 @@ var _Sources = (() => {
         }
       });
       const arrayTags = [];
-      $(".comic-info .tags a").each((_, a) => {
+      $(".tags a", infoBox).each((_, a) => {
         const label = $(a).text().trim();
         const id = $(a).attr("href")?.split("genre=")[1] ?? label;
         if (label) arrayTags.push(App.createTag({ id, label }));
@@ -851,8 +846,8 @@ var _Sources = (() => {
     }
     parseChapters($, mangaId) {
       const chapters = [];
-      $(".chapter-list .chapter-item").each((_, item) => {
-        const link = $(item).find("a");
+      $(".list-chapters .chapter-item").each((_, item) => {
+        const link = $(item).find("a.chapter-name, a");
         const href = link.attr("href");
         if (!href) return;
         const chapterId = href.split("/").pop() ?? "";
@@ -878,7 +873,6 @@ var _Sources = (() => {
           time,
           langCode: "it",
           sortingIndex: chapters.length
-          // Mantiene l'ordine della pagina
         }));
       });
       return chapters;
@@ -890,6 +884,13 @@ var _Sources = (() => {
       while ((match = imgRegex.exec(html)) !== null) {
         const url = this.getImageSrc({ attr: () => match[1] });
         pages.push(url);
+      }
+      if (pages.length === 0) {
+        const genericRegex = /<div id="page_\d+">.*?<img[^>]+src=["']([^"']+)["']/gs;
+        while ((match = genericRegex.exec(html)) !== null) {
+          const url = this.getImageSrc({ attr: () => match[1] });
+          pages.push(url);
+        }
       }
       return App.createChapterDetails({
         id: chapterId,
@@ -903,7 +904,10 @@ var _Sources = (() => {
       const link = item.find("a").first();
       const href = link.attr("href");
       const id = href?.split("/manga/")[1]?.split("/")[0] ?? "";
-      const title = this.cleanTitle(item.find(".title, h3, .comic-title").text().trim());
+      let rawTitle = item.find(".manga-title").text().trim();
+      if (!rawTitle) rawTitle = item.find(".title, h3").text().trim();
+      if (!rawTitle) rawTitle = link.attr("title") ?? "Unknown";
+      const title = this.cleanTitle(rawTitle);
       const image = this.getImageSrc(item.find("img").first());
       let subtitle = void 0;
       if (subtitleSelector) {
@@ -920,7 +924,7 @@ var _Sources = (() => {
     }
     parseHomeSections($, month, latest, trending) {
       const monthItems = [];
-      $(".col-12 .top-wrapper .entry").each((i, item) => {
+      $(".top-wrapper .entry").each((i, item) => {
         if (i < 10) monthItems.push(this.parseCommonManga($, item));
       });
       month.items = monthItems;
@@ -930,9 +934,14 @@ var _Sources = (() => {
       });
       latest.items = latestItems;
       const trendingItems = [];
-      $("#side-content .entry").each((_, item) => {
+      $(".entry.vertical").each((_, item) => {
         trendingItems.push(this.parseCommonManga($, item));
       });
+      if (trendingItems.length === 0) {
+        $("#side-content .entry").each((_, item) => {
+          trendingItems.push(this.parseCommonManga($, item));
+        });
+      }
       trending.items = trendingItems;
     }
     parseViewMore($) {
