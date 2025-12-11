@@ -905,8 +905,8 @@ ${item.alt_titles.join(", ")}`;
     websiteBaseURL: BASE_URL,
     sourceTags: [
       {
-        text: "Mixed",
-        type: import_types.BadgeColor.GREY
+        text: "English \u{1F1EC}\u{1F1E7}",
+        type: import_types.BadgeColor.GREEN
       }
     ],
     intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED

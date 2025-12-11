@@ -949,8 +949,8 @@ var _Sources = (() => {
     websiteBaseURL: DOMAIN,
     sourceTags: [
       {
-        text: "Comics",
-        type: import_types.BadgeColor.GREY
+        text: "Comics \u{1F1FA}\u{1F1F8}",
+        type: import_types.BadgeColor.BLUE
       }
     ],
     intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
