@@ -796,7 +796,6 @@ var _Sources = (() => {
       return image || "https://paperback.moe/icons/logo-alt.svg";
     }
     // --- PARSER DETTAGLI ---
-    // Basato su "Immagine Manga e in formazioni varie.txt" e "Trama.txt"
     parseMangaDetails($, mangaId) {
       const infoBox = $(".comic-info");
       let rawTitle = $("h1.name", infoBox).text().trim();
@@ -808,7 +807,7 @@ var _Sources = (() => {
       let author = "Unknown";
       let status = "Ongoing";
       let artist = "Unknown";
-      $('.meta-data [class*="col-"]', infoBox).each((_, col) => {
+      $('.meta-data [class*="col-"]').each((_, col) => {
         const text = $(col).text().trim();
         if (text.toLowerCase().includes("autore:")) {
           author = $(col).find("a").text().trim();
@@ -842,7 +841,6 @@ var _Sources = (() => {
         })
       });
     }
-    // Basato su "Lista capitoli.txt"
     parseChapters($, mangaId) {
       const chapters = [];
       const wrapper = $(".chapters-wrapper");
@@ -863,19 +861,22 @@ var _Sources = (() => {
       }
       return chapters;
     }
-    // Helper per estrarre dati capitolo singolo
     extractChapterData($, item, chapters, volNum) {
       const link = $(item).find("a.chap");
       const href = link.attr("href");
       if (!href) return;
       const chapterId = href.split("/").pop() ?? "";
-      const titleText = link.find("span").text().trim();
+      let titleText = link.find("span").text().trim();
       const dateText = link.find(".chap-date").text().trim();
       const time = this.parseItalianDate(dateText);
       const chapMatch = titleText.match(/(\d+(\.\d+)?)/);
       const chapNum = chapMatch ? parseFloat(chapMatch[0]) : 0;
-      let name = `Ch. ${chapNum}`;
-      if (volNum !== void 0) {
+      let name = "";
+      const cleanName = titleText.replace(/Capitolo\s*\d+(\.\d+)?\s*-?\s*/i, "").trim();
+      if (cleanName.length > 0) {
+        name = cleanName;
+      } else {
+        name = titleText;
       }
       chapters.push(App.createChapter({
         id: chapterId,
@@ -883,8 +884,9 @@ var _Sources = (() => {
         chapNum,
         volume: volNum,
         time,
-        langCode: "it"
-        // Sorting index basato sulla posizione inversa o gestito da Paperback con volume/chapNum
+        langCode: "\u{1F1EE}\u{1F1F9}",
+        // FIX: Emoji Bandiera Italiana
+        sortingIndex: chapters.length
       }));
     }
     parseChapterDetails(html, mangaId, chapterId) {
@@ -933,9 +935,9 @@ var _Sources = (() => {
       const latestItems = [];
       $(".comics-grid .entry").each((_, item) => {
         const el = $(item);
-        const titleEl = el.find("a.manga-title");
-        const title = this.cleanTitle(titleEl.text());
-        const href = titleEl.attr("href");
+        const link = el.find("a.manga-title");
+        const title = this.cleanTitle(link.text());
+        const href = link.attr("href") || el.find("a.thumb").attr("href");
         const id = href?.split("/manga/")[1]?.split("/")[0] ?? "";
         const image = this.getImageSrc(el.find("img"));
         const subtitle = el.find(".xanh").first().text().trim();
