@@ -734,9 +734,6 @@ var _Sources = (() => {
   var BASE_URL = "https://www.mangaworld.mx";
   var MangaWorldParser = class {
     constructor() {
-      /**
-       * Mappa dei mesi italiani per il parsing delle date
-       */
       this.months = {
         "gennaio": "January",
         "febbraio": "February",
@@ -752,9 +749,6 @@ var _Sources = (() => {
         "dicembre": "December"
       };
     }
-    /**
-     * Pulisce i titoli duplicati (es. "NarutoNaruto" -> "Naruto")
-     */
     cleanTitle(title) {
       if (!title) return "Unknown";
       title = title.trim();
@@ -766,9 +760,6 @@ var _Sources = (() => {
       }
       return title;
     }
-    /**
-     * Helper per le date italiane
-     */
     parseDate(dateStr) {
       dateStr = dateStr.trim().toLowerCase();
       const now = /* @__PURE__ */ new Date();
@@ -865,14 +856,13 @@ var _Sources = (() => {
       const chapters = [];
       const addedIds = /* @__PURE__ */ new Set();
       let seriesName = $(".name.bigger").text().trim();
-      seriesName = this.cleanTitle(seriesName)[cite_start];
+      seriesName = this.cleanTitle(seriesName);
       const volumeElements = $(".volume-element").toArray();
       if (volumeElements.length > 0) {
         for (const volumeEl of volumeElements) {
-          [cite_start];
           const volName = $(".volume-name", volumeEl).text().trim();
           const volMatch = volName.match(/Volume\s+(\d+)/i);
-          const volumeNumber = volMatch ? Number(volMatch[1]) : (void 0)[cite_start];
+          const volumeNumber = volMatch ? Number(volMatch[1]) : void 0;
           const chapterNodes = $(".chapter", volumeEl).toArray();
           for (const node of chapterNodes) {
             this.processChapter($, node, mangaId, seriesName, chapters, addedIds, volumeNumber);
@@ -885,9 +875,6 @@ var _Sources = (() => {
       }
       return chapters;
     }
-    /**
-     * Logica unificata per processare un singolo nodo capitolo HTML
-     */
     processChapter($, item, mangaId, seriesName, chapters, addedIds, volume) {
       const link = $("a.chap", item);
       const href = link.attr("href");
@@ -910,10 +897,8 @@ var _Sources = (() => {
         App.createChapter({
           id,
           name,
-          // Ora sarà pulito (es. "" o "Titolo del capitolo")
           chapNum,
           volume,
-          // Se trovato nel blocco volume, Paperback raggrupperà correttamente
           time,
           langCode: "it"
         })
