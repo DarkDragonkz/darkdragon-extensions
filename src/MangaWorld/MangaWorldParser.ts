@@ -32,6 +32,7 @@ export class MangaWorldParser {
     private getImageSrc(element: any): string {
         let image = element.attr('src') ?? ''
         
+        // Cerca attributi lazy load
         if (!image || image.includes('loading') || image.startsWith('data:')) {
             image = element.attr('data-src') ?? element.attr('data-original') ?? ''
         }
@@ -77,10 +78,12 @@ export class MangaWorldParser {
     // --- PARSERS ---
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
-        // RIPRISTINATO: Selettore che funzionava
         const infoBox = $('.comic-info')
         
-        const rawTitle = $('.comic-title', infoBox).text().trim()
+        // Titolo: h1.name.bigger (dal tuo HTML)
+        let rawTitle = $('h1.name', infoBox).text().trim()
+        if (!rawTitle) rawTitle = $('.comic-title', infoBox).text().trim()
+        
         const title = this.cleanTitle(rawTitle)
         
         const image = this.getImageSrc($('.comic-thumb img', infoBox))
@@ -92,10 +95,11 @@ export class MangaWorldParser {
         let status = 'Ongoing'
         let artist = 'Unknown'
 
-        // RIPRISTINATO: .meta-data invece di .specs
-        $('.meta-data .row').each((_: any, row: any) => {
-            const label = $(row).find('label').text().toLowerCase()
-            const value = $(row).find('span, a').text().trim()
+        // FIX METADATI: I dati sono dentro le colonne (col-6, col-md-4) dentro .meta-data
+        // Struttura HTML: .meta-data.row > div.col... > .label + .name
+        $('.meta-data [class*="col-"]', infoBox).each((_: any, col: any) => {
+            const label = $(col).find('.label').text().toLowerCase()
+            const value = $(col).find('.name').text().trim()
 
             if (label.includes('autore')) author = value
             if (label.includes('artista')) artist = value
@@ -107,7 +111,7 @@ export class MangaWorldParser {
         })
 
         const arrayTags: Tag[] = []
-        $('.comic-info .tags a').each((_: any, a: any) => {
+        $('.tags a', infoBox).each((_: any, a: any) => {
             const label = $(a).text().trim()
             const id = $(a).attr('href')?.split('genre=')[1] ?? label
             if (label) arrayTags.push(App.createTag({ id, label }))
@@ -131,9 +135,10 @@ export class MangaWorldParser {
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
         
-        // RIPRISTINATO: .chapter-list invece di .list-chapters
-        $('.chapter-list .chapter-item').each((_: any, item: any) => {
-            const link = $(item).find('a')
+        // FIX CAPITOLI: Il contenitore è .chapters-wrapper (dal tuo HTML)
+        // Gli elementi sono .chapter-item
+        $('.chapters-wrapper .chapter-item').each((_: any, item: any) => {
+            const link = $(item).find('a.chapter-name, a').first()
             const href = link.attr('href')
             if (!href) return
 
@@ -175,7 +180,7 @@ export class MangaWorldParser {
     parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
         
-        // Layout Standard
+        // Cerca immagini nel DOM (layout classico MangaWorld)
         const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]+class=["']content-image/g
         let match
         while ((match = imgRegex.exec(html)) !== null) {
@@ -183,7 +188,7 @@ export class MangaWorldParser {
             pages.push(url)
         }
 
-        // Fallback Layout alternativo
+        // Fallback per layout alternativi (es. reader-area)
         if (pages.length === 0) {
              const readerAreaRegex = /<div id="reader-area">([\s\S]*?)<\/div>/
              const readerMatch = html.match(readerAreaRegex)
@@ -212,7 +217,7 @@ export class MangaWorldParser {
         const href = link.attr('href')
         const id = href?.split('/manga/')[1]?.split('/')[0] ?? ''
 
-        // Qui manteniamo i selettori che hai confermato funzionare in Homepage
+        // Selettore Titolo
         let rawTitle = item.find('.manga-title').text().trim()
         if (!rawTitle) rawTitle = item.find('.title, h3').text().trim()
         if (!rawTitle) rawTitle = link.attr('title') ?? 'Unknown'
