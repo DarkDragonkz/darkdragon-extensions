@@ -743,12 +743,9 @@ var _Sources = (() => {
       }
       return url;
     }
-    /**
-     * Parser Universale per Grid/List items
-     */
     parseMangaItem($, element) {
       const item = $(element);
-      let link = item.is("a") ? item : item.find("a").first();
+      let link = item.is("a") ? item : item.find('a[href*="/comic/"]').first();
       if (!link.attr("href")) link = item.find("h3 a, .title a").first();
       const href = link.attr("href");
       const id = href?.split("/").filter((p) => p && p !== "comic" && p !== "xoxocomic.com").pop();
@@ -773,27 +770,27 @@ var _Sources = (() => {
       });
     }
     parseMangaDetails($, mangaId) {
-      let title = $("h2.listmanga-header, h1.title-manga").first().text().trim();
-      if (!title) title = $(".manga-info h1, .manga-info h3").first().text().trim();
-      if (!title) title = $("title").text().replace("- XoxoComic", "").trim() || "Unknown";
-      let img = $(".col-md-4 .img-responsive, .manga-info img").first();
-      let imageSrc = img.attr("src") || img.attr("data-src");
+      let title = $('meta[property="og:title"]').attr("content")?.replace("- XoxoComic", "").trim();
+      let imageSrc = $('meta[property="og:image"]').attr("content");
+      let desc = $('meta[name="description"]').attr("content") || $('meta[property="og:description"]').attr("content");
+      if (!title) title = $("h2.listmanga-header, h1.title-manga, h1").first().text().trim();
+      if (!imageSrc) imageSrc = $(".col-md-4 .img-responsive, .manga-info img").first().attr("src");
+      if (!desc) desc = $(".manga-content p, .well p, #noidungm").text().trim();
       const image = this.getImageSrc(imageSrc);
+      if (!title) title = "Unknown Title";
+      if (!desc) desc = "No description available";
       let author = "Unknown";
       let artist = "Unknown";
       let status = "Ongoing";
-      let desc = "";
-      $("li, p, .dl-horizontal dt, .manga-info li").each((_, el) => {
-        const text = $(el).text().toLowerCase();
-        const value = $(el).next().text().trim() || $(el).find("span, a").text().trim();
-        if (text.includes("author") || text.includes("writer")) author = value.replace(/author(s)?:/i, "").trim();
-        if (text.includes("artist")) artist = value.replace(/artist(s)?:/i, "").trim();
-        if (text.includes("status")) {
-          if (text.includes("completed") || value.toLowerCase().includes("completed")) status = "Completed";
+      $("dt, .manga-info li b").each((_, el) => {
+        const label = $(el).text().toLowerCase();
+        const value = $(el).next("dd").text().trim() || $(el).parent().text().replace(label, "").trim();
+        if (label.includes("author")) author = value;
+        if (label.includes("artist")) artist = value;
+        if (label.includes("status")) {
+          if (value.toLowerCase().includes("completed")) status = "Completed";
         }
       });
-      desc = $(".manga-content p, .well p, #noidungm").first().text().trim();
-      if (!desc) desc = $('meta[name="description"]').attr("content") ?? "No description available";
       const arrayTags = [];
       $('a[href*="/genre/"]').each((_, a) => {
         const label = $(a).text().trim();
@@ -816,22 +813,27 @@ var _Sources = (() => {
     }
     parseChapters($, mangaId) {
       const chapters = [];
-      const selector = "ul.chapters li, .chapter-list .row, .row-content-chapter li";
-      $(selector).each((_, li) => {
-        const link = $("a", li).first();
-        const title = link.text().trim();
+      $("a").each((_, a) => {
+        const link = $(a);
         const href = link.attr("href");
-        let chapterId = href?.replace(BASE_URL, "") ?? "";
+        if (!href) return;
+        const isChapterLink = (href.includes(mangaId) || href.includes("chapter") || href.includes("issue")) && href.length > BASE_URL.length + mangaId.length + 5 && !href.endsWith("/comic/" + mangaId);
+        if (!isChapterLink) return;
+        const parentClass = link.closest("ul, div, li").attr("class") || "";
+        if (!parentClass && link.parents().length < 5) return;
+        let chapterId = href.replace(BASE_URL, "");
         if (chapterId.startsWith("/")) chapterId = chapterId.substring(1);
-        if (!chapterId) return;
-        const dateText = $(li).find(".date, .time, .date-chapter-title-rtl").text().trim();
+        const title = link.text().trim();
+        if (!title) return;
+        if (chapters.some((c) => c.id === chapterId)) return;
+        const numMatch = title.match(/(\d+(\.\d+)?)/);
+        const chapNum = numMatch ? parseFloat(numMatch[0]) : 0;
+        const dateText = link.parent().text().replace(title, "").trim();
         let time = /* @__PURE__ */ new Date();
-        if (dateText) {
+        if (dateText.match(/\d{4}/)) {
           const parsed = new Date(dateText);
           if (!isNaN(parsed.getTime())) time = parsed;
         }
-        const numMatch = title.match(/(\d+(\.\d+)?)/);
-        const chapNum = numMatch ? parseFloat(numMatch[0]) : 0;
         chapters.push(App.createChapter({
           id: chapterId,
           name: title,
