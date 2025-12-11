@@ -31,7 +31,10 @@ export class XoxoComicParser {
         const item = $(element)
         
         let link = item.find('a').first()
-        if (!link.attr('href')) link = item.find('h3 a').first()
+        // Fallback per layout diversi
+        if (!link.attr('href')?.includes('/comic/')) {
+             link = item.find('h3 a, .title a').first()
+        }
 
         const href = link.attr('href')
         const id = href?.split('/').filter((p: string) => p && p !== 'comic' && p !== 'xoxocomic.com').pop()
@@ -52,7 +55,10 @@ export class XoxoComicParser {
         }
 
         const image = this.getImageSrc(imageSrc)
-        const subtitle = item.find('.chapter a').first().text().trim()
+        
+        // Sottotitolo: prova vari selettori per il capitolo
+        let subtitle = item.find('.chapter a, .chapter').first().text().trim()
+        if (!subtitle) subtitle = item.find('span').last().text().trim() // Fallback generico
 
         return App.createPartialSourceManga({
             mangaId: id,
@@ -61,6 +67,9 @@ export class XoxoComicParser {
             subtitle: subtitle || undefined
         })
     }
+
+    // ... (Metodi parseMangaDetails, parseChapters, parseChapterDetails rimangono identici a prima) ...
+    // Li includo per completezza
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
         let title = $('.title-detail').text().trim()
@@ -121,12 +130,10 @@ export class XoxoComicParser {
 
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
-        
         $('.list-chapter li.row:not(.heading)').each((_: any, li: any) => {
             const link = $(li).find('a').first()
             const rawTitle = link.text().trim()
             const href = link.attr('href')
-            
             if (!href) return
 
             let chapterId = href.replace(BASE_URL, '')
@@ -139,8 +146,6 @@ export class XoxoComicParser {
                 if (!isNaN(parsed.getTime())) time = parsed
             }
 
-            // --- SMART CLEANING ---
-            
             let cleanName = rawTitle.replace(/^.*?\(\d{4}\)\s*/, '').trim()
             const looseMangaName = mangaId.replace(/-/g, ' ')
             if (cleanName === rawTitle && rawTitle.toLowerCase().includes(looseMangaName)) {
@@ -151,17 +156,13 @@ export class XoxoComicParser {
             let name = cleanName
             let chapNum = 0
             
-            // CASO 1: MULTIPART (Deluxe, TPB)
             const multiPartMatch = cleanName.match(/_?([a-zA-Z_\s]+)[\s_](\d+)[\s_]?\(?Part[\s_](\d+)\)?/i)
-            
-            // CASO 2: SPECIAL / ANNUAL
             const specialMatch = cleanName.match(/_?([a-zA-Z_\s]+)[\s_](\d+)/i)
 
             if (multiPartMatch && (cleanName.toLowerCase().includes('part') || cleanName.toLowerCase().includes('edition'))) {
                 let type = multiPartMatch[1]?.replace(/_/g, ' ').trim() ?? 'Vol'
                 const volNum = parseInt(multiPartMatch[2] ?? '0')
                 const partNum = parseFloat(multiPartMatch[3] ?? '0')
-                
                 name = `Vol. ${type} ${volNum} Part. ${partNum}`
                 chapNum = partNum
             } 
@@ -194,20 +195,17 @@ export class XoxoComicParser {
                 langCode: 'en'
             }))
         })
-
         return chapters
     }
 
     parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
-        
         const imgRegex = /<img[^>]+data-original=["']([^"']+)["']/g
         let match
         while ((match = imgRegex.exec(html)) !== null) {
             const url = match[1]
             if (url) pages.push(this.getImageSrc(url))
         }
-
         if (pages.length === 0) {
             const genericRegex = /<img[^>]+src=["']([^"']+)["']/g
             while ((match = genericRegex.exec(html)) !== null) {
@@ -217,7 +215,6 @@ export class XoxoComicParser {
                 }
             }
         }
-
         return App.createChapterDetails({
             id: chapterId,
             mangaId: mangaId,
@@ -225,12 +222,19 @@ export class XoxoComicParser {
         })
     }
 
+    // FUNZIONE AGGIORNATA PER SUPPORTARE TUTTE LE LISTE
     parseGridItems($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         const seenIds = new Set<string>()
 
-        // Selettore universale per tutti i tipi di liste
-        $('.item, .list-truyen-item-wrap, .searched-item').each((_: any, item: any) => {
+        // 1. Selettore Griglia (Hot/Popular/New) -> .item
+        // 2. Selettore Lista (Update) -> .mangalist .manga-item oppure tr
+        // Cerchiamo un selettore "Catch-All" sicuro
+        $('.item, .list-truyen-item-wrap, .search-story-item, .row-list, .col-sm-6').each((_: any, item: any) => {
+            
+            // Filtro anti-junk (alcuni div sono solo container pubblicitari)
+            if ($(item).find('a').length === 0) return
+
             const manga = this.parseMangaItem($, item)
             if (manga && !seenIds.has(manga.mangaId)) {
                 seenIds.add(manga.mangaId)
