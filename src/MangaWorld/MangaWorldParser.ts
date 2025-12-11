@@ -14,54 +14,35 @@ const BASE_URL = 'https://www.mangaworld.mx'
 export class MangaWorldParser {
 
     /**
-     * Parsing Date Italiane (Feature della 3.6.0)
+     * Pulisce i titoli duplicati (es. "NarutoNaruto" -> "Naruto")
      */
-    private parseItalianDate(dateStr: string): Date {
-        const months: { [key: string]: number } = {
-            'gennaio': 0, 'febbraio': 1, 'marzo': 2, 'aprile': 3, 'maggio': 4, 'giugno': 5,
-            'luglio': 6, 'agosto': 7, 'settembre': 8, 'ottobre': 9, 'novembre': 10, 'dicembre': 11,
-            'january': 0, 'february': 1, 'march': 2, 'april': 3, 'may': 4, 'june': 5,
-            'july': 6, 'august': 7, 'september': 8, 'october': 9, 'november': 10, 'december': 11
-        }
-
-        dateStr = dateStr.toLowerCase().trim()
-        if (dateStr.includes('oggi')) return new Date()
-        if (dateStr.includes('ieri')) {
-            const d = new Date()
-            d.setDate(d.getDate() - 1)
-            return d
-        }
-
-        const parts = dateStr.split(' ')
-        if (parts.length >= 3) {
-            const day = parseInt(parts[0] ?? '1')
-            const monthName = parts[1] ?? ''
-            const year = parseInt(parts[2] ?? new Date().getFullYear().toString())
-            if (months[monthName] !== undefined) return new Date(year, months[monthName]!, day)
-        }
-        return new Date()
-    }
-
     private cleanTitle(title: string): string {
         if (!title) return 'Unknown'
         title = title.trim()
         if (title.length > 0 && title.length % 2 === 0) {
             const half = title.substring(0, title.length / 2)
-            if (half === title.substring(title.length / 2)) return half
+            if (half === title.substring(title.length / 2)) {
+                return half
+            }
         }
         return title
     }
 
     private getImageSrc(element: any): string {
         let image = element.attr('src') ?? ''
+        
         if (!image || image.includes('loading') || image.startsWith('data:')) {
             image = element.attr('data-src') ?? element.attr('data-original') ?? ''
         }
-        if (image && image.startsWith('/')) image = BASE_URL + image
+        
+        if (image && image.startsWith('/')) {
+            image = BASE_URL + image
+        }
+
         return image || 'https://paperback.moe/icons/logo-alt.svg'
     }
 
-    // --- LOGICA DI PARSING (Basata sulla 3.4.0 FUNZIONANTE) ---
+    // --- PARSERS ---
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
         // Selettori "Vecchia Scuola" (Stabili)
@@ -79,9 +60,9 @@ export class MangaWorldParser {
         let status = 'Ongoing'
         let artist = 'Unknown'
 
-        // Parsing Metadati "Safe" (cerca etichette invece di posizioni fisse)
+        // Metadati Standard
         $('.meta-data .row').each((_: any, row: any) => {
-            const label = $(row).text().toLowerCase()
+            const label = $(row).find('label').text().toLowerCase()
             const value = $(row).find('span, a').text().trim()
 
             if (label.includes('autore')) author = value
@@ -118,35 +99,37 @@ export class MangaWorldParser {
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
         
-        // Usa il selettore SICURO della 3.4.0
-        $('.chapter-list .chapter-item, .list-chapters .chapter-item').each((_: any, item: any) => {
+        // Selettori Stabili 3.4.0
+        $('.chapter-list .chapter-item').each((_: any, item: any) => {
             const link = $(item).find('a')
             const href = link.attr('href')
             if (!href) return
 
             const chapterId = href.split('/').pop() ?? ''
             
-            // Dati grezzi
-            const titleText = link.text().trim() // Es: "Vol. 1 Cap. 10"
-            const dateText = $(item).find('.chapter-date, .date').text().trim()
-            
-            // Feature 3.6.0: Parsing Data e Naming Pulito
-            const time = this.parseItalianDate(dateText)
+            const rawTitle = link.text().trim()
+            const time = new Date() // Nessun parsing complesso, data corrente
 
-            const volMatch = titleText.match(/Vol\.?\s*(\d+)/i)
-            const chapMatch = titleText.match(/(?:Cap|Ch)\.?\s*(\d+(\.\d+)?)/i)
+            const volMatch = rawTitle.match(/Vol\.?\s*(\d+)/i)
+            const chapMatch = rawTitle.match(/(?:Cap|Ch)\.?\s*(\d+(\.\d+)?)/i)
             
             const volNum = volMatch ? parseInt(volMatch[1] ?? '0') : undefined
             const chapNum = chapMatch ? parseFloat(chapMatch[1] ?? '0') : 0
 
-            // Pulizia Nome Capitolo (evita duplicati "Ch 1 - Ch 1")
+            // --- NUOVO NAMING PULITO ---
             let name = ''
-            const cleanName = titleText.replace(/Capitolo\s*\d+(\.\d+)?\s*-?\s*/i, '').trim()
+            if (volNum !== undefined) name += `Vol. ${volNum} `
+            name += `Ch. ${chapNum}`
             
-            if (cleanName.length > 0 && cleanName.toLowerCase() !== `capitolo ${chapNum}`) {
-                name = cleanName
-            } else {
-                name = `Capitolo ${chapNum}`
+            // Aggiungi titolo extra se presente (dopo il trattino) ed evita ripetizioni
+            // Es: "Vol. 1 Cap. 10 - Titolo" -> "Vol. 1 Ch. 10 - Titolo"
+            // Es: "Capitolo 10" -> "Ch. 10"
+            if (rawTitle.includes('-')) {
+                const extraTitle = rawTitle.split('-').slice(1).join('-').trim()
+                // Se l'extra title è solo il numero ripetuto, ignoralo
+                if (extraTitle && !extraTitle.toLowerCase().includes(`capitolo ${chapNum}`) && extraTitle !== String(chapNum)) {
+                    name += ` - ${extraTitle}`
+                }
             }
 
             chapters.push(App.createChapter({
@@ -155,7 +138,7 @@ export class MangaWorldParser {
                 chapNum: chapNum,
                 volume: volNum,
                 time: time,
-                langCode: '🇮🇹', // Emoji bandiera
+                langCode: '🇮🇹', // Bandierina
                 sortingIndex: chapters.length
             }))
         })
@@ -166,8 +149,7 @@ export class MangaWorldParser {
     parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
         
-        // METODO 3.4.0 (Quello che funzionava sempre e non crasha)
-        // Regex diretta sul codice HTML, ignora JS e JSON complessi
+        // Regex DOM (Metodo Stabile 3.4.0)
         const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]+class=["']content-image/g
         let match
         while ((match = imgRegex.exec(html)) !== null) {
@@ -175,7 +157,7 @@ export class MangaWorldParser {
             pages.push(url)
         }
 
-        // Fallback di sicurezza (Layout vecchio)
+        // Fallback per layout alternativi (Reader Area)
         if (pages.length === 0) {
              const genericRegex = /<div id="page_\d+">.*?<img[^>]+src=["']([^"']+)["']/gs
              while ((match = genericRegex.exec(html)) !== null) {
@@ -191,8 +173,7 @@ export class MangaWorldParser {
         })
     }
 
-    // --- HOME PAGE (UI 3.6.0) ---
-    // Qui usiamo i selettori che hai confermato funzionare per l'estetica
+    // --- HOME PAGE & SEARCH ---
 
     parseCommonManga($: any, element: any, subtitleSelector?: string): PartialSourceManga {
         const item = $(element)
@@ -200,8 +181,8 @@ export class MangaWorldParser {
         const href = link.attr('href')
         const id = href?.split('/manga/')[1]?.split('/')[0] ?? ''
 
-        // Selettore robusto per titolo
-        let rawTitle = item.find('.manga-title').text().trim()
+        // Selettori Stabili 3.4.0
+        let rawTitle = item.find('.comic-title').text().trim()
         if (!rawTitle) rawTitle = item.find('.title, h3').text().trim()
         if (!rawTitle) rawTitle = link.attr('title') ?? 'Unknown'
 
@@ -226,25 +207,25 @@ export class MangaWorldParser {
     }
 
     parseHomeSections($: any, month: HomeSection, latest: HomeSection, trending: HomeSection): void {
+        
+        // 1. TOP MONTH (Vetrina Grande)
         const monthItems: PartialSourceManga[] = []
-        // Selettore Top Month
-        $('.top-wrapper .entry, .to-wrapper .entry').each((i: number, item: any) => {
+        $('.col-12 .top-wrapper .entry').each((i: number, item: any) => {
             if (i < 10) monthItems.push(this.parseCommonManga($, item))
         })
         month.items = monthItems
 
+        // 2. LATEST UPDATES (Griglia Centrale)
         const latestItems: PartialSourceManga[] = []
-        // Selettore Latest
-        $('.comics-grid .entry').each((_: any, item: any) => {
-            latestItems.push(this.parseCommonManga($, item, '.chapter-link, .chapter a'))
+        $('.col-sm-12.col-md-8.col-xl-9 .comics-grid .entry').each((_: any, item: any) => {
+            latestItems.push(this.parseCommonManga($, item, '.d-flex.flex-wrap.flex-row a'))
         })
         latest.items = latestItems
 
+        // 3. TRENDING (Sidebar)
         const trendingItems: PartialSourceManga[] = []
-        // Selettore Trending
-        $('#chapters-slide .entry, .entry.vertical').each((_: any, item: any) => {
-            if ($(item).hasClass('slick-cloned')) return
-            trendingItems.push(this.parseCommonManga($, item, '.chapter'))
+        $('.entry.vertical').each((_: any, item: any) => {
+            trendingItems.push(this.parseCommonManga($, item))
         })
         trending.items = trendingItems
     }

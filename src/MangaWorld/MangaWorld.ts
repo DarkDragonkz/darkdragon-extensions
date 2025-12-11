@@ -21,7 +21,7 @@ import { URLBuilder } from '../helper'
 const MW_DOMAIN = 'https://www.mangaworld.mx'
 
 export const MangaWorldInfo: SourceInfo = {
-    version: '3.6.0',
+    version: '3.9.0', // UI & Naming Fix
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld.',
     author: 'NmN & DarkDragonkz',
@@ -53,7 +53,6 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
                 request.headers = {
                     ...(request.headers ?? {}),
                     'Referer': `${this.baseUrl}/`,
-                    // User Agent fisso per evitare blocchi
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 }
                 return request
@@ -98,14 +97,17 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        // UI MIGLIORATA
+        // --- UI MODIFICATA QUI ---
+        
+        // 1. TOP MONTH -> Vetrina Grande
         const sectionMonth = App.createHomeSection({
             id: 'month',
             title: 'Top Mensile 🔥',
             containsMoreItems: false,
-            type: 'singleRowLarge', // Vetrina grande
+            type: 'singleRowLarge', 
         })
 
+        // 2. LATEST -> Scroll Infinito
         const sectionLatest = App.createHomeSection({
             id: 'latest',
             title: 'Ultime Uscite 🆕',
@@ -113,6 +115,7 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
             type: 'continuous',
         })
 
+        // 3. TRENDING -> Sidebar Normale
         const sectionTrending = App.createHomeSection({
             id: 'trending',
             title: 'In Tendenza ⚡',
