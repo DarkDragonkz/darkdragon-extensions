@@ -733,9 +733,8 @@ var _Sources = (() => {
   var BASE_URL = "https://xoxocomic.com";
   var XoxoComicParser = class {
     getImageSrc(url) {
-      if (!url) return "https://paperback.moe/icons/logo-alt.svg";
+      if (!url || url.includes("logo") || url.includes("placeholder")) return "https://paperback.moe/icons/logo-alt.svg";
       if (url.startsWith("data:")) return "https://paperback.moe/icons/logo-alt.svg";
-      if (url.includes("logo") || url.includes("placeholder")) return "https://paperback.moe/icons/logo-alt.svg";
       url = url.trim();
       if (url.startsWith("//")) {
         url = `https:${url}`;
@@ -744,6 +743,7 @@ var _Sources = (() => {
       }
       return url;
     }
+    // Usato per Home (Trending) e Search
     parseMangaItem($, element) {
       const item = $(element);
       let link = item.find("a").first();
@@ -756,6 +756,11 @@ var _Sources = (() => {
       if (!title) title = "Unknown Title";
       let img = item.find("img").first();
       let imageSrc = img.attr("data-original") || img.attr("data-src") || img.attr("src");
+      if (!imageSrc || imageSrc.startsWith("data:")) {
+        const style = item.find(".div-poster, .image").attr("style");
+        const match = style?.match(/url\(['"]?(.*?)['"]?\)/);
+        if (match) imageSrc = match[1];
+      }
       const image = this.getImageSrc(imageSrc);
       const subtitle = item.find(".chapter a").first().text().trim();
       return App.createPartialSourceManga({
@@ -801,14 +806,21 @@ var _Sources = (() => {
         })
       });
     }
+    // FIX PAGINAZIONE: Più robusto, guarda anche il testo del link
     getChapterPageCount($) {
       let maxPage = 1;
       $(".pagination li a").each((_, el) => {
         const href = $(el).attr("href");
-        const match = href?.match(/page=(\d+)/);
-        if (match) {
-          const num = parseInt(match[1]);
-          if (num > maxPage) maxPage = num;
+        const text = $(el).text().trim();
+        const textNum = parseInt(text);
+        if (!isNaN(textNum)) {
+          if (textNum > maxPage) maxPage = textNum;
+        } else if (href) {
+          const match = href.match(/page=(\d+)/);
+          if (match) {
+            const num = parseInt(match[1]);
+            if (num > maxPage) maxPage = num;
+          }
         }
       });
       return maxPage;
@@ -875,30 +887,19 @@ var _Sources = (() => {
     }
     parseChapterDetails(html, mangaId, chapterId) {
       const pages = [];
-      const scriptMatch = html.match(/var\s+lstImages\s*=\s*new\s+Array\((.*?)\);/);
-      if (scriptMatch && scriptMatch[1]) {
-        const urls = scriptMatch[1].split(",").map((u) => u.trim().replace(/['"]/g, ""));
-        for (const url of urls) {
-          const clean = this.getImageSrc(url);
-          if (clean && !clean.includes("logo-alt")) pages.push(clean);
-        }
-      }
-      if (pages.length === 0) {
-        const imgRegex = /<img[^>]+data-original=["']([^"']+)["']/g;
-        let match;
-        while ((match = imgRegex.exec(html)) !== null) {
-          const url = match[1];
-          const clean = this.getImageSrc(url);
-          if (clean && !clean.includes("logo-alt")) pages.push(clean);
-        }
+      const imgRegex = /<img[^>]+data-original=["']([^"']+)["']/g;
+      let match;
+      while ((match = imgRegex.exec(html)) !== null) {
+        const url = match[1];
+        if (url) pages.push(this.getImageSrc(url));
       }
       if (pages.length === 0) {
         const genericRegex = /<img[^>]+src=["']([^"']+)["']/g;
-        let match;
         while ((match = genericRegex.exec(html)) !== null) {
           const url = match[1];
-          const clean = this.getImageSrc(url);
-          if (clean && !clean.includes("logo-alt")) pages.push(clean);
+          if (url && !url.startsWith("data:") && !url.includes("loading") && !url.includes("logo")) {
+            pages.push(this.getImageSrc(url));
+          }
         }
       }
       return App.createChapterDetails({
@@ -919,50 +920,75 @@ var _Sources = (() => {
       });
       return results;
     }
+    // --- SEZIONI HOME PAGE ---
     parseHomeSections($, trending, topMonth, topWeek) {
       const trendingItems = [];
       $(".items-slide .item").each((_, item) => {
-        if ($(item).parent(".cloned").length > 0) return;
-        const manga = this.parseMangaItem($, item);
-        if (manga) trendingItems.push(manga);
+        if ($(item).closest(".cloned").length > 0) return;
+        const el = $(item);
+        const link = el.find("a").first();
+        const id = link.attr("href")?.split("/").pop();
+        const title = el.find(".slide-caption h3 a").text().trim() || link.attr("title");
+        let imageSrc = el.find("img").attr("src") || el.find("img").attr("data-src");
+        const image = this.getImageSrc(imageSrc);
+        if (id && title) {
+          trendingItems.push(App.createPartialSourceManga({
+            mangaId: id,
+            image,
+            title,
+            subtitle: "Trending"
+          }));
+        }
       });
       trending.items = trendingItems;
-      const monthItems = [];
-      $("#topMonth li").each((_, item) => {
-        const link = $(item).find("h3.title a");
-        const id = link.attr("href")?.split("/").pop();
-        const title = link.text().trim();
-        let imageSrc = $(item).find("img").attr("data-original") || $(item).find("img").attr("src");
+      const parseTop = (selector) => {
+        const items = [];
+        $(selector + " li").each((_, item) => {
+          const link = $(item).find("h3.title a");
+          const id = link.attr("href")?.split("/").pop();
+          const title = link.text().trim();
+          let imageSrc = $(item).find(".thumb img").attr("data-original") || $(item).find(".thumb img").attr("src");
+          const image = this.getImageSrc(imageSrc);
+          const chapter = $(item).find("p.chapter a").text().trim();
+          if (id && title) {
+            items.push(App.createPartialSourceManga({
+              mangaId: id,
+              image,
+              title,
+              subtitle: chapter
+            }));
+          }
+        });
+        return items;
+      };
+      topMonth.items = parseTop("#topMonth");
+      topWeek.items = parseTop("#topWeek");
+    }
+    // NUOVO PARSER SPECIFICO PER /NEW-COMIC
+    // Questo risolve il problema di Latest Updates vuoto
+    parseLatestItems($) {
+      const items = [];
+      $(".items .row .item").each((_, item) => {
+        const el = $(item);
+        const imgLink = el.find("figure .image a").first();
+        const title = imgLink.attr("title")?.replace(" Comic", "")?.replace("Read ", "")?.replace(" online", "")?.trim();
+        const href = imgLink.attr("href");
+        const id = href?.split("/").filter((p) => p && p !== "comic").pop();
+        const img = el.find("figure .image img");
+        const imageSrc = img.attr("src") || img.attr("data-original");
         const image = this.getImageSrc(imageSrc);
-        const chapter = $(item).find("p.chapter a").text().trim();
+        const released = el.find('.message_main p:contains("Released:")').text().replace("Released:", "").trim();
+        const subtitle = released ? `Released: ${released}` : void 0;
         if (id && title) {
-          monthItems.push(App.createPartialSourceManga({
+          items.push(App.createPartialSourceManga({
             mangaId: id,
             image,
             title,
-            subtitle: chapter
+            subtitle
           }));
         }
       });
-      topMonth.items = monthItems;
-      const weekItems = [];
-      $("#topWeek li").each((_, item) => {
-        const link = $(item).find("h3.title a");
-        const id = link.attr("href")?.split("/").pop();
-        const title = link.text().trim();
-        let imageSrc = $(item).find("img").attr("data-original") || $(item).find("img").attr("src");
-        const image = this.getImageSrc(imageSrc);
-        const chapter = $(item).find("p.chapter a").text().trim();
-        if (id && title) {
-          weekItems.push(App.createPartialSourceManga({
-            mangaId: id,
-            image,
-            title,
-            subtitle: chapter
-          }));
-        }
-      });
-      topWeek.items = weekItems;
+      return items;
     }
   };
 
