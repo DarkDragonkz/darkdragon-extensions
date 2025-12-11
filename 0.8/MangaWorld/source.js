@@ -832,7 +832,7 @@ var _Sources = (() => {
       let hentai = false;
       let author = "Unknown";
       let artist = "Unknown";
-      let status = import_types.MangaStatus.ONGOING;
+      let status = "Ongoing";
       $(".meta-data.row.px-1 .col-12").each((_, obj) => {
         const text = $(obj).text().trim();
         if (text.toLowerCase().includes("autore:")) {
@@ -842,9 +842,9 @@ var _Sources = (() => {
         } else if (text.toLowerCase().includes("stato:")) {
           const statusText = $("a", obj).text().trim().toLowerCase();
           if (statusText.includes("finito") || statusText.includes("completato")) {
-            status = import_types.MangaStatus.COMPLETED;
+            status = "Completed";
           } else {
-            status = import_types.MangaStatus.ONGOING;
+            status = "Ongoing";
           }
         }
       });
@@ -862,6 +862,7 @@ var _Sources = (() => {
           titles: [title],
           image,
           status,
+          // Cast a any per bypassare controlli TS strict se necessario, ma passa la stringa corretta
           artist,
           author,
           tags: tagSections,
