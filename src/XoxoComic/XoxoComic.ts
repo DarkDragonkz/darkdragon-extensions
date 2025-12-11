@@ -13,6 +13,7 @@ import {
     MangaProviding,
     ChapterProviding,
     HomePageSectionsProviding,
+    HomeSectionType,
     Request
 } from '@paperback/types'
 
@@ -21,7 +22,7 @@ import { XoxoComicParser } from './XoxoComicParser'
 const DOMAIN = 'https://xoxocomic.com'
 
 export const XoxoComicInfo: SourceInfo = {
-    version: '1.3.2', // Bump versione per fix ReferenceError
+    version: '1.3.3', // Bump versione per Fix Pagination Completa
     name: 'XoxoComic',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -76,31 +77,62 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
         const urlBase = mangaId.includes('/') ? `${this.baseUrl}/${mangaId}` : `${this.baseUrl}/comic/${mangaId}`
+        
+        // 1. Scarica la prima pagina
         const request = App.createRequest({ url: urlBase, method: 'GET' })
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         
-        const totalPages = this.parser.getChapterPageCount($)
         let allChapters = this.parser.parseChapters($, mangaId)
-
-        if (totalPages > 1) {
-            const promises = []
-            for (let i = 2; i <= totalPages; i++) {
-                const req = App.createRequest({
-                    url: `${urlBase}?page=${i}`,
-                    method: 'GET'
-                })
-                promises.push(this.requestManager.schedule(req, 1))
+        let maxPage = this.parser.getChapterPageCount($)
+        
+        // Set per tenere traccia delle pagine già scaricate (1 è già fatta)
+        const fetchedPages = new Set<number>([1])
+        
+        // Loop "Discovery": Continua finché ci sono pagine non scaricate
+        // Questo risolve il problema delle pagine 8, 9, 10, 11 che appaiono solo dopo
+        let keepChecking = true
+        while (keepChecking) {
+            const pagesToFetch: number[] = []
+            
+            // Trova quali pagine tra 2 e maxPage non abbiamo ancora scaricato
+            for (let i = 2; i <= maxPage; i++) {
+                if (!fetchedPages.has(i)) {
+                    pagesToFetch.push(i)
+                    fetchedPages.add(i)
+                }
             }
 
-            const responses = await Promise.all(promises)
-            for (const res of responses) {
+            if (pagesToFetch.length === 0) {
+                keepChecking = false
+                break
+            }
+
+            // Scarica il blocco di pagine mancanti in parallelo
+            const promises = pagesToFetch.map(page => 
+                this.requestManager.schedule(
+                    App.createRequest({ url: `${urlBase}?page=${page}`, method: 'GET' }), 
+                    1
+                ).then(res => ({ page, data: res.data }))
+            )
+
+            const results = await Promise.all(promises)
+
+            for (const res of results) {
                 const $page = this.cheerio.load(res.data)
                 const pageChapters = this.parser.parseChapters($page, mangaId)
                 allChapters = allChapters.concat(pageChapters)
+                
+                // CRUCIALE: Controlla se in questa nuova pagina c'è un numero più alto!
+                // Es. Siamo a pagina 7, e qui scopriamo che esiste la 11.
+                const foundMax = this.parser.getChapterPageCount($page)
+                if (foundMax > maxPage) {
+                    maxPage = foundMax // Estende il limite del loop
+                }
             }
         }
 
+        // Rimuove eventuali duplicati e riordina visivamente
         return allChapters.map((chapter, index) => {
             chapter.sortingIndex = index
             return chapter
@@ -133,31 +165,10 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        // FIX: Uso stringhe esplicite invece di HomeSectionType per evitare ReferenceError
-        const trendingSection = App.createHomeSection({ 
-            id: 'trending', 
-            title: 'Trending Comics 🔥', 
-            containsMoreItems: false, 
-            type: 'singleRowLarge' 
-        })
-        const latestSection = App.createHomeSection({ 
-            id: 'latest', 
-            title: 'Latest Updates 🆙', 
-            containsMoreItems: true, 
-            type: 'continuous' 
-        })
-        const topMonthSection = App.createHomeSection({ 
-            id: 'top_month', 
-            title: 'Top Month ⭐', 
-            containsMoreItems: false, 
-            type: 'singleRowNormal' 
-        })
-        const topWeekSection = App.createHomeSection({ 
-            id: 'top_week', 
-            title: 'Top Week ⚡', 
-            containsMoreItems: false, 
-            type: 'singleRowNormal' 
-        })
+        const trendingSection = App.createHomeSection({ id: 'trending', title: 'Trending Comics 🔥', containsMoreItems: false, type: 'singleRowLarge' })
+        const latestSection = App.createHomeSection({ id: 'latest', title: 'Latest Updates 🆙', containsMoreItems: true, type: 'continuous' })
+        const topMonthSection = App.createHomeSection({ id: 'top_month', title: 'Top Month ⭐', containsMoreItems: false, type: 'singleRowNormal' })
+        const topWeekSection = App.createHomeSection({ id: 'top_week', title: 'Top Week ⚡', containsMoreItems: false, type: 'singleRowNormal' })
 
         const requestHome = App.createRequest({ url: this.baseUrl, method: 'GET' })
         const requestNew = App.createRequest({ url: `${this.baseUrl}/new-comic`, method: 'GET' })
@@ -175,13 +186,11 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         const $home = this.cheerio.load(responseHome.data)
         const $new = this.cheerio.load(responseNew.data)
 
-        // Parsing
         trendingSection.items = this.parser.parseTrendingItems($home)
         topMonthSection.items = this.parser.parseTopSectionItems($home, '#topMonth')
         topWeekSection.items = this.parser.parseTopSectionItems($home, '#topWeek')
         latestSection.items = this.parser.parseLatestItems($new)
 
-        // Update UI
         sectionCallback(trendingSection)
         sectionCallback(topMonthSection)
         sectionCallback(topWeekSection)
