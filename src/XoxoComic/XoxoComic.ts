@@ -30,8 +30,8 @@ export const XoxoComicInfo: SourceInfo = {
     websiteBaseURL: DOMAIN,
     sourceTags: [
         {
-            text: 'Comics',
-            type: BadgeColor.GREY,
+            text: 'Comics 🇺🇸',
+            type: BadgeColor.BLUE,
         },
     ],
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,

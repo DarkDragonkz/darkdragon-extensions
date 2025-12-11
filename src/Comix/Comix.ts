@@ -33,8 +33,8 @@ export const ComixInfo: SourceInfo = {
     websiteBaseURL: BASE_URL,
     sourceTags: [
         {
-            text: 'Mixed',
-            type: BadgeColor.GREY,
+            text: 'English 🇬🇧',
+            type: BadgeColor.GREEN,
         },
     ],
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,
