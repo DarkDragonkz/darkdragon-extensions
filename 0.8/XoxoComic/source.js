@@ -732,6 +732,15 @@ var _Sources = (() => {
   // src/XoxoComic/XoxoComicParser.ts
   var BASE_URL = "https://xoxocomic.com";
   var XoxoComicParser = class {
+    // --- HELPER UTILITY ---
+    decodeHTMLEntity(str) {
+      return str.replace(/&#(\d+);/g, (_match, dec) => String.fromCharCode(dec)).replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#039;/g, "'").replace(/&apos;/g, "'");
+    }
+    cleanTitle(title) {
+      let clean = this.decodeHTMLEntity(title);
+      clean = clean.replace(/ - Read Full List of Chapters \| Xoxocomic/i, "").replace(/ Read Full List of Chapters/i, "").replace(/ \| Xoxocomic/i, "").replace(/ Comic$/i, "").replace(/^Read /i, "").replace(/ online$/i, "").trim();
+      return clean;
+    }
     getImageSrc(url) {
       if (!url || url.includes("logo") || url.includes("placeholder")) return "https://paperback.moe/icons/logo-alt.svg";
       if (url.startsWith("data:")) return "https://paperback.moe/icons/logo-alt.svg";
@@ -743,36 +752,81 @@ var _Sources = (() => {
       }
       return url;
     }
-    // Usato per Home (Trending) e Search
-    parseMangaItem($, element) {
-      const item = $(element);
-      let link = item.find("a").first();
-      if (!link.attr("href")) link = item.find("h3 a").first();
-      const href = link.attr("href");
-      const id = href?.split("/").filter((p) => p && p !== "comic" && p !== "xoxocomic.com").pop();
-      if (!id) return null;
-      let title = item.find("h3").text().trim();
-      if (!title) title = link.attr("title") || link.text().trim();
-      if (!title) title = "Unknown Title";
-      let img = item.find("img").first();
-      let imageSrc = img.attr("data-original") || img.attr("data-src") || img.attr("src");
-      if (!imageSrc || imageSrc.startsWith("data:")) {
-        const style = item.find(".div-poster, .image").attr("style");
-        const match = style?.match(/url\(['"]?(.*?)['"]?\)/);
-        if (match) imageSrc = match[1];
-      }
-      const image = this.getImageSrc(imageSrc);
-      const subtitle = item.find(".chapter a").first().text().trim();
-      return App.createPartialSourceManga({
-        mangaId: id,
-        image,
-        title,
-        subtitle: subtitle || void 0
+    // --- PARSER SEZIONI ---
+    // 1. TRENDING (OwlCarousel)
+    parseTrendingItems($) {
+      const items = [];
+      $(".items-slide .item").each((_, item) => {
+        if ($(item).closest(".cloned").length > 0) return;
+        const link = $(item).find("a").first();
+        const id = link.attr("href")?.split("/").pop();
+        let rawTitle = $(item).find(".slide-caption h3 a").text().trim() || link.attr("title") || "Unknown";
+        const title = this.cleanTitle(rawTitle);
+        let imageSrc = $(item).find("img").attr("data-src") || $(item).find("img").attr("src");
+        const image = this.getImageSrc(imageSrc);
+        if (id && title) {
+          items.push(App.createPartialSourceManga({
+            mangaId: id,
+            image,
+            title,
+            subtitle: "Trending"
+          }));
+        }
       });
+      return items;
     }
+    // 2. LATEST UPDATES (Layout /new-comic)
+    parseLatestItems($) {
+      const items = [];
+      $(".items .row .item").each((_, item) => {
+        const el = $(item);
+        const imgLink = el.find(".image a").first();
+        const rawTitle = imgLink.attr("title") || el.find('.message_main label:contains("Alternate Name:")').parent().text().replace("Alternate Name:", "");
+        const title = this.cleanTitle(rawTitle || "Unknown");
+        const href = imgLink.attr("href");
+        const id = href?.split("/").filter((p) => p && p !== "comic").pop();
+        const imageSrc = el.find("img").attr("data-original") || el.find("img").attr("src");
+        const image = this.getImageSrc(imageSrc);
+        const released = el.find('.message_main p:contains("Released:")').text().replace("Released:", "").trim();
+        const subtitle = released ? `Released: ${released}` : void 0;
+        if (id && title) {
+          items.push(App.createPartialSourceManga({
+            mangaId: id,
+            image,
+            title,
+            subtitle
+          }));
+        }
+      });
+      return items;
+    }
+    // 3. TOP MONTH / WEEK
+    parseTopSectionItems($, selector) {
+      const items = [];
+      $(selector + " li").each((_, item) => {
+        const link = $(item).find("h3.title a");
+        const id = link.attr("href")?.split("/").pop();
+        const title = this.cleanTitle(link.text().trim());
+        let imageSrc = $(item).find("img").attr("data-original") || $(item).find("img").attr("src");
+        const image = this.getImageSrc(imageSrc);
+        const chapter = $(item).find("p.chapter a").text().trim();
+        if (id && title) {
+          items.push(App.createPartialSourceManga({
+            mangaId: id,
+            image,
+            title,
+            subtitle: chapter
+          }));
+        }
+      });
+      return items;
+    }
+    // --- DETTAGLI E CAPITOLI ---
     parseMangaDetails($, mangaId) {
-      let title = $(".title-detail").text().trim();
-      if (!title) title = $("h1").first().text().trim();
+      let rawTitle = $(".title-detail").text().trim();
+      if (!rawTitle) rawTitle = $("h1").first().text().trim();
+      if (!rawTitle) rawTitle = $("title").text().trim();
+      const title = this.cleanTitle(rawTitle);
       const imageSrc = $(".col-image img").attr("src");
       const image = this.getImageSrc(imageSrc);
       let desc = $(".detail-content p").first().text().trim();
@@ -806,21 +860,14 @@ var _Sources = (() => {
         })
       });
     }
-    // FIX PAGINAZIONE: Più robusto, guarda anche il testo del link
     getChapterPageCount($) {
       let maxPage = 1;
       $(".pagination li a").each((_, el) => {
         const href = $(el).attr("href");
-        const text = $(el).text().trim();
-        const textNum = parseInt(text);
-        if (!isNaN(textNum)) {
-          if (textNum > maxPage) maxPage = textNum;
-        } else if (href) {
-          const match = href.match(/page=(\d+)/);
-          if (match) {
-            const num = parseInt(match[1]);
-            if (num > maxPage) maxPage = num;
-          }
+        const match = href?.match(/page=(\d+)/);
+        if (match) {
+          const num = parseInt(match[1]);
+          if (num > maxPage) maxPage = num;
         }
       });
       return maxPage;
@@ -878,7 +925,6 @@ var _Sources = (() => {
           id: chapterId,
           name,
           chapNum,
-          volume: void 0,
           time,
           langCode: "en"
         }));
@@ -889,10 +935,7 @@ var _Sources = (() => {
       const pages = [];
       const imgRegex = /<img[^>]+data-original=["']([^"']+)["']/g;
       let match;
-      while ((match = imgRegex.exec(html)) !== null) {
-        const url = match[1];
-        if (url) pages.push(this.getImageSrc(url));
-      }
+      while ((match = imgRegex.exec(html)) !== null) if (match[1]) pages.push(this.getImageSrc(match[1]));
       if (pages.length === 0) {
         const genericRegex = /<img[^>]+src=["']([^"']+)["']/g;
         while ((match = genericRegex.exec(html)) !== null) {
@@ -902,93 +945,33 @@ var _Sources = (() => {
           }
         }
       }
-      return App.createChapterDetails({
-        id: chapterId,
-        mangaId,
-        pages
-      });
+      return App.createChapterDetails({ id: chapterId, mangaId, pages });
     }
+    // Per Search e Grid generiche
     parseGridItems($) {
       const results = [];
       const seenIds = /* @__PURE__ */ new Set();
       $(".item, .list-truyen-item-wrap, .search-story-item").each((_, item) => {
-        const manga = this.parseMangaItem($, item);
-        if (manga && !seenIds.has(manga.mangaId)) {
-          seenIds.add(manga.mangaId);
-          results.push(manga);
-        }
+        const el = $(item);
+        let link = el.find("a").first();
+        if (!link.attr("href")) link = el.find("h3 a").first();
+        const href = link.attr("href");
+        const id = href?.split("/").filter((p) => p && p !== "comic" && p !== "xoxocomic.com").pop();
+        if (!id || seenIds.has(id)) return;
+        let rawTitle = el.find("h3").text().trim() || link.attr("title") || "Unknown";
+        const title = this.cleanTitle(rawTitle);
+        let imageSrc = el.find("img").attr("data-original") || el.find("img").attr("src");
+        const image = this.getImageSrc(imageSrc);
+        const subtitle = el.find(".chapter a").first().text().trim();
+        seenIds.add(id);
+        results.push(App.createPartialSourceManga({
+          mangaId: id,
+          image,
+          title,
+          subtitle: subtitle || void 0
+        }));
       });
       return results;
-    }
-    // --- SEZIONI HOME PAGE ---
-    parseHomeSections($, trending, topMonth, topWeek) {
-      const trendingItems = [];
-      $(".items-slide .item").each((_, item) => {
-        if ($(item).closest(".cloned").length > 0) return;
-        const el = $(item);
-        const link = el.find("a").first();
-        const id = link.attr("href")?.split("/").pop();
-        const title = el.find(".slide-caption h3 a").text().trim() || link.attr("title");
-        let imageSrc = el.find("img").attr("src") || el.find("img").attr("data-src");
-        const image = this.getImageSrc(imageSrc);
-        if (id && title) {
-          trendingItems.push(App.createPartialSourceManga({
-            mangaId: id,
-            image,
-            title,
-            subtitle: "Trending"
-          }));
-        }
-      });
-      trending.items = trendingItems;
-      const parseTop = (selector) => {
-        const items = [];
-        $(selector + " li").each((_, item) => {
-          const link = $(item).find("h3.title a");
-          const id = link.attr("href")?.split("/").pop();
-          const title = link.text().trim();
-          let imageSrc = $(item).find(".thumb img").attr("data-original") || $(item).find(".thumb img").attr("src");
-          const image = this.getImageSrc(imageSrc);
-          const chapter = $(item).find("p.chapter a").text().trim();
-          if (id && title) {
-            items.push(App.createPartialSourceManga({
-              mangaId: id,
-              image,
-              title,
-              subtitle: chapter
-            }));
-          }
-        });
-        return items;
-      };
-      topMonth.items = parseTop("#topMonth");
-      topWeek.items = parseTop("#topWeek");
-    }
-    // NUOVO PARSER SPECIFICO PER /NEW-COMIC
-    // Questo risolve il problema di Latest Updates vuoto
-    parseLatestItems($) {
-      const items = [];
-      $(".items .row .item").each((_, item) => {
-        const el = $(item);
-        const imgLink = el.find("figure .image a").first();
-        const title = imgLink.attr("title")?.replace(" Comic", "")?.replace("Read ", "")?.replace(" online", "")?.trim();
-        const href = imgLink.attr("href");
-        const id = href?.split("/").filter((p) => p && p !== "comic").pop();
-        const img = el.find("figure .image img");
-        const imageSrc = img.attr("src") || img.attr("data-original");
-        const image = this.getImageSrc(imageSrc);
-        const released = el.find('.message_main p:contains("Released:")').text().replace("Released:", "").trim();
-        const subtitle = released ? `Released: ${released}` : void 0;
-        if (id && title) {
-          items.push(App.createPartialSourceManga({
-            mangaId: id,
-            image,
-            title,
-            subtitle
-          }));
-        }
-      });
-      return items;
     }
   };
 
@@ -1110,9 +1093,10 @@ var _Sources = (() => {
       ]);
       const $home = this.cheerio.load(responseHome.data);
       const $new = this.cheerio.load(responseNew.data);
-      this.parser.parseHomeSections($home, trendingSection, topMonthSection, topWeekSection);
-      const latestItems = this.parser.parseGridItems($new);
-      latestSection.items = latestItems;
+      trendingSection.items = this.parser.parseTrendingItems($home);
+      topMonthSection.items = this.parser.parseTopSectionItems($home, "#topMonth");
+      topWeekSection.items = this.parser.parseTopSectionItems($home, "#topWeek");
+      latestSection.items = this.parser.parseLatestItems($new);
       sectionCallback(trendingSection);
       sectionCallback(topMonthSection);
       sectionCallback(topWeekSection);
@@ -1125,7 +1109,7 @@ var _Sources = (() => {
         const request = App.createRequest({ url, method: "GET" });
         const response = await this.requestManager.schedule(request, 1);
         const $ = this.cheerio.load(response.data);
-        const manga = this.parser.parseGridItems($);
+        const manga = this.parser.parseLatestItems($);
         const nextPage = manga.length > 0 ? page + 1 : void 0;
         return App.createPagedResults({
           results: manga,
