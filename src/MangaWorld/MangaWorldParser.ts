@@ -1,173 +1,260 @@
 import {
-    Manga,
     Chapter,
     ChapterDetails,
     HomeSection,
-    App,
-    MangaStatus,
-    TagSection
-} from '@paperback/types';
+    HomeSectionType,
+    SourceManga,
+    PartialSourceManga,
+    Tag,
+    TagSection,
+} from '@paperback/types'
 
-const MW_CDN = 'https://cdn.mangaworld.mx';
-const MW_DOMAIN = 'https://www.mangaworld.mx';
+const BASE_URL = 'https://www.mangaworld.mx'
 
 export class MangaWorldParser {
 
-    // --- UTILS: Estrazione JSON nascosto ($MC) ---
-    extractMcData(html: string): any {
-        try {
-            // Regex per catturare il contenuto dentro $MC=(window.$MC||[]).concat({...})
-            // Basato sull'analisi dei file: e 
-            const regex = /\$MC\=\(window\.\$MC\|\|\[\]\)\.concat\((.*)\)\<\/script\>/;
-            const match = html.match(regex);
-            
-            if (!match || !match[1]) return null;
-
-            const jsonString = match[1];
-            const parsed = JSON.parse(jsonString);
-            
-            // Il JSON è frammentato in un array "w". Uniamo i pezzi.
-            if (parsed.w && Array.isArray(parsed.w)) {
-                let mergedData: any = {};
-                for (const item of parsed.w) {
-                    if (item && item.length >= 3 && typeof item[2] === 'object') {
-                        mergedData = { ...mergedData, ...item[2] };
-                    }
-                }
-                return mergedData;
+    /**
+     * Pulisce i titoli duplicati (es. "NarutoNaruto" -> "Naruto")
+     */
+    private cleanTitle(title: string): string {
+        if (!title) return 'Unknown'
+        title = title.trim()
+        if (title.length > 0 && title.length % 2 === 0) {
+            const half = title.substring(0, title.length / 2)
+            if (half === title.substring(title.length / 2)) {
+                return half
             }
-            return parsed;
-        } catch (e) {
-            console.error(`[MangaWorldParser] Error extracting JSON: ${e}`);
-            return null;
         }
+        return title
     }
 
-    parseMangaDetails(data: any, mangaId: string): Manga {
-        const mangaData = data.manga;
-        if (!mangaData) throw new Error(`Dati non trovati per il manga: ${mangaId}`);
-
-        // Parsing Stato
-        let status = MangaStatus.ONGOING;
-        if (mangaData.status === 'COMPLETED') status = MangaStatus.COMPLETED;
-        if (mangaData.status === 'DROPPED') status = MangaStatus.ABANDONED;
-
-        // Parsing Tags
-        const tags: TagSection[] = [];
-        if (mangaData.genres && Array.isArray(mangaData.genres)) {
-            tags.push(App.createTagSection({
-                id: 'genres',
-                label: 'Generi',
-                tags: mangaData.genres.map((g: any) => App.createTag({ id: g._id, label: g.name }))
-            }));
+    /**
+     * Helper centralizzato per estrarre l'URL dell'immagine gestendo lazy loading e path relativi.
+     */
+    private getImageSrc(element: any): string {
+        let image = element.attr('src') ?? ''
+        
+        // Gestione Lazy Load: MangaWorld usa spesso data-original o data-src
+        if (!image || image.includes('loading') || image.startsWith('data:')) {
+            image = element.attr('data-src') ?? element.attr('data-original') ?? ''
+        }
+        
+        // Fix path relativi
+        if (image && image.startsWith('/')) {
+            image = BASE_URL + image
         }
 
-        const desc = mangaData.trama || "Nessuna descrizione disponibile.";
-        const image = mangaData.image ? `${MW_CDN}/mangas/${mangaData.image.split('/').pop()}` : '';
-
-        return App.createManga({
-            id: mangaId,
-            titles: [mangaData.title, ...(mangaData.extraTitles || [])],
-            image: image,
-            status: status,
-            artist: mangaData.artist ? mangaData.artist[0] : 'Unknown',
-            author: mangaData.author ? mangaData.author[0] : 'Unknown',
-            desc: desc,
-            tags: tags,
-            rating: mangaData.vm18 ? 18 : 0
-        });
+        return image || 'https://paperback.moe/icons/logo-alt.svg'
     }
 
-    parseChapterList(data: any, mangaId: string): Chapter[] {
-        // Se i capitoli non sono nel JSON principale, controlliamo se esistono fallback
-        // Tuttavia, basandoci sul file "Reader Capitolo.txt" , l'array "chapters" è presente.
-        if (!data || !data.chapters || !Array.isArray(data.chapters)) {
-            return [];
+    /**
+     * Helper centralizzato per parsare un elemento della lista (Home, Search, ViewMore).
+     */
+    private parseCommonManga($: any, element: any, extraSubtitleSelector?: string): PartialSourceManga {
+        const href = $('a', element).attr('href') ?? ''
+        const id = href.match(/[0-9]+\/[a-zA-Z0-9\-]+/i)?.[0] ?? ''
+
+        // Titolo
+        let title = $('a', element).attr('title') 
+        if (!title) title = $('.name', element).text().trim()
+        if (!title) title = $('.manga-title', element).text().trim()
+        title = this.cleanTitle(title ?? 'Unknown')
+
+        // Immagine
+        const imgElement = $('a img', element)
+        const image = this.getImageSrc(imgElement)
+
+        // Sottotitolo (opzionale)
+        let subtitle: string | undefined = undefined
+        if (extraSubtitleSelector) {
+            subtitle = $(extraSubtitleSelector, element).first().attr('title') ?? $(extraSubtitleSelector, element).first().text().trim()
         }
 
-        return data.chapters.map((chap: any) => {
-            // Esempio nome: "Capitolo 1168" 
-            const chapNum = parseFloat(chap.name.replace(/[^0-9.]/g, '')) || 0;
+        return App.createPartialSourceManga({
+            image,
+            title,
+            mangaId: id,
+            subtitle
+        })
+    }
+
+    parseMangaDetails($: any, mangaId: string): SourceManga {
+        let title = $('.name.bigger').text().trim() ?? ''
+        title = this.cleanTitle(title)
+        
+        const image = this.getImageSrc($('.thumb.mb-3.text-center img'))
+        const desc = $('#noidungm').text().trim() ?? ''
+        
+        let hentai = false
+        let author = 'Unknown'
+        let artist = 'Unknown'
+        
+        // Parsing robusto dei metadati (non basato su indici fissi)
+        $('.meta-data.row.px-1 .col-12').each((_: any, obj: any) => {
+            const text = $(obj).text().trim()
+            if (text.toLowerCase().includes('autore:')) {
+                author = text.replace(/autore:\s*/i, '').trim()
+            } else if (text.toLowerCase().includes('artista:')) {
+                artist = text.replace(/artista:\s*/i, '').trim()
+            }
+        })
+
+        // Generi
+        const arrayTags: Tag[] = []
+        $('.meta-data.row.px-1 .col-12 a[href*="genre="]').each((_: any, e: any) => {
+            const label = $(e).text().trim()
+            const id = $(e).attr('href')?.split('genre=')[1] ?? label
             
-            return App.createChapter({
-                id: chap._id, // ID interno univoco es. "6935ba7f652a974e100d5533" 
-                name: chap.name + (chap.title ? ` - ${chap.title}` : ''),
-                chapNum: chapNum,
-                time: new Date(chap.createdAt),
-                langCode: 'it',
-                mangaId: mangaId
-            });
-        });
+            if (['ADULTI', 'SMUT', 'MATURO', 'HENTAI'].includes(id.toUpperCase())) hentai = true
+            if (id && label) arrayTags.push({ id, label })
+        })
+
+        const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags.map(x => App.createTag(x)) })]
+        
+        return App.createSourceManga({
+            id: mangaId,
+            mangaInfo: App.createMangaInfo({
+                titles: [title],
+                image,
+                status: 'Ongoing', // MangaWorld non espone chiaramente lo status completato nei meta rapidi
+                artist,
+                author,
+                tags: tagSections,
+                desc,
+                hentai,
+            }),
+        })
     }
 
-    parseChapterDetails(data: any, mangaId: string, chapterId: string): ChapterDetails {
-        if (!data || !data.chapter || !data.chapter.pages) {
-            throw new Error('Impossibile caricare le pagine del capitolo.');
+    parseChapters($: any, mangaId: string): Chapter[] {
+        const chapters: Chapter[] = []
+        // .toArray().reverse() è corretto se il sito li lista dal più recente al più vecchio e vogliamo l'ordine inverso,
+        // ma Paperback gestisce l'ordinamento. Solitamente meglio passarli come arrivano e lasciare sortingIndex.
+        const arrChapters = $('.chapter').toArray()
+
+        for (const item of arrChapters) {
+            const link = $('a', item)
+            const id = link.attr('href')?.replace(`${BASE_URL}/manga/${mangaId}/read/`, '') ?? ''
+            const name = link.attr('title') ?? ''
+            
+            // Estrazione numero capitolo più sicura
+            const chapText = $('.d-inline-block', item).text().trim() // Es: "Capitolo 123"
+            const chapNumMatch = chapText.match(/(\d+(\.\d+)?)/)
+            const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0
+
+            chapters.push(
+                App.createChapter({
+                    id,
+                    name,
+                    chapNum,
+                    time: new Date(), // MangaWorld non ha date precise facili da parsare nel formato lista standard
+                    langCode: 'it',
+                })
+            )
         }
+        return chapters
+    }
 
-        const mangaObj = data.manga;
-        const volObj = data.volume;
-        const chapObj = data.chapter;
-
-        // Costruzione URL CDN basata su analisi 
-        const mangaPart = `${mangaObj.slugFolder}-${mangaObj._id}`;
-        const volPart = volObj ? `${volObj.slugFolder}-${volObj._id}` : 'unknown-volume'; 
-        const chapPart = `${chapObj.slugFolder}-${chapObj._id}`;
-
-        const pages: string[] = chapObj.pages.map((filename: string) => {
-            return `${MW_CDN}/chapters/${mangaPart}/${volPart}/${chapPart}/${filename}`;
-        });
+    parseChapterDetails($: any, mangaId: string, id: string): ChapterDetails {
+        const pages: string[] = []
+        
+        // Selettore per le immagini del reader
+        $('.col-12.text-center.position-relative img').each((_: any, item: any) => {
+            const url = this.getImageSrc($(item))
+            if (url && !url.includes('logo-alt.svg')) { // Evita il fallback image
+                pages.push(url.trim())
+            }
+        })
 
         return App.createChapterDetails({
-            id: chapterId,
-            mangaId: mangaId,
-            pages: pages
-        });
+            id,
+            mangaId,
+            pages,
+        })
     }
 
-    parseHomeSection(data: any, sectionId: string): Manga[] {
-        let sourceData: any[] = [];
+    parseTags($: any, baseUrl: string): TagSection[] {
+        const genres: Tag[] = []
+        // Evita duplicati usando un Set o controllando
+        const seen = new Set<string>()
 
-        // Logica basata su Homepage.txt e 
-        if (sectionId === 'popular' && data.globalData?.topMangas) {
-            sourceData = data.globalData.topMangas;
-        } else if (sectionId === 'latest' && data.globalData?.latestMangas) {
-            sourceData = data.globalData.latestMangas;
-        }
-
-        return sourceData.map((m: any) => {
-            return App.createManga({
-                id: `${m.linkId}/${m.slug}`, // ID Composto per navigazione sicura
-                titles: [m.title],
-                image: m.imageT || `${MW_CDN}/mangas/${m._id}.jpg`,
-                status: MangaStatus.ONGOING,
-                subtitle: m.latestChapter ? `Cap. ${m.latestChapter}` : undefined
-            });
-        });
+        $('.dropdown-menu.dropdown-multicol .dropdown-item').each((_: any, item: any) => {
+            const id = $(item).attr('href')?.split('genre=')[1]
+            const label = $(item).text().trim()
+            
+            if (id && label && !seen.has(id)) {
+                seen.add(id)
+                genres.push(App.createTag({ label, id }))
+            }
+        })
+        return [App.createTagSection({ id: '0', label: 'Generi', tags: genres })]
     }
 
-    // Fallback: Parsing HTML per la ricerca se l'API non è disponibile
-    parseSearchResults($: any): Manga[] {
-        const results: Manga[] = [];
-        $('.entry').each((_: any, element: any) => {
-            const link = $(element).find('a.thumb');
-            const url = link.attr('href');
-            const img = link.find('img').attr('src');
-            const title = $(element).find('.manga-title').text().trim();
+    parseSearchResults($: any): PartialSourceManga[] {
+        const results: PartialSourceManga[] = []
+        $('.comics-grid .entry').each((_: any, item: any) => {
+            results.push(this.parseCommonManga($, item))
+        })
+        return results
+    }
 
-            if (!url) return;
+    parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
+        
+        // 1. Manga del Mese -> SINGLE ROW LARGE (Vetrina)
+        const sectionMonth = App.createHomeSection({
+            id: '2', // Manteniamo gli ID originali per compatibilità getViewMoreItems
+            title: 'Manga del Mese 🌟',
+            containsMoreItems: true,
+            type: HomeSectionType.singleRowLarge 
+        })
 
-            // Extract ID: /manga/1708/one-piece -> 1708/one-piece
-            const parts = url.replace(MW_DOMAIN, '').split('/').filter(Boolean);
-            const id = parts.length >= 3 ? `${parts[1]}/${parts[2]}` : parts[1];
+        // 2. Ultimi Capitoli -> CONTINUOUS (Scroll Infinito verticale)
+        const sectionLatest = App.createHomeSection({
+            id: '1',
+            title: 'Ultimi Capitoli 🔥',
+            containsMoreItems: true,
+            type: HomeSectionType.continuous 
+        })
 
-            results.push(App.createManga({
-                id: id,
-                titles: [title],
-                image: img || '',
-                status: MangaStatus.ONGOING
-            }));
-        });
-        return results;
+        // 3. In Tendenza -> SINGLE ROW NORMAL (Carosello orizzontale)
+        const sectionTrending = App.createHomeSection({
+            id: '3',
+            title: 'In Tendenza 📈',
+            containsMoreItems: true,
+            type: HomeSectionType.singleRowNormal,
+        })
+
+        // Popolamento MONTH (Hot)
+        const monthItems: PartialSourceManga[] = []
+        $('.col-12 .top-wrapper .entry').each((i: number, item: any) => {
+            if (i < 10) monthItems.push(this.parseCommonManga($, item))
+        })
+        sectionMonth.items = monthItems
+        sectionCallback(sectionMonth)
+
+        // Popolamento LATEST (Colonna centrale)
+        const latestItems: PartialSourceManga[] = []
+        $('.col-sm-12.col-md-8.col-xl-9 .comics-grid .entry').each((_: any, item: any) => {
+            // Qui passiamo il selettore per il capitolo recente come sottotitolo
+            latestItems.push(this.parseCommonManga($, item, '.d-flex.flex-wrap.flex-row a'))
+        })
+        sectionLatest.items = latestItems
+        sectionCallback(sectionLatest)
+
+        // Popolamento TRENDING (Sidebar)
+        const trendingItems: PartialSourceManga[] = []
+        $('.entry.vertical').each((_: any, item: any) => {
+            trendingItems.push(this.parseCommonManga($, item))
+        })
+        sectionTrending.items = trendingItems
+        sectionCallback(sectionTrending)
+    }
+
+    parseViewMore($: any): PartialSourceManga[] {
+        const results: PartialSourceManga[] = []
+        $('.comics-grid .entry').each((_: any, item: any) => {
+            results.push(this.parseCommonManga($, item, '.d-flex.flex-wrap.flex-row a'))
+        })
+        return results
     }
 }

@@ -1,150 +1,212 @@
 import {
-    Source,
-    Manga,
     Chapter,
     ChapterDetails,
-    HomeSection,
-    SearchRequest,
-    PagedResults,
-    SourceInfo,
     ContentRating,
-    Request,
-    Response,
+    HomeSection,
+    PagedResults,
+    SearchRequest,
+    SourceInfo,
     SourceIntents,
-    HomeSectionType,
-    App
-} from '@paperback/types';
-import { MangaWorldParser } from './MangaWorldParser';
+    SourceManga,
+    BadgeColor,
+    SearchResultsProviding,
+    MangaProviding,
+    ChapterProviding,
+    HomePageSectionsProviding,
+    TagSection,
+    PartialSourceManga,
+} from '@paperback/types'
 
-const MW_DOMAIN = 'https://www.mangaworld.mx';
+import { MangaWorldParser } from './MangaWorldParser'
+import { URLBuilder } from '../helper'
+
+const MW_DOMAIN = 'https://www.mangaworld.mx'
 
 export const MangaWorldInfo: SourceInfo = {
-    version: '1.0.1',
+    version: '3.4.0', // Major bump per refactoring e UI
     name: 'MangaWorld',
+    description: 'Extension that pulls manga from MangaWorld.',
+    author: 'NmN & DarkDragonkz',
+    authorWebsite: 'http://github.com/pandeynmm',
     icon: 'icon.png',
-    author: 'Paperback Community',
-    authorWebsite: 'https://github.com/paperback-community',
-    description: 'Estensione per MangaWorld (Scan ITA) basata su estrazione JSON diretta.',
-    contentRating: ContentRating.MATURE,
+    contentRating: ContentRating.EVERYONE,
+    language: 'it',
     websiteBaseURL: MW_DOMAIN,
     sourceTags: [
-        { text: 'Italiano', type: 'badge' },
-        { text: 'Scan', type: 'badge' }
+        {
+            text: 'Italian 🇮🇹',
+            type: BadgeColor.RED
+        },
     ],
-    intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
-};
+    intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,
+}
 
-export class MangaWorld extends Source {
-    private parser = new MangaWorldParser();
+export class MangaWorld implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding { 
+    baseUrl = MW_DOMAIN
+    
+    constructor(private cheerio: any) {}
+    
+    // RIDOTTO A 2: 10 retry causano blocchi infiniti se il sito è down
+    RETRIES = 2
+    parser = new MangaWorldParser()
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 3,
-        requestTimeout: 15000,
+        requestsPerSecond: 5, // Abbassato leggermente per sicurezza
+        requestTimeout: 20000,
         interceptor: {
-            interceptRequest: async (request: Request): Promise<Request> => {
+            interceptRequest: async (request: any) => {
                 request.headers = {
-                    ...request.headers,
-                    'Referer': MW_DOMAIN,
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                };
-                return request;
+                    ...(request.headers ?? {}),
+                    'referer': `${this.baseUrl}/`,
+                    'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                }
+                return request
             },
-            interceptResponse: async (response: Response): Promise<Response> => {
-                return response;
+            interceptResponse: async (response: any) => {
+                return response
             }
         }
-    });
+    })
+    
+    getMangaShareUrl(mangaId: string): string {
+        return `${this.baseUrl}/manga/${mangaId}`
+    }
 
-    async getMangaDetails(mangaId: string): Promise<Manga> {
+    async getMangaDetails(mangaId: string): Promise<SourceManga> {
         const request = App.createRequest({
-            url: `${MW_DOMAIN}/manga/${mangaId}`,
-            method: 'GET'
-        });
-
-        const response = await this.requestManager.schedule(request, 1);
-        const data = this.parser.extractMcData(response.data);
-        
-        // Fallback: se il JSON fallisce, si potrebbe implementare un parsing HTML qui
-        if (!data) throw new Error('Failed to extract JSON data from MangaWorld');
-
-        return this.parser.parseMangaDetails(data, mangaId);
+            url: `${this.baseUrl}/manga/${mangaId}`,
+            method: 'GET',
+        })
+        const response = await this.requestManager.schedule(request, this.RETRIES)
+        const $ = this.cheerio.load(response.data)
+        return this.parser.parseMangaDetails($, mangaId)
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
         const request = App.createRequest({
-            url: `${MW_DOMAIN}/manga/${mangaId}`,
-            method: 'GET'
-        });
-
-        const response = await this.requestManager.schedule(request, 1);
-        const data = this.parser.extractMcData(response.data);
-
-        return this.parser.parseChapterList(data, mangaId);
+            url: `${this.baseUrl}/manga/${mangaId}`,
+            method: 'GET',
+        })
+        const response = await this.requestManager.schedule(request, this.RETRIES)
+        const $ = this.cheerio.load(response.data)
+        return this.parser.parseChapters($, mangaId)
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // Costruzione URL di lettura: necessita di un path valido.
-        // MangaId è tipo "1708/one-piece".
-        const url = `${MW_DOMAIN}/manga/${mangaId}/read/${chapterId}`;
-
         const request = App.createRequest({
-            url: url,
-            method: 'GET'
-        });
+            url: `${this.baseUrl}/manga/${mangaId}/read/${chapterId}/?style=list`,
+            method: 'GET',
+        })
+        const response = await this.requestManager.schedule(request, this.RETRIES)
+        const $ = this.cheerio.load(response.data)
+        return this.parser.parseChapterDetails($, mangaId, chapterId)
+    }
 
-        const response = await this.requestManager.schedule(request, 1);
-        const data = this.parser.extractMcData(response.data);
+    async getTags(): Promise<TagSection[]> {
+        const request = App.createRequest({
+            url: this.baseUrl,
+            method: 'GET',
+        })
+        const response = await this.requestManager.schedule(request, this.RETRIES)
+        const $ = this.cheerio.load(response.data)
+        return this.parser.parseTags($, this.baseUrl)
+    }
 
-        return this.parser.parseChapterDetails(data, mangaId, chapterId);
+    async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
+        let page = metadata?.page ?? 1
+        // Se page è -1, abbiamo finito i risultati
+        if (page === -1) return App.createPagedResults({ results: [], metadata: undefined })
+        
+        const request = this.constructSearchRequest(page, query)
+        
+        const response = await this.requestManager.schedule(request, this.RETRIES)
+        const $ = this.cheerio.load(response.data)
+        const manga = this.parser.parseSearchResults($)
+        
+        // Logica paginazione
+        const nextPage = manga.length > 0 ? page + 1 : undefined
+
+        return App.createPagedResults({
+            results: manga,
+            metadata: nextPage ? { page: nextPage } : undefined,
+        })
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
         const request = App.createRequest({
-            url: MW_DOMAIN,
-            method: 'GET'
-        });
-
-        const response = await this.requestManager.schedule(request, 1);
-        const data = this.parser.extractMcData(response.data);
-
-        // 1. Popular Section
-        const popularSection = App.createHomeSection({
-            id: 'popular',
-            title: 'In Tendenza',
-            containsMoreItems: false,
-            type: HomeSectionType.singleRowLarge
-        });
-        popularSection.items = this.parser.parseHomeSection(data, 'popular');
-        sectionCallback(popularSection);
-
-        // 2. Latest Section
-        const latestSection = App.createHomeSection({
-            id: 'latest',
-            title: 'Ultime Aggiunte',
-            containsMoreItems: true,
-            type: HomeSectionType.simpleRow
-        });
-        latestSection.items = this.parser.parseHomeSection(data, 'latest');
-        sectionCallback(latestSection);
+            url: `${this.baseUrl}`,
+            method: 'GET',
+        })
+        const response = await this.requestManager.schedule(request, this.RETRIES)
+        const $ = this.cheerio.load(response.data)
+        this.parser.parseHomeSections($, sectionCallback)
     }
 
-    async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        const page = metadata?.page || 1;
-        const searchUrl = `${MW_DOMAIN}/archive?keyword=${encodeURIComponent(query.title || '')}&page=${page}`;
+    async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
+        const page = metadata?.page ?? 1
+        let url = ''
+
+        switch (homepageSectionId) {
+            case '1': // Ultimi capitoli (corrisponde alla home paginata)
+                url = `${this.baseUrl}/?page=${page}`
+                break
+            case '2': // Manga del mese (archivio most_read)
+                url = `${this.baseUrl}/archive?sort=most_read&page=${page}`
+                break
+            case '3': // In tendenza (archivio most_read fallback)
+                url = `${this.baseUrl}/archive?sort=most_read&page=${page}`
+                break
+            default:
+                return App.createPagedResults({ results: [] })
+        }
 
         const request = App.createRequest({
-            url: searchUrl,
-            method: 'GET'
-        });
-
-        const response = await this.requestManager.schedule(request, 1);
-        const $ = this.cheerio.load(response.data);
+            url: url,
+            method: 'GET',
+        })
+        const response = await this.requestManager.schedule(request, this.RETRIES)
+        const $ = this.cheerio.load(response.data)
+        const manga: PartialSourceManga[] = this.parser.parseViewMore($)
         
-        const results = this.parser.parseSearchResults($);
-
+        const nextPage = manga.length > 0 ? page + 1 : undefined
+        
         return App.createPagedResults({
-            results: results,
-            metadata: { page: page + 1 }
-        });
+            results: manga,
+            metadata: nextPage ? { page: nextPage } : undefined,
+        })
+    }
+
+    async getCloudflareBypassRequestAsync() {
+        return App.createRequest({
+            url: this.baseUrl,
+            method: 'GET',
+            headers: {
+                'referer': `${this.baseUrl}/`,
+                'origin': `${this.baseUrl}/`,
+                'user-agent': await this.requestManager.getDefaultUserAgent()
+            }
+        })
+    }
+
+    constructSearchRequest(page: number, query: SearchRequest): any {
+        const builder = new URLBuilder(this.baseUrl)
+            .addPathComponent('archive')
+            .addQueryParameter('page', page.toString())
+
+        if (query.title) {
+            builder.addQueryParameter('keyword', encodeURIComponent(query.title))
+        }
+
+        if (query.includedTags && query.includedTags.length > 0) {
+            // Seleziona il primo tag per filtrare (MangaWorld solitamente supporta 1 filtro genere alla volta via GET semplice)
+            builder.addQueryParameter('genre', query.includedTags[0]?.id)
+        }
+
+        builder.addQueryParameter('sort', 'most_read')
+
+        return App.createRequest({
+            url: builder.buildUrl({ addTrailingSlash: true, includeUndefinedParameters: false }),
+            method: 'GET',
+        })
     }
 }
