@@ -733,57 +733,16 @@ var _Sources = (() => {
   var BASE_URL = "https://www.mangaworld.mx";
   var MangaWorldParser = class {
     /**
-     * Parsing Date Italiane (Feature della 3.6.0)
+     * Pulisce i titoli duplicati (es. "NarutoNaruto" -> "Naruto")
      */
-    parseItalianDate(dateStr) {
-      const months = {
-        "gennaio": 0,
-        "febbraio": 1,
-        "marzo": 2,
-        "aprile": 3,
-        "maggio": 4,
-        "giugno": 5,
-        "luglio": 6,
-        "agosto": 7,
-        "settembre": 8,
-        "ottobre": 9,
-        "novembre": 10,
-        "dicembre": 11,
-        "january": 0,
-        "february": 1,
-        "march": 2,
-        "april": 3,
-        "may": 4,
-        "june": 5,
-        "july": 6,
-        "august": 7,
-        "september": 8,
-        "october": 9,
-        "november": 10,
-        "december": 11
-      };
-      dateStr = dateStr.toLowerCase().trim();
-      if (dateStr.includes("oggi")) return /* @__PURE__ */ new Date();
-      if (dateStr.includes("ieri")) {
-        const d = /* @__PURE__ */ new Date();
-        d.setDate(d.getDate() - 1);
-        return d;
-      }
-      const parts = dateStr.split(" ");
-      if (parts.length >= 3) {
-        const day = parseInt(parts[0] ?? "1");
-        const monthName = parts[1] ?? "";
-        const year = parseInt(parts[2] ?? (/* @__PURE__ */ new Date()).getFullYear().toString());
-        if (months[monthName] !== void 0) return new Date(year, months[monthName], day);
-      }
-      return /* @__PURE__ */ new Date();
-    }
     cleanTitle(title) {
       if (!title) return "Unknown";
       title = title.trim();
       if (title.length > 0 && title.length % 2 === 0) {
         const half = title.substring(0, title.length / 2);
-        if (half === title.substring(title.length / 2)) return half;
+        if (half === title.substring(title.length / 2)) {
+          return half;
+        }
       }
       return title;
     }
@@ -792,10 +751,12 @@ var _Sources = (() => {
       if (!image || image.includes("loading") || image.startsWith("data:")) {
         image = element.attr("data-src") ?? element.attr("data-original") ?? "";
       }
-      if (image && image.startsWith("/")) image = BASE_URL + image;
+      if (image && image.startsWith("/")) {
+        image = BASE_URL + image;
+      }
       return image || "https://paperback.moe/icons/logo-alt.svg";
     }
-    // --- LOGICA DI PARSING (Basata sulla 3.4.0 FUNZIONANTE) ---
+    // --- PARSERS ---
     parseMangaDetails($, mangaId) {
       const infoBox = $(".comic-info");
       const rawTitle = $(".comic-title", infoBox).text().trim();
@@ -807,7 +768,7 @@ var _Sources = (() => {
       let status = "Ongoing";
       let artist = "Unknown";
       $(".meta-data .row").each((_, row) => {
-        const label = $(row).text().toLowerCase();
+        const label = $(row).find("label").text().toLowerCase();
         const value = $(row).find("span, a").text().trim();
         if (label.includes("autore")) author = value;
         if (label.includes("artista")) artist = value;
@@ -839,24 +800,25 @@ var _Sources = (() => {
     }
     parseChapters($, mangaId) {
       const chapters = [];
-      $(".chapter-list .chapter-item, .list-chapters .chapter-item").each((_, item) => {
+      $(".chapter-list .chapter-item").each((_, item) => {
         const link = $(item).find("a");
         const href = link.attr("href");
         if (!href) return;
         const chapterId = href.split("/").pop() ?? "";
-        const titleText = link.text().trim();
-        const dateText = $(item).find(".chapter-date, .date").text().trim();
-        const time = this.parseItalianDate(dateText);
-        const volMatch = titleText.match(/Vol\.?\s*(\d+)/i);
-        const chapMatch = titleText.match(/(?:Cap|Ch)\.?\s*(\d+(\.\d+)?)/i);
+        const rawTitle = link.text().trim();
+        const time = /* @__PURE__ */ new Date();
+        const volMatch = rawTitle.match(/Vol\.?\s*(\d+)/i);
+        const chapMatch = rawTitle.match(/(?:Cap|Ch)\.?\s*(\d+(\.\d+)?)/i);
         const volNum = volMatch ? parseInt(volMatch[1] ?? "0") : void 0;
         const chapNum = chapMatch ? parseFloat(chapMatch[1] ?? "0") : 0;
         let name = "";
-        const cleanName = titleText.replace(/Capitolo\s*\d+(\.\d+)?\s*-?\s*/i, "").trim();
-        if (cleanName.length > 0 && cleanName.toLowerCase() !== `capitolo ${chapNum}`) {
-          name = cleanName;
-        } else {
-          name = `Capitolo ${chapNum}`;
+        if (volNum !== void 0) name += `Vol. ${volNum} `;
+        name += `Ch. ${chapNum}`;
+        if (rawTitle.includes("-")) {
+          const extraTitle = rawTitle.split("-").slice(1).join("-").trim();
+          if (extraTitle && !extraTitle.toLowerCase().includes(`capitolo ${chapNum}`) && extraTitle !== String(chapNum)) {
+            name += ` - ${extraTitle}`;
+          }
         }
         chapters.push(App.createChapter({
           id: chapterId,
@@ -865,7 +827,7 @@ var _Sources = (() => {
           volume: volNum,
           time,
           langCode: "\u{1F1EE}\u{1F1F9}",
-          // Emoji bandiera
+          // Bandierina
           sortingIndex: chapters.length
         }));
       });
@@ -892,14 +854,13 @@ var _Sources = (() => {
         pages
       });
     }
-    // --- HOME PAGE (UI 3.6.0) ---
-    // Qui usiamo i selettori che hai confermato funzionare per l'estetica
+    // --- HOME PAGE & SEARCH ---
     parseCommonManga($, element, subtitleSelector) {
       const item = $(element);
       const link = item.find("a").first();
       const href = link.attr("href");
       const id = href?.split("/manga/")[1]?.split("/")[0] ?? "";
-      let rawTitle = item.find(".manga-title").text().trim();
+      let rawTitle = item.find(".comic-title").text().trim();
       if (!rawTitle) rawTitle = item.find(".title, h3").text().trim();
       if (!rawTitle) rawTitle = link.attr("title") ?? "Unknown";
       const title = this.cleanTitle(rawTitle);
@@ -920,19 +881,18 @@ var _Sources = (() => {
     }
     parseHomeSections($, month, latest, trending) {
       const monthItems = [];
-      $(".top-wrapper .entry, .to-wrapper .entry").each((i, item) => {
+      $(".col-12 .top-wrapper .entry").each((i, item) => {
         if (i < 10) monthItems.push(this.parseCommonManga($, item));
       });
       month.items = monthItems;
       const latestItems = [];
-      $(".comics-grid .entry").each((_, item) => {
-        latestItems.push(this.parseCommonManga($, item, ".chapter-link, .chapter a"));
+      $(".col-sm-12.col-md-8.col-xl-9 .comics-grid .entry").each((_, item) => {
+        latestItems.push(this.parseCommonManga($, item, ".d-flex.flex-wrap.flex-row a"));
       });
       latest.items = latestItems;
       const trendingItems = [];
-      $("#chapters-slide .entry, .entry.vertical").each((_, item) => {
-        if ($(item).hasClass("slick-cloned")) return;
-        trendingItems.push(this.parseCommonManga($, item, ".chapter"));
+      $(".entry.vertical").each((_, item) => {
+        trendingItems.push(this.parseCommonManga($, item));
       });
       trending.items = trendingItems;
     }
@@ -984,7 +944,8 @@ var _Sources = (() => {
   // src/MangaWorld/MangaWorld.ts
   var MW_DOMAIN = "https://www.mangaworld.mx";
   var MangaWorldInfo = {
-    version: "3.6.0",
+    version: "3.9.0",
+    // UI & Naming Fix
     name: "MangaWorld",
     description: "Extension that pulls manga from MangaWorld.",
     author: "NmN & DarkDragonkz",
@@ -1014,7 +975,6 @@ var _Sources = (() => {
             request.headers = {
               ...request.headers ?? {},
               "Referer": `${this.baseUrl}/`,
-              // User Agent fisso per evitare blocchi
               "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             };
             return request;
@@ -1060,7 +1020,6 @@ var _Sources = (() => {
         title: "Top Mensile \u{1F525}",
         containsMoreItems: false,
         type: "singleRowLarge"
-        // Vetrina grande
       });
       const sectionLatest = App.createHomeSection({
         id: "latest",
