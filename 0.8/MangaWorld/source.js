@@ -768,7 +768,6 @@ var _Sources = (() => {
     }
     /**
      * Helper per le date italiane
-     * Formati gestiti: "07 Dicembre 2025", "Oggi", "Ieri"
      */
     parseDate(dateStr) {
       dateStr = dateStr.trim().toLowerCase();
@@ -788,9 +787,6 @@ var _Sources = (() => {
       }
       return now;
     }
-    /**
-     * Helper centralizzato per estrarre l'URL dell'immagine gestendo lazy loading
-     */
     getImageSrc(element) {
       let image = element.attr("src") ?? "";
       if (!image || image.includes("loading") || image.startsWith("data:")) {
@@ -801,9 +797,6 @@ var _Sources = (() => {
       }
       return image || "https://paperback.moe/icons/logo-alt.svg";
     }
-    /**
-     * Helper per parsare un elemento della lista
-     */
     parseCommonManga($, element, extraSubtitleSelector) {
       const href = $("a", element).attr("href") ?? "";
       const id = href.match(/[0-9]+\/[a-zA-Z0-9\-]+/i)?.[0] ?? "";
@@ -843,8 +836,6 @@ var _Sources = (() => {
           const statusText = $("a", obj).text().trim().toLowerCase();
           if (statusText.includes("finito") || statusText.includes("completato")) {
             status = "Completed";
-          } else {
-            status = "Ongoing";
           }
         }
       });
@@ -862,7 +853,6 @@ var _Sources = (() => {
           titles: [title],
           image,
           status,
-          // Cast a any per bypassare controlli TS strict se necessario, ma passa la stringa corretta
           artist,
           author,
           tags: tagSections,
@@ -874,20 +864,36 @@ var _Sources = (() => {
     parseChapters($, mangaId) {
       const chapters = [];
       const arrChapters = $(".chapter").toArray();
+      let seriesName = $(".name.bigger").text().trim();
+      seriesName = this.cleanTitle(seriesName);
       for (const item of arrChapters) {
         const link = $("a.chap", item);
         const id = link.attr("href")?.replace(`${BASE_URL}/manga/${mangaId}/read/`, "") ?? "";
-        const name = link.attr("title") ?? "";
+        let rawName = link.attr("title") ?? "";
+        let name = rawName.replace(new RegExp(seriesName, "gi"), "").trim();
+        name = name.replace(/scan ita/gi, "").replace(/\sita\s?$/gi, "").trim();
+        name = name.replace(/^(-|\s)+/, "").trim();
+        let volume = void 0;
+        const volMatch = name.match(/vol(?:ume)?\.?\s*(\d+)/i);
+        if (volMatch) {
+          volume = Number(volMatch[1]);
+        }
         const chapText = $(".d-inline-block", item).text().trim();
         const chapNumMatch = chapText.match(/(\d+(\.\d+)?)/);
         const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0;
+        if (!name) {
+          name = `Capitolo ${chapNum}`;
+        }
         const dateText = $(".chap-date", item).text().trim();
         const time = this.parseDate(dateText);
         chapters.push(
           App.createChapter({
             id,
             name,
+            // Ora conterrà solo "Capitolo 01" (o "Volume 1 Capitolo 1")
             chapNum,
+            volume,
+            // Se trovato, Paperback raggrupperà per volume
             time,
             langCode: "it"
           })
