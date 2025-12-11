@@ -947,8 +947,8 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.baseUrl = DOMAIN;
       this.parser = new BatCaveParser();
-      // 2 tentativi sono sufficienti per una buona UX
-      this.RETRIES = 2;
+      // RETRIES a 10 per compatibilità massima (come in 1.0.9)
+      this.RETRIES = 10;
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 3,
         requestTimeout: 2e4,
