@@ -41,8 +41,8 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
     baseUrl = DOMAIN
     parser = new BatCaveParser()
     
-    // 2 tentativi sono sufficienti per una buona UX
-    RETRIES = 2 
+    // RETRIES a 10 per compatibilità massima (come in 1.0.9)
+    RETRIES = 10
 
     constructor(private cheerio: any) {}
 
