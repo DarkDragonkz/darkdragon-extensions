@@ -20,7 +20,7 @@ import { XoxoComicParser } from './XoxoComicParser'
 const DOMAIN = 'https://xoxocomic.com'
 
 export const XoxoComicInfo: SourceInfo = {
-    version: '1.0.1', // Bump version
+    version: '1.0.2', // Bump per fix parsing totale
     name: 'XoxoComic',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -51,7 +51,7 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
                 request.headers = {
                     ...(request.headers ?? {}),
                     'Referer': `${DOMAIN}/`,
-                    // User-Agent Desktop Chrome per evitare blocchi o versioni mobile rotte
+                    // User Agent Desktop per evitare layout mobile che nasconde dati
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 }
                 return request
@@ -67,8 +67,12 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
     }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
+        // Se mangaId è solo "batman", l'url deve essere /comic/batman
+        // Se è già un path, usalo così com'è
+        const url = mangaId.includes('/') ? `${this.baseUrl}/${mangaId}` : `${this.baseUrl}/comic/${mangaId}`
+
         const request = App.createRequest({
-            url: `${this.baseUrl}/comic/${mangaId}`,
+            url: url,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
@@ -77,8 +81,10 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
+        const url = mangaId.includes('/') ? `${this.baseUrl}/${mangaId}` : `${this.baseUrl}/comic/${mangaId}`
+
         const request = App.createRequest({
-            url: `${this.baseUrl}/comic/${mangaId}`,
+            url: url,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
@@ -87,6 +93,7 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
+        // chapterId è solitamente "comic/batman/issue-1" o simile
         const url = chapterId.startsWith('http') ? chapterId : `${this.baseUrl}/${chapterId}`
 
         const request = App.createRequest({
@@ -100,7 +107,7 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
         
-        // URL Search: /search?keyword=...&page=...
+        // Usiamo un endpoint di ricerca standard
         const request = App.createRequest({
             url: `${this.baseUrl}/search?keyword=${encodeURIComponent(query.title ?? '')}&page=${page}`,
             method: 'GET'
