@@ -733,7 +733,7 @@ var _Sources = (() => {
   var BASE_URL = "https://www.mangaworld.mx";
   var MangaWorldParser = class {
     /**
-     * Parsing Date Italiane
+     * Parsing Date Italiane (Feature della 3.6.0)
      */
     parseItalianDate(dateStr) {
       const months = {
@@ -795,34 +795,30 @@ var _Sources = (() => {
       if (image && image.startsWith("/")) image = BASE_URL + image;
       return image || "https://paperback.moe/icons/logo-alt.svg";
     }
-    // --- PARSER DETTAGLI ---
+    // --- LOGICA DI PARSING (Basata sulla 3.4.0 FUNZIONANTE) ---
     parseMangaDetails($, mangaId) {
       const infoBox = $(".comic-info");
-      let rawTitle = $("h1.name", infoBox).text().trim();
-      if (!rawTitle) rawTitle = $(".comic-title", infoBox).text().trim();
+      const rawTitle = $(".comic-title", infoBox).text().trim();
       const title = this.cleanTitle(rawTitle);
-      const image = this.getImageSrc($(".thumb img", infoBox));
+      const image = this.getImageSrc($(".comic-thumb img", infoBox));
       let desc = $("#noidungm").text().trim();
-      if (!desc) desc = $(".comic-description").text().trim();
+      if (!desc) desc = $(".description").text().trim();
       let author = "Unknown";
       let status = "Ongoing";
       let artist = "Unknown";
-      $('.meta-data [class*="col-"]', infoBox).each((_, col) => {
-        const text = $(col).text().trim();
-        if (text.toLowerCase().includes("autore:")) {
-          author = $(col).find("a").text().trim();
-        }
-        if (text.toLowerCase().includes("artista:")) {
-          artist = $(col).find("a").text().trim();
-        }
-        if (text.toLowerCase().includes("stato:")) {
-          if (text.toLowerCase().includes("completato") || text.toLowerCase().includes("finito")) {
+      $(".meta-data .row").each((_, row) => {
+        const label = $(row).text().toLowerCase();
+        const value = $(row).find("span, a").text().trim();
+        if (label.includes("autore")) author = value;
+        if (label.includes("artista")) artist = value;
+        if (label.includes("stato")) {
+          if (value.toLowerCase().includes("completato") || value.toLowerCase().includes("finito")) {
             status = "Completed";
           }
         }
       });
       const arrayTags = [];
-      $(".tags a, .genre a", infoBox).each((_, a) => {
+      $(".comic-info .tags a").each((_, a) => {
         const label = $(a).text().trim();
         const id = $(a).attr("href")?.split("genre=")[1] ?? label;
         if (label) arrayTags.push(App.createTag({ id, label }));
@@ -841,177 +837,109 @@ var _Sources = (() => {
         })
       });
     }
-    // --- PARSER CAPITOLI ---
     parseChapters($, mangaId) {
       const chapters = [];
-      const wrapper = $(".chapters-wrapper");
-      const volumes = wrapper.find(".volume-element");
-      if (volumes.length > 0) {
-        volumes.each((_, volEl) => {
-          const volText = $(volEl).find(".volume-name").text().trim();
-          const volNumMatch = volText.match(/Volume\s*(\d+)/i);
-          const volNum = volNumMatch ? parseInt(volNumMatch[1]) : void 0;
-          $(volEl).find(".chapter").each((_2, item) => {
-            this.extractChapterData($, item, chapters, volNum);
-          });
-        });
-      } else {
-        $(".chapter", wrapper).each((_, item) => {
-          this.extractChapterData($, item, chapters, void 0);
-        });
-      }
+      $(".chapter-list .chapter-item, .list-chapters .chapter-item").each((_, item) => {
+        const link = $(item).find("a");
+        const href = link.attr("href");
+        if (!href) return;
+        const chapterId = href.split("/").pop() ?? "";
+        const titleText = link.text().trim();
+        const dateText = $(item).find(".chapter-date, .date").text().trim();
+        const time = this.parseItalianDate(dateText);
+        const volMatch = titleText.match(/Vol\.?\s*(\d+)/i);
+        const chapMatch = titleText.match(/(?:Cap|Ch)\.?\s*(\d+(\.\d+)?)/i);
+        const volNum = volMatch ? parseInt(volMatch[1] ?? "0") : void 0;
+        const chapNum = chapMatch ? parseFloat(chapMatch[1] ?? "0") : 0;
+        let name = "";
+        const cleanName = titleText.replace(/Capitolo\s*\d+(\.\d+)?\s*-?\s*/i, "").trim();
+        if (cleanName.length > 0 && cleanName.toLowerCase() !== `capitolo ${chapNum}`) {
+          name = cleanName;
+        } else {
+          name = `Capitolo ${chapNum}`;
+        }
+        chapters.push(App.createChapter({
+          id: chapterId,
+          name,
+          chapNum,
+          volume: volNum,
+          time,
+          langCode: "\u{1F1EE}\u{1F1F9}",
+          // Emoji bandiera
+          sortingIndex: chapters.length
+        }));
+      });
       return chapters;
     }
-    extractChapterData($, item, chapters, volNum) {
-      const link = $(item).find("a.chap");
-      const href = link.attr("href");
-      if (!href) return;
-      const chapterId = href.split("/").pop() ?? "";
-      const titleText = link.find("span").text().trim();
-      const dateText = link.find(".chap-date").text().trim();
-      const time = this.parseItalianDate(dateText);
-      const chapMatch = titleText.match(/(\d+(\.\d+)?)/);
-      const chapNum = chapMatch ? parseFloat(chapMatch[0]) : 0;
-      let name = `Ch. ${chapNum}`;
-      const cleanName = titleText.replace(/Capitolo\s*\d+(\.\d+)?\s*-?\s*/i, "").trim();
-      if (cleanName.length > 0) {
-        name = cleanName;
-      }
-      chapters.push(App.createChapter({
-        id: chapterId,
-        name,
-        chapNum,
-        volume: volNum,
-        time,
-        langCode: "\u{1F1EE}\u{1F1F9}",
-        sortingIndex: chapters.length
-      }));
-    }
-    // --- PARSER DETTAGLI CAPITOLO (READER) ---
-    // Logica avanzata per gestire il JSON complesso di MangaWorld
     parseChapterDetails(html, mangaId, chapterId) {
       const pages = [];
-      try {
-        const pagesMatch = html.match(/"pages":\[(.*?)\]/);
-        if (pagesMatch && pagesMatch[1]) {
-          const fileNames = pagesMatch[1].split(",").map((f) => f.trim().replace(/['"]/g, ""));
-          const mangaIdMatch = html.match(/"manga":"([a-f0-9]{24})"/i);
-          const mangaSlugMatch = html.match(/"slug":"([^"]+)"/);
-          const chapterIdMatch = html.match(/"id":"([a-f0-9]{24})"/i);
-          const chapterSlugFolderMatch = html.match(/"slugFolder":"([^"]+)"/);
-          const volumeSlugFolderMatch = html.match(/"slugFolder":"(volume-[^"]+)"/);
-          const sampleImgMatch = html.match(/https:\/\/cdn\.mangaworld\.mx\/chapters\/[^"]+\/([^"]+\.(jpg|png|jpeg))/i);
-          if (sampleImgMatch) {
-            const fullUrl = sampleImgMatch[0];
-            const basePath = fullUrl.substring(0, fullUrl.lastIndexOf("/") + 1);
-            for (const fileName of fileNames) {
-              pages.push(basePath + fileName);
-            }
-          } else {
-          }
-        }
-      } catch (e) {
-        console.error("MangaWorld JSON parsing failed", e);
+      const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]+class=["']content-image/g;
+      let match;
+      while ((match = imgRegex.exec(html)) !== null) {
+        const url = this.getImageSrc({ attr: () => match[1] });
+        pages.push(url);
       }
       if (pages.length === 0) {
-        const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]+class=["']content-image/g;
-        let match;
-        while ((match = imgRegex.exec(html)) !== null) {
+        const genericRegex = /<div id="page_\d+">.*?<img[^>]+src=["']([^"']+)["']/gs;
+        while ((match = genericRegex.exec(html)) !== null) {
           const url = this.getImageSrc({ attr: () => match[1] });
           pages.push(url);
         }
       }
-      if (pages.length === 0) {
-        const genericRegex = /https:\/\/cdn\.mangaworld\.mx\/chapters\/[^"]+\.(jpg|png|jpeg)/g;
-        let match;
-        while ((match = genericRegex.exec(html)) !== null) {
-          pages.push(match[0]);
-        }
-      }
-      const uniquePages = [...new Set(pages)];
       return App.createChapterDetails({
         id: chapterId,
         mangaId,
-        pages: uniquePages
+        pages
       });
     }
-    // --- HOME PAGE PARSERS ---
+    // --- HOME PAGE (UI 3.6.0) ---
+    // Qui usiamo i selettori che hai confermato funzionare per l'estetica
+    parseCommonManga($, element, subtitleSelector) {
+      const item = $(element);
+      const link = item.find("a").first();
+      const href = link.attr("href");
+      const id = href?.split("/manga/")[1]?.split("/")[0] ?? "";
+      let rawTitle = item.find(".manga-title").text().trim();
+      if (!rawTitle) rawTitle = item.find(".title, h3").text().trim();
+      if (!rawTitle) rawTitle = link.attr("title") ?? "Unknown";
+      const title = this.cleanTitle(rawTitle);
+      let image = this.getImageSrc(item.find("img").first());
+      if (image.includes("logo-alt")) image = this.getImageSrc(item.find(".thumb img"));
+      let subtitle = void 0;
+      if (subtitleSelector) {
+        subtitle = item.find(subtitleSelector).text().trim();
+      } else {
+        subtitle = item.find(".chapter-text, .latest-chapter").first().text().trim();
+      }
+      return App.createPartialSourceManga({
+        mangaId: id,
+        image,
+        title,
+        subtitle: subtitle || void 0
+      });
+    }
     parseHomeSections($, month, latest, trending) {
       const monthItems = [];
-      $(".top-wrapper .entry").each((i, item) => {
-        if (i >= 10) return;
-        const el = $(item);
-        const link = el.find(".content .name").parent();
-        const href = link.attr("href");
-        const id = href?.split("/manga/")[1]?.split("/")[0] ?? "";
-        const title = this.cleanTitle(el.find(".content .name").text());
-        const image = this.getImageSrc(el.find(".thumb img"));
-        if (id && title) {
-          monthItems.push(App.createPartialSourceManga({
-            mangaId: id,
-            image,
-            title,
-            subtitle: "Top Mensile"
-          }));
-        }
+      $(".top-wrapper .entry, .to-wrapper .entry").each((i, item) => {
+        if (i < 10) monthItems.push(this.parseCommonManga($, item));
       });
       month.items = monthItems;
       const latestItems = [];
       $(".comics-grid .entry").each((_, item) => {
-        const el = $(item);
-        const titleEl = el.find("a.manga-title");
-        const title = this.cleanTitle(titleEl.text());
-        const href = titleEl.attr("href") || el.find("a.thumb").attr("href");
-        const id = href?.split("/manga/")[1]?.split("/")[0] ?? "";
-        const image = this.getImageSrc(el.find("img"));
-        const subtitle = el.find(".xanh").first().text().trim();
-        if (id && title) {
-          latestItems.push(App.createPartialSourceManga({
-            mangaId: id,
-            image,
-            title,
-            subtitle
-          }));
-        }
+        latestItems.push(this.parseCommonManga($, item, ".chapter-link, .chapter a"));
       });
       latest.items = latestItems;
       const trendingItems = [];
-      $("#chapters-slide .entry").each((_, item) => {
-        const el = $(item);
-        if (el.hasClass("slick-cloned")) return;
-        const titleEl = el.find("a.manga-title");
-        const title = this.cleanTitle(titleEl.text());
-        const href = titleEl.attr("href");
-        const id = href?.split("/manga/")[1]?.split("/")[0] ?? "";
-        const image = this.getImageSrc(el.find("img"));
-        const subtitle = el.find(".chapter").text().trim();
-        if (id && title) {
-          trendingItems.push(App.createPartialSourceManga({
-            mangaId: id,
-            image,
-            title,
-            subtitle
-          }));
-        }
+      $("#chapters-slide .entry, .entry.vertical").each((_, item) => {
+        if ($(item).hasClass("slick-cloned")) return;
+        trendingItems.push(this.parseCommonManga($, item, ".chapter"));
       });
       trending.items = trendingItems;
     }
     parseViewMore($) {
       const manga = [];
       $(".comics-grid .entry").each((_, item) => {
-        const el = $(item);
-        const titleEl = el.find("a.manga-title");
-        const title = this.cleanTitle(titleEl.text());
-        const href = titleEl.attr("href") || el.find("a.thumb").attr("href");
-        const id = href?.split("/manga/")[1]?.split("/")[0] ?? "";
-        const image = this.getImageSrc(el.find("img"));
-        if (id && title) {
-          manga.push(App.createPartialSourceManga({
-            mangaId: id,
-            image,
-            title
-          }));
-        }
+        manga.push(this.parseCommonManga($, item));
       });
       return manga;
     }
