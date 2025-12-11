@@ -20,7 +20,7 @@ import { XoxoComicParser } from './XoxoComicParser'
 const DOMAIN = 'https://xoxocomic.com'
 
 export const XoxoComicInfo: SourceInfo = {
-    version: '1.4.1', // Bump versione per Fix ReferenceError $
+    version: '1.4.2', // Bump versione per Fix Typos
     name: 'XoxoComic',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -135,9 +135,8 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         })
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
-        const manga = []
+        const manga: any[] = []
         
-        // Qui $ è definito (linea sopra), quindi funziona
         $('.item, .list-truyen-item-wrap, .search-story-item').each((_: any, item: any) => {
             const m = this.parser.parseUniversalItem($, item, 'grid')
             if (m) manga.push(m)
@@ -171,9 +170,8 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         const $home = this.cheerio.load(responseHome.data)
         const $new = this.cheerio.load(responseNew.data)
 
-        // 1. Trending (Home -> .items-slide)
-        const trendingItems: PartialSourceManga[] = []
-        // FIX: Uso $home invece di $
+        // 1. Trending
+        const trendingItems: any[] = []
         $home('.items-slide .item').each((_: any, item: any) => {
             const m = this.parser.parseUniversalItem($home, item, 'slide')
             if (m) trendingItems.push(m)
@@ -181,9 +179,8 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         trendingSection.items = trendingItems
         sectionCallback(trendingSection)
 
-        // 2. Latest (New Comic Page -> .items .row)
-        const latestItems: PartialSourceManga[] = []
-        // FIX: Uso $new invece di $
+        // 2. Latest
+        const latestItems: any[] = []
         $new('.items .row .item').each((_: any, item: any) => {
             const m = this.parser.parseUniversalItem($new, item, 'list')
             if (m) latestItems.push(m)
@@ -191,9 +188,8 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         latestSection.items = latestItems
         sectionCallback(latestSection)
 
-        // 3. Top Month (Home -> #topMonth)
-        const monthItems: PartialSourceManga[] = []
-        // FIX: Uso $home invece di $
+        // 3. Top Month
+        const monthItems: any[] = []
         $home('#topMonth li').each((_: any, item: any) => {
             const m = this.parser.parseUniversalItem($home, item, 'top')
             if (m) monthItems.push(m)
@@ -201,9 +197,8 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         topMonthSection.items = monthItems
         sectionCallback(topMonthSection)
 
-        // 4. Top Week (Home -> #topWeek)
-        const weekItems: PartialSourceManga[] = []
-        // FIX: Uso $home invece di $
+        // 4. Top Week
+        const weekItems: any[] = []
         $home('#topWeek li').each((_: any, item: any) => {
             const m = this.parser.parseUniversalItem($home, item, 'top')
             if (m) weekItems.push(m)
@@ -221,16 +216,16 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
             const response = await this.requestManager.schedule(request, 1)
             const $ = this.cheerio.load(response.data)
             
-            const manga: PartialSourceManga[] = []
-            // Qui $ è definito
+            const manga: any[] = []
             $('.items .row .item').each((_: any, item: any) => {
                 const m = this.parser.parseUniversalItem($, item, 'list')
                 if (m) manga.push(m)
             })
 
+            // FIX SINTASSI QUI
             return App.createPagedResults({
                 results: manga,
-                metadata: nextPage: manga.length > 0 ? { page: page + 1 } : undefined // Correzione piccola typo
+                metadata: manga.length > 0 ? { page: page + 1 } : undefined
             })
         }
         
