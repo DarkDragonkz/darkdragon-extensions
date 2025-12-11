@@ -13,9 +13,6 @@ const BASE_URL = 'https://xoxocomic.com'
 
 export class XoxoComicParser {
 
-    /**
-     * Helper per pulire gli URL delle immagini e gestire i path relativi
-     */
     private getImageSrc(url: string | undefined): string {
         if (!url) return 'https://paperback.moe/icons/logo-alt.svg'
         
@@ -27,6 +24,49 @@ export class XoxoComicParser {
         }
         
         return url
+    }
+
+    /**
+     * Helper universale per parsare un blocco manga.
+     * Cerca in modo "difensivo" (prova A, se fallisce prova B).
+     */
+    private parseMangaItem($: any, element: any): PartialSourceManga | null {
+        const item = $(element)
+        
+        // 1. Trova il link al fumetto (fondamentale)
+        // Cerca un tag <a> che contenga "/comic/" nell'href
+        let link = item.find('a[href*="/comic/"]').first()
+        // Se l'elemento stesso è il link
+        if (item.is('a') && item.attr('href')?.includes('/comic/')) {
+            link = item
+        }
+
+        const href = link.attr('href')
+        // ID: Estrae l'ultima parte dell'URL (es. /comic/batman -> batman)
+        const id = href?.split('/').filter(Boolean).pop()
+
+        if (!id) return null
+
+        // 2. Trova il Titolo
+        let title = item.find('h3').text().trim()
+        if (!title) title = link.text().trim()
+        if (!title) title = item.find('.title, .name').text().trim() // Classi comuni alternative
+        if (!title) title = 'Unknown Title'
+
+        // 3. Trova l'immagine
+        let img = item.find('img').first()
+        let imageSrc = img.attr('src') || img.attr('data-src') || img.attr('data-original')
+        const image = this.getImageSrc(imageSrc)
+
+        // 4. Sottotitolo (es. Latest Chapter)
+        const subtitle = item.find('.chapter').text().trim()
+
+        return App.createPartialSourceManga({
+            mangaId: id,
+            image: image,
+            title: title,
+            subtitle: subtitle || undefined
+        })
     }
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
@@ -56,7 +96,6 @@ export class XoxoComicParser {
         if (descElement.length > 0) {
             desc = descElement.text().trim()
         } else {
-            // Fallback se la struttura cambia
             desc = $('.well p').text().trim()
         }
 
@@ -91,9 +130,9 @@ export class XoxoComicParser {
             const title = link.text().trim()
             const href = link.attr('href')
             
-            // Estrai ID dall'URL: /comic/comic-name/issue-1 -> issue-1
-            // Nota: XoxoComic usa gli slug completi come ID spesso
+            // Logica ID Capitolo
             let chapterId = href?.replace(BASE_URL, '') ?? ''
+            // Rimuovi slash iniziale se presente
             if (chapterId.startsWith('/')) chapterId = chapterId.substring(1)
 
             if (!chapterId) return
@@ -105,12 +144,11 @@ export class XoxoComicParser {
                 if (isNaN(time.getTime())) time = new Date()
             }
 
-            // Parsing Numero Capitolo (Issue X, Chapter X)
             const numMatch = title.match(/(\d+(\.\d+)?)/)
             const chapNum = numMatch ? parseFloat(numMatch[0]) : 0
 
             chapters.push(App.createChapter({
-                id: chapterId, // Passiamo l'URL relativo come ID
+                id: chapterId,
                 name: title,
                 chapNum: chapNum,
                 time: time,
@@ -124,22 +162,16 @@ export class XoxoComicParser {
     parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
 
-        // SENIOR TRICK: Estrazione diretta da JavaScript
-        // Cerca: var lstImages = new Array("url1", "url2");
+        // Estrazione JS Array (Prioritaria)
         const scriptMatch = html.match(/var\s+lstImages\s*=\s*new\s+Array\((.*?)\);/)
         
         if (scriptMatch && scriptMatch[1]) {
-            // Pulisce la stringa: "url1", "url2" -> [url1, url2]
             const urls = scriptMatch[1].split(',').map((u: string) => u.trim().replace(/['"]/g, ''))
-            
             for (const url of urls) {
-                if (url) {
-                    pages.push(this.getImageSrc(url))
-                }
+                if (url) pages.push(this.getImageSrc(url))
             }
         } else {
-            // Fallback DOM se lo script cambia
-            // Potrebbe essere necessario cheerio qui, ma proviamo una regex veloce prima
+            // Fallback Regex su <img> tag se lo script fallisce
             const imgRegex = /<img[^>]+src="([^">]+)"[^>]+class="img-responsive"/g
             let match
             while ((match = imgRegex.exec(html)) !== null) {
@@ -156,26 +188,14 @@ export class XoxoComicParser {
 
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
-        
-        // Selettore per lista risultati (solitamente simile alla home o category page)
+        const seenIds = new Set<string>()
+
+        // Cerca in TUTTI i div 'item'
         $('.item').each((_: any, item: any) => {
-            const link = $('h3 a', item)
-            const title = link.text().trim()
-            
-            // ID: /comic/batman -> batman
-            const href = link.attr('href')
-            const id = href?.split('/').pop()
-
-            const img = $('img', item)
-            const image = this.getImageSrc(img.attr('src'))
-
-            if (id && title) {
-                results.push(App.createPartialSourceManga({
-                    mangaId: id,
-                    image: image,
-                    title: title,
-                    subtitle: undefined
-                }))
+            const manga = this.parseMangaItem($, item)
+            if (manga && !seenIds.has(manga.mangaId)) {
+                seenIds.add(manga.mangaId)
+                results.push(manga)
             }
         })
 
@@ -191,27 +211,16 @@ export class XoxoComicParser {
         })
         
         const latestItems: PartialSourceManga[] = []
+        const seenIds = new Set<string>()
 
-        // Selettore Home: .latest-updates .item
-        $('.latest-updates .item').each((_: any, item: any) => {
-            const link = $('h3 a', item)
-            const title = link.text().trim()
-            const href = link.attr('href')
-            const id = href?.split('/').pop()
-
-            const img = $('img', item)
-            const image = this.getImageSrc(img.attr('src'))
-            
-            // Ultimo capitolo come sottotitolo
-            const chapter = $('.chapter a', item).first().text().trim()
-
-            if (id && title) {
-                latestItems.push(App.createPartialSourceManga({
-                    mangaId: id,
-                    image: image,
-                    title: title,
-                    subtitle: chapter
-                }))
+        // Strategia: Prendi TUTTI gli elementi .item della pagina
+        // Solitamente nella home ci sono blocchi "Hot", "Latest", ecc. 
+        // Se prendiamo tutto, riempiamo sicuramente la lista.
+        $('.item').each((_: any, item: any) => {
+            const manga = this.parseMangaItem($, item)
+            if (manga && !seenIds.has(manga.mangaId)) {
+                seenIds.add(manga.mangaId)
+                latestItems.push(manga)
             }
         })
 

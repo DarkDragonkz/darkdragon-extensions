@@ -19,9 +19,8 @@ import { XoxoComicParser } from './XoxoComicParser'
 
 const DOMAIN = 'https://xoxocomic.com'
 
-// QUESTO È IL PEZZO CHE MANCA O È SBAGLIATO
 export const XoxoComicInfo: SourceInfo = {
-    version: '1.0.0',
+    version: '1.0.1', // Bump version
     name: 'XoxoComic',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -52,6 +51,7 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
                 request.headers = {
                     ...(request.headers ?? {}),
                     'Referer': `${DOMAIN}/`,
+                    // User-Agent Desktop Chrome per evitare blocchi o versioni mobile rotte
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 }
                 return request
@@ -99,6 +99,8 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
+        
+        // URL Search: /search?keyword=...&page=...
         const request = App.createRequest({
             url: `${this.baseUrl}/search?keyword=${encodeURIComponent(query.title ?? '')}&page=${page}`,
             method: 'GET'
