@@ -734,11 +734,12 @@ var _Sources = (() => {
   var XoxoComicParser = class {
     // --- HELPER UTILITY ---
     decodeHTMLEntity(str) {
-      return str.replace(/&#(\d+);/g, (_match, dec) => String.fromCharCode(dec)).replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#039;/g, "'").replace(/&apos;/g, "'");
+      return str.replace(/&#(\d+);/g, (_match, dec) => String.fromCharCode(dec)).replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#039;/g, "'").replace(/&apos;/g, "'").replace(/&nbsp;/g, " ");
     }
     cleanTitle(title) {
+      if (!title) return "Unknown";
       let clean = this.decodeHTMLEntity(title);
-      clean = clean.replace(/ - Read Full List of Chapters \| Xoxocomic/i, "").replace(/ Read Full List of Chapters/i, "").replace(/ \| Xoxocomic/i, "").replace(/ Comic$/i, "").replace(/^Read /i, "").replace(/ online$/i, "").trim();
+      clean = clean.replace(/ - Read Full List of Chapters \| Xoxocomic/gi, "").replace(/ Read Full List of Chapters/gi, "").replace(/ \| Xoxocomic/gi, "").replace(/ Comic$/i, "").replace(/^Read /i, "").replace(/ online$/i, "").trim();
       return clean;
     }
     getImageSrc(url) {
@@ -781,7 +782,10 @@ var _Sources = (() => {
       $(".items .row .item").each((_, item) => {
         const el = $(item);
         const imgLink = el.find(".image a").first();
-        const rawTitle = imgLink.attr("title") || el.find('.message_main label:contains("Alternate Name:")').parent().text().replace("Alternate Name:", "");
+        let rawTitle = imgLink.attr("title");
+        if (!rawTitle) {
+          rawTitle = el.find('.message_main label:contains("Alternate Name:")').parent().text().replace("Alternate Name:", "");
+        }
         const title = this.cleanTitle(rawTitle || "Unknown");
         const href = imgLink.attr("href");
         const id = href?.split("/").filter((p) => p && p !== "comic").pop();
@@ -821,6 +825,32 @@ var _Sources = (() => {
       });
       return items;
     }
+    // --- GRID GENERIC (Search/ViewMore) ---
+    parseGridItems($) {
+      const results = [];
+      const seenIds = /* @__PURE__ */ new Set();
+      $(".item, .list-truyen-item-wrap, .search-story-item").each((_, item) => {
+        const el = $(item);
+        let link = el.find("a").first();
+        if (!link.attr("href")) link = el.find("h3 a").first();
+        const href = link.attr("href");
+        const id = href?.split("/").filter((p) => p && p !== "comic").pop();
+        if (!id || seenIds.has(id)) return;
+        let rawTitle = el.find("h3").text().trim() || link.attr("title") || "Unknown";
+        const title = this.cleanTitle(rawTitle);
+        let imageSrc = el.find("img").attr("data-original") || el.find("img").attr("src");
+        const image = this.getImageSrc(imageSrc);
+        const subtitle = el.find(".chapter a").first().text().trim();
+        seenIds.add(id);
+        results.push(App.createPartialSourceManga({
+          mangaId: id,
+          image,
+          title,
+          subtitle: subtitle || void 0
+        }));
+      });
+      return results;
+    }
     // --- DETTAGLI E CAPITOLI ---
     parseMangaDetails($, mangaId) {
       let rawTitle = $(".title-detail").text().trim();
@@ -829,18 +859,15 @@ var _Sources = (() => {
       const title = this.cleanTitle(rawTitle);
       const imageSrc = $(".col-image img").attr("src");
       const image = this.getImageSrc(imageSrc);
-      let desc = $(".detail-content p").first().text().trim();
+      let desc = $(".detail-content p").text().trim();
       if (!desc) desc = $('meta[name="description"]').attr("content") ?? "No description";
+      desc = this.decodeHTMLEntity(desc);
       let author = "Unknown";
       let status = "Ongoing";
-      $(".list-info li").each((_, row) => {
-        const label = $(row).find(".name").text().toLowerCase();
-        const value = $(row).find(".col-xs-8").text().trim();
-        if (label.includes("author")) author = value;
-        if (label.includes("status")) {
-          if (value.toLowerCase().includes("completed")) status = "Completed";
-        }
-      });
+      const authorText = $(".list-info li.author p.col-xs-8").text().trim();
+      if (authorText) author = authorText;
+      const statusText = $(".list-info li.status p.col-xs-8").text().trim();
+      if (statusText.toLowerCase().includes("completed")) status = "Completed";
       const arrayTags = [];
       $(".list-info .kind a").each((_, a) => {
         const label = $(a).text().trim();
@@ -864,10 +891,16 @@ var _Sources = (() => {
       let maxPage = 1;
       $(".pagination li a").each((_, el) => {
         const href = $(el).attr("href");
-        const match = href?.match(/page=(\d+)/);
-        if (match) {
-          const num = parseInt(match[1]);
-          if (num > maxPage) maxPage = num;
+        const text = $(el).text().trim();
+        const textNum = parseInt(text);
+        if (!isNaN(textNum)) {
+          if (textNum > maxPage) maxPage = textNum;
+        } else if (href) {
+          const match = href.match(/page=(\d+)/);
+          if (match) {
+            const num = parseInt(match[1]);
+            if (num > maxPage) maxPage = num;
+          }
         }
       });
       return maxPage;
@@ -925,6 +958,7 @@ var _Sources = (() => {
           id: chapterId,
           name,
           chapNum,
+          volume: void 0,
           time,
           langCode: "en"
         }));
@@ -933,45 +967,31 @@ var _Sources = (() => {
     }
     parseChapterDetails(html, mangaId, chapterId) {
       const pages = [];
-      const imgRegex = /<img[^>]+data-original=["']([^"']+)["']/g;
-      let match;
-      while ((match = imgRegex.exec(html)) !== null) if (match[1]) pages.push(this.getImageSrc(match[1]));
+      const scriptMatch = html.match(/var\s+lstImages\s*=\s*new\s+Array\((.*?)\);/);
+      if (scriptMatch && scriptMatch[1]) {
+        const urls = scriptMatch[1].split(",").map((u) => u.trim().replace(/['"]/g, ""));
+        for (const url of urls) {
+          const clean = this.getImageSrc(url);
+          if (clean && !clean.includes("logo-alt")) pages.push(clean);
+        }
+      }
+      if (pages.length === 0) {
+        const imgRegex = /<img[^>]+data-original=["']([^"']+)["']/g;
+        let match;
+        while ((match = imgRegex.exec(html)) !== null) {
+          const url = this.getImageSrc(match[1]);
+          if (url && !url.includes("logo-alt")) pages.push(url);
+        }
+      }
       if (pages.length === 0) {
         const genericRegex = /<img[^>]+src=["']([^"']+)["']/g;
+        let match;
         while ((match = genericRegex.exec(html)) !== null) {
-          const url = match[1];
-          if (url && !url.startsWith("data:") && !url.includes("loading") && !url.includes("logo")) {
-            pages.push(this.getImageSrc(url));
-          }
+          const url = this.getImageSrc(match[1]);
+          if (url && !url.includes("logo-alt")) pages.push(url);
         }
       }
       return App.createChapterDetails({ id: chapterId, mangaId, pages });
-    }
-    // Per Search e Grid generiche
-    parseGridItems($) {
-      const results = [];
-      const seenIds = /* @__PURE__ */ new Set();
-      $(".item, .list-truyen-item-wrap, .search-story-item").each((_, item) => {
-        const el = $(item);
-        let link = el.find("a").first();
-        if (!link.attr("href")) link = el.find("h3 a").first();
-        const href = link.attr("href");
-        const id = href?.split("/").filter((p) => p && p !== "comic" && p !== "xoxocomic.com").pop();
-        if (!id || seenIds.has(id)) return;
-        let rawTitle = el.find("h3").text().trim() || link.attr("title") || "Unknown";
-        const title = this.cleanTitle(rawTitle);
-        let imageSrc = el.find("img").attr("data-original") || el.find("img").attr("src");
-        const image = this.getImageSrc(imageSrc);
-        const subtitle = el.find(".chapter a").first().text().trim();
-        seenIds.add(id);
-        results.push(App.createPartialSourceManga({
-          mangaId: id,
-          image,
-          title,
-          subtitle: subtitle || void 0
-        }));
-      });
-      return results;
     }
   };
 
