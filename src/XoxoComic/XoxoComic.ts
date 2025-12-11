@@ -20,7 +20,7 @@ import { XoxoComicParser } from './XoxoComicParser'
 const DOMAIN = 'https://xoxocomic.com'
 
 export const XoxoComicInfo: SourceInfo = {
-    version: '1.0.3', // Bump version
+    version: '1.1.0',
     name: 'XoxoComic',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -66,6 +66,7 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
     }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
+        // Gestione ID pulita
         const url = mangaId.includes('/') ? `${this.baseUrl}/${mangaId}` : `${this.baseUrl}/comic/${mangaId}`
         const request = App.createRequest({ url: url, method: 'GET' })
         const response = await this.requestManager.schedule(request, 1)
@@ -82,7 +83,13 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        const url = chapterId.startsWith('http') ? chapterId : `${this.baseUrl}/${chapterId}`
+        // FIX CRITICO: Forza la modalità "All pages" per scaricare tutto il capitolo
+        let url = chapterId.startsWith('http') ? chapterId : `${this.baseUrl}/${chapterId}`
+        
+        if (!url.endsWith('/all')) {
+            url = `${url}/all`
+        }
+
         const request = App.createRequest({ url: url, method: 'GET' })
         const response = await this.requestManager.schedule(request, 1)
         return this.parser.parseChapterDetails(response.data ?? '', mangaId, chapterId)
@@ -91,7 +98,7 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
         const request = App.createRequest({
-            url: `${this.baseUrl}/search?keyword=${encodeURIComponent(query.title ?? '')}&page=${page}`,
+            url: `${this.baseUrl}/search-comic?keyword=${encodeURIComponent(query.title ?? '')}&page=${page}`,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
@@ -113,8 +120,8 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
         let url = `${this.baseUrl}/latest-comic?page=${page}`
-        if (homepageSectionId !== 'latest') return App.createPagedResults({ results: [] })
-
+        if (homepageSectionId === 'popular') url = `${this.baseUrl}/popular-comic?page=${page}`
+        
         const request = App.createRequest({ url: url, method: 'GET' })
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
