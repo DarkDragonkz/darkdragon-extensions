@@ -2,7 +2,6 @@ import {
     Chapter,
     ChapterDetails,
     HomeSection,
-    HomeSectionType,
     SourceManga,
     PartialSourceManga,
     Tag,
@@ -28,17 +27,14 @@ export class XoxoComicParser {
 
     private cleanTitle(title: string): string {
         if (!title) return 'Unknown'
-        let clean = this.decodeHTMLEntity(title)
-        
-        // Pulizia aggressiva dei suffissi SEO
-        clean = clean.replace(/ - Read Full List of Chapters \| Xoxocomic/gi, '')
-                     .replace(/ Read Full List of Chapters/gi, '')
-                     .replace(/ \| Xoxocomic/gi, '')
-                     .replace(/ Comic$/i, '')
-                     .replace(/^Read /i, '')
-                     .replace(/ online$/i, '')
-                     .trim()
-        return clean
+        return this.decodeHTMLEntity(title)
+            .replace(/ - Read Full List of Chapters \| Xoxocomic/gi, '')
+            .replace(/ Read Full List of Chapters/gi, '')
+            .replace(/ \| Xoxocomic/gi, '')
+            .replace(/ Comic$/i, '')
+            .replace(/^Read /i, '')
+            .replace(/ online$/i, '')
+            .trim()
     }
 
     private getImageSrc(url: string | undefined): string {
@@ -51,134 +47,73 @@ export class XoxoComicParser {
         return url
     }
 
-    // --- HOME PAGE PARSERS ---
+    // --- PARSER UNIFICATO PER ITEM ---
+    // Questa funzione sostituisce parseTrendingItems, parseLatestItems, parseTopSectionItems e parseGridItems
+    parseUniversalItem($: any, element: any, context: 'grid' | 'list' | 'slide' | 'top'): PartialSourceManga | null {
+        const item = $(element)
+        let link, title, imageSrc, id, subtitle
 
-    parseTrendingItems($: any): PartialSourceManga[] {
-        const items: PartialSourceManga[] = []
-        // Selettore per OwlCarousel (Trending)
-        $('.items-slide .item').each((_: any, item: any) => {
-            // Ignora elementi duplicati dal carosello
-            if ($(item).closest('.cloned').length > 0) return
+        switch (context) {
+            case 'slide': // Trending
+                if (item.closest('.cloned').length > 0) return null
+                link = item.find('a').first()
+                title = item.find('.slide-caption h3 a').text().trim() || link.attr('title')
+                imageSrc = item.find('img').attr('data-src') || item.find('img').attr('src')
+                subtitle = 'Trending'
+                break
 
-            const link = $(item).find('a').first()
-            const id = link.attr('href')?.split('/').pop()
-            
-            // Titolo nel caption
-            let rawTitle = $(item).find('.slide-caption h3 a').text().trim() 
-            if (!rawTitle) rawTitle = link.attr('title') ?? 'Unknown'
-            
-            // Immagine: OwlCarousel usa spesso classi lazyOwl e data-src
-            let imageSrc = $(item).find('img').attr('data-src') || $(item).find('img').attr('src')
-            // Se ancora null, cerca nella classe lazyOwl
-            if (!imageSrc) imageSrc = $(item).find('.lazyOwl').attr('data-src')
+            case 'top': // Top Month/Week
+                link = item.find('h3.title a')
+                title = link.text().trim()
+                imageSrc = item.find('img').attr('data-original') || item.find('img').attr('src')
+                subtitle = item.find('p.chapter a').text().trim()
+                break
 
-            if (id) {
-                items.push(App.createPartialSourceManga({
-                    mangaId: id,
-                    image: this.getImageSrc(imageSrc),
-                    title: this.cleanTitle(rawTitle),
-                    subtitle: 'Trending'
-                }))
-            }
+            case 'list': // Latest Updates (/new-comic)
+                link = item.find('.image a').first()
+                title = link.attr('title') || item.find('.message_main label:contains("Alternate Name:")').parent().text().replace('Alternate Name:', '')
+                imageSrc = item.find('img').attr('data-original') || item.find('img').attr('src')
+                
+                // UI: Mostra anno o stato come sottotitolo
+                const released = item.find('.message_main p:contains("Released:")').text().replace('Released:', '').trim()
+                const status = item.find('.message_main p:contains("Status:")').text().replace('Status:', '').trim()
+                subtitle = released ? `Released: ${released}` : status
+                break
+
+            case 'grid': // Search / Generic
+            default:
+                link = item.find('a').first()
+                if (!link.attr('href')) link = item.find('h3 a').first()
+                title = item.find('h3').text().trim() || link.attr('title')
+                imageSrc = item.find('img').attr('data-original') || item.find('img').attr('src')
+                subtitle = item.find('.chapter a').first().text().trim()
+                break
+        }
+
+        if (!link || !link.attr('href')) return null
+        
+        const href = link.attr('href')
+        id = href?.split('/').filter((p: string) => p && p !== 'comic' && p !== 'xoxocomic.com').pop()
+        
+        if (!id) return null
+
+        return App.createPartialSourceManga({
+            mangaId: id,
+            image: this.getImageSrc(imageSrc),
+            title: this.cleanTitle(title || 'Unknown'),
+            subtitle: subtitle ? this.cleanTitle(subtitle) : undefined
         })
-        return items
     }
 
-    parseLatestItems($: any): PartialSourceManga[] {
-        const items: PartialSourceManga[] = []
-        // Selettore per layout /new-comic
-        $('.items .row .item').each((_: any, item: any) => {
-            const el = $(item)
-            const imgLink = el.find('.image a').first()
-            
-            let rawTitle = imgLink.attr('title')
-            // Fallback titolo
-            if (!rawTitle) rawTitle = el.find('.message_main label:contains("Alternate Name:")').parent().text().replace('Alternate Name:', '')
-            
-            const href = imgLink.attr('href')
-            const id = href?.split('/').filter((p: string) => p && p !== 'comic').pop()
-            
-            // Immagine: data-original (come visto nel file txt)
-            const imageSrc = el.find('img').attr('data-original') || el.find('img').attr('src')
-            
-            // Sottotitolo
-            const released = el.find('.message_main p:contains("Released:")').text().replace('Released:', '').trim()
-            const subtitle = released ? `Released: ${released}` : undefined
-
-            if (id) {
-                items.push(App.createPartialSourceManga({
-                    mangaId: id,
-                    image: this.getImageSrc(imageSrc),
-                    title: this.cleanTitle(rawTitle || 'Unknown'),
-                    subtitle: subtitle
-                }))
-            }
-        })
-        return items
-    }
-
-    parseTopSectionItems($: any, selector: string): PartialSourceManga[] {
-        const items: PartialSourceManga[] = []
-        $(selector + ' li').each((_: any, item: any) => {
-            const link = $(item).find('h3.title a')
-            const id = link.attr('href')?.split('/').pop()
-            const rawTitle = link.text().trim()
-            
-            let imageSrc = $(item).find('img').attr('data-original') || $(item).find('img').attr('src')
-            const chapter = $(item).find('p.chapter a').text().trim()
-
-            if (id) {
-                items.push(App.createPartialSourceManga({
-                    mangaId: id,
-                    image: this.getImageSrc(imageSrc),
-                    title: this.cleanTitle(rawTitle),
-                    subtitle: chapter
-                }))
-            }
-        })
-        return items
-    }
-
-    parseGridItems($: any): PartialSourceManga[] {
-        const results: PartialSourceManga[] = []
-        const seenIds = new Set<string>()
-
-        $('.item, .list-truyen-item-wrap, .search-story-item').each((_: any, item: any) => {
-            const el = $(item)
-            let link = el.find('a').first()
-            if (!link.attr('href')) link = el.find('h3 a').first()
-
-            const href = link.attr('href')
-            const id = href?.split('/').filter((p: string) => p && p !== 'comic').pop()
-
-            if (!id || seenIds.has(id)) return
-
-            let rawTitle = el.find('h3').text().trim() || link.attr('title') || 'Unknown'
-            let imageSrc = el.find('img').attr('data-original') || el.find('img').attr('src')
-            
-            seenIds.add(id)
-            results.push(App.createPartialSourceManga({
-                mangaId: id,
-                image: this.getImageSrc(imageSrc),
-                title: this.cleanTitle(rawTitle),
-                subtitle: el.find('.chapter a').first().text().trim()
-            }))
-        })
-        return results
-    }
-
-    // --- DETTAGLI ---
+    // --- MANGA DETAILS ---
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
-        let rawTitle = $('.title-detail').text().trim()
-        if (!rawTitle) rawTitle = $('h1').first().text().trim()
-        if (!rawTitle) rawTitle = $('title').text().trim()
-        
+        let rawTitle = $('.title-detail').text().trim() || $('h1').first().text().trim() || $('title').text().trim()
         const title = this.cleanTitle(rawTitle)
+        
         const image = this.getImageSrc($('.col-image img').attr('src'))
-        let desc = $('.detail-content p').first().text().trim()
+        let desc = this.decodeHTMLEntity($('.detail-content p').first().text().trim())
         if (!desc) desc = $('meta[name="description"]').attr('content') ?? 'No description'
-        desc = this.decodeHTMLEntity(desc)
 
         let author = 'Unknown'
         let status = 'Ongoing'
@@ -211,21 +146,63 @@ export class XoxoComicParser {
         })
     }
 
-    // --- LOGICA CAPITOLI E PAGINAZIONE (FIX SPAWN) ---
+    // --- CAPITOLI ---
 
     getChapterPageCount($: any): number {
         let maxPage = 1
-        // Scansiona tutti i link di paginazione
         $('.pagination li a').each((_: any, el: any) => {
             const href = $(el).attr('href')
-            // Cerca "page=X" nell'URL
-            const match = href?.match(/[?&]page=(\d+)/)
-            if (match) {
-                const num = parseInt(match[1])
-                if (num > maxPage) maxPage = num
+            const text = $(el).text().trim()
+            const textNum = parseInt(text)
+            
+            if (!isNaN(textNum)) {
+                if (textNum > maxPage) maxPage = textNum
+            } else if (href) {
+                const match = href.match(/[?&]page=(\d+)/)
+                if (match) {
+                    const num = parseInt(match[1])
+                    if (num > maxPage) maxPage = num
+                }
             }
         })
         return maxPage
+    }
+
+    // Logica di naming estratta per pulizia
+    private processChapterTitle(rawTitle: string, mangaId: string): { name: string, chapNum: number, volume?: number } {
+        let cleanName = rawTitle.replace(/^.*?\(\d{4}\)\s*/, '').trim()
+        const looseMangaName = mangaId.replace(/-/g, ' ')
+        if (cleanName === rawTitle && rawTitle.toLowerCase().includes(looseMangaName)) {
+             cleanName = rawTitle.replace(new RegExp(looseMangaName, 'gi'), '').trim()
+        }
+        cleanName = cleanName.replace(/^_+|_+$/g, '')
+
+        // Regex flessibile (spazi o underscore)
+        const multiPartMatch = cleanName.match(/_?([a-zA-Z_\s]+)[\s_](\d+)[\s_]?\(?Part[\s_](\d+)\)?/i)
+        const specialMatch = cleanName.match(/_?([a-zA-Z_\s]+)[\s_](\d+)/i)
+        const issueMatch = cleanName.match(/(?:Issue|Chapter|^)\s*#?(\d+(\.\d+)?)/i)
+
+        if (multiPartMatch && (cleanName.toLowerCase().includes('part') || cleanName.toLowerCase().includes('edition'))) {
+            let type = multiPartMatch[1]?.replace(/_/g, ' ').trim() ?? 'Vol'
+            const volNum = parseInt(multiPartMatch[2] ?? '0')
+            const partNum = parseFloat(multiPartMatch[3] ?? '0')
+            return { name: `Vol. ${type} ${volNum} Part. ${partNum}`, chapNum: partNum } // Vol opzionale rimosso per visualizzazione
+        } 
+        else if (specialMatch && !cleanName.toLowerCase().includes('issue') && !cleanName.toLowerCase().includes('chapter')) {
+            let type = specialMatch[1]?.replace(/_/g, ' ').trim()
+            const num = parseFloat(specialMatch[2] ?? '0')
+            return { name: `Vol. ${type} ${num}`, chapNum: num }
+        }
+        else if (issueMatch) {
+            const chapNum = parseFloat(issueMatch[1] ?? '0')
+            return { name: `Ch. ${chapNum}`, chapNum: chapNum }
+        } 
+        else {
+            const fallbackNum = cleanName.match(/(\d+(\.\d+)?)/g)
+            let chapNum = 0
+            if (fallbackNum) chapNum = parseFloat(fallbackNum[fallbackNum.length - 1] ?? '0')
+            return { name: cleanName.replace(/_/g, ' ').trim(), chapNum: chapNum }
+        }
     }
 
     parseChapters($: any, mangaId: string): Chapter[] {
@@ -247,47 +224,7 @@ export class XoxoComicParser {
                 if (!isNaN(parsed.getTime())) time = parsed
             }
 
-            // --- SMART NAMING ---
-            let cleanName = rawTitle.replace(/^.*?\(\d{4}\)\s*/, '').trim()
-            const looseMangaName = mangaId.replace(/-/g, ' ')
-            if (cleanName === rawTitle && rawTitle.toLowerCase().includes(looseMangaName)) {
-                 cleanName = rawTitle.replace(new RegExp(looseMangaName, 'gi'), '').trim()
-            }
-            cleanName = cleanName.replace(/^_+|_+$/g, '')
-
-            let name = cleanName
-            let chapNum = 0
-            
-            const multiPartMatch = cleanName.match(/_?([a-zA-Z_\s]+)[\s_](\d+)[\s_]?\(?Part[\s_](\d+)\)?/i)
-            const specialMatch = cleanName.match(/_?([a-zA-Z_\s]+)[\s_](\d+)/i)
-
-            if (multiPartMatch && (cleanName.toLowerCase().includes('part') || cleanName.toLowerCase().includes('edition'))) {
-                let type = multiPartMatch[1]?.replace(/_/g, ' ').trim() ?? 'Vol'
-                const volNum = parseInt(multiPartMatch[2] ?? '0')
-                const partNum = parseFloat(multiPartMatch[3] ?? '0')
-                // "Vol. Deluxe 1 Part. 1"
-                name = `Vol. ${type} ${volNum} Part. ${partNum}`
-                chapNum = partNum
-            } 
-            else if (specialMatch && !cleanName.toLowerCase().includes('issue') && !cleanName.toLowerCase().includes('chapter')) {
-                let type = specialMatch[1]?.replace(/_/g, ' ').trim()
-                const num = parseFloat(specialMatch[2] ?? '0')
-                name = `Vol. ${type} ${num}`
-                chapNum = num
-            }
-            else {
-                const issueMatch = cleanName.match(/(?:Issue|Chapter|^)\s*#?(\d+(\.\d+)?)/i)
-                if (issueMatch) {
-                    chapNum = parseFloat(issueMatch[1] ?? '0')
-                    name = `Ch. ${chapNum}`
-                } else {
-                    const fallbackNum = cleanName.match(/(\d+(\.\d+)?)/g)
-                    if (fallbackNum) {
-                        chapNum = parseFloat(fallbackNum[fallbackNum.length - 1] ?? '0')
-                    }
-                    name = cleanName.replace(/_/g, ' ').trim()
-                }
-            }
+            const { name, chapNum } = this.processChapterTitle(rawTitle, mangaId)
 
             chapters.push(App.createChapter({
                 id: chapterId,
@@ -303,7 +240,8 @@ export class XoxoComicParser {
 
     parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
-        // Script JS
+        
+        // 1. Script JS
         const scriptMatch = html.match(/var\s+lstImages\s*=\s*new\s+Array\((.*?)\);/)
         if (scriptMatch && scriptMatch[1]) {
             const urls = scriptMatch[1].split(',').map((u: string) => u.trim().replace(/['"]/g, ''))
@@ -312,7 +250,8 @@ export class XoxoComicParser {
                 if (clean && !clean.includes('logo-alt')) pages.push(clean)
             }
         }
-        // Fallback Data-Original
+        
+        // 2. Fallback Data-Original (LazyLoad)
         if (pages.length === 0) {
             const imgRegex = /<img[^>]+data-original=["']([^"']+)["']/g
             let match
@@ -321,7 +260,8 @@ export class XoxoComicParser {
                 if (url && !url.includes('logo-alt')) pages.push(url)
             }
         }
-        // Fallback Src (filtrato)
+
+        // 3. Fallback Src (Standard)
         if (pages.length === 0) {
             const genericRegex = /<img[^>]+src=["']([^"']+)["']/g
             let match

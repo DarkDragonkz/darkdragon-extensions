@@ -13,8 +13,6 @@ import {
     MangaProviding,
     ChapterProviding,
     HomePageSectionsProviding,
-    HomeSectionType,
-    Request
 } from '@paperback/types'
 
 import { XoxoComicParser } from './XoxoComicParser'
@@ -22,7 +20,7 @@ import { XoxoComicParser } from './XoxoComicParser'
 const DOMAIN = 'https://xoxocomic.com'
 
 export const XoxoComicInfo: SourceInfo = {
-    version: '1.3.3', // Bump versione per Fix Pagination Completa
+    version: '1.4.0', // Bump versione: Refactoring e UI Enhance
     name: 'XoxoComic',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -57,15 +55,11 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
                 }
                 return request
             },
-            interceptResponse: async (response: any) => {
-                return response
-            }
+            interceptResponse: async (response: any) => { return response }
         }
     })
 
-    getMangaShareUrl(mangaId: string): string {
-        return `${this.baseUrl}/comic/${mangaId}`
-    }
+    getMangaShareUrl(mangaId: string): string { return `${this.baseUrl}/comic/${mangaId}` }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
         const url = mangaId.includes('/') ? `${this.baseUrl}/${mangaId}` : `${this.baseUrl}/comic/${mangaId}`
@@ -77,8 +71,6 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
         const urlBase = mangaId.includes('/') ? `${this.baseUrl}/${mangaId}` : `${this.baseUrl}/comic/${mangaId}`
-        
-        // 1. Scarica la prima pagina
         const request = App.createRequest({ url: urlBase, method: 'GET' })
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
@@ -86,16 +78,13 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         let allChapters = this.parser.parseChapters($, mangaId)
         let maxPage = this.parser.getChapterPageCount($)
         
-        // Set per tenere traccia delle pagine già scaricate (1 è già fatta)
+        // Loop Discovery con Limite di Sicurezza (Senior Dev Pattern)
         const fetchedPages = new Set<number>([1])
+        const MAX_SAFETY_PAGES = 50 // Previene loop infiniti in caso di bug del sito
         
-        // Loop "Discovery": Continua finché ci sono pagine non scaricate
-        // Questo risolve il problema delle pagine 8, 9, 10, 11 che appaiono solo dopo
-        let keepChecking = true
-        while (keepChecking) {
+        while (true) {
             const pagesToFetch: number[] = []
             
-            // Trova quali pagine tra 2 e maxPage non abbiamo ancora scaricato
             for (let i = 2; i <= maxPage; i++) {
                 if (!fetchedPages.has(i)) {
                     pagesToFetch.push(i)
@@ -103,36 +92,27 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
                 }
             }
 
-            if (pagesToFetch.length === 0) {
-                keepChecking = false
-                break
-            }
+            if (pagesToFetch.length === 0 || fetchedPages.size > MAX_SAFETY_PAGES) break
 
-            // Scarica il blocco di pagine mancanti in parallelo
             const promises = pagesToFetch.map(page => 
                 this.requestManager.schedule(
                     App.createRequest({ url: `${urlBase}?page=${page}`, method: 'GET' }), 
                     1
-                ).then(res => ({ page, data: res.data }))
+                ).then(res => this.cheerio.load(res.data))
             )
 
-            const results = await Promise.all(promises)
+            const pages = await Promise.all(promises)
 
-            for (const res of results) {
-                const $page = this.cheerio.load(res.data)
+            for (const $page of pages) {
                 const pageChapters = this.parser.parseChapters($page, mangaId)
                 allChapters = allChapters.concat(pageChapters)
                 
-                // CRUCIALE: Controlla se in questa nuova pagina c'è un numero più alto!
-                // Es. Siamo a pagina 7, e qui scopriamo che esiste la 11.
+                // Aggiorna maxPage se ne scopriamo di nuove
                 const foundMax = this.parser.getChapterPageCount($page)
-                if (foundMax > maxPage) {
-                    maxPage = foundMax // Estende il limite del loop
-                }
+                if (foundMax > maxPage) maxPage = foundMax
             }
         }
 
-        // Rimuove eventuali duplicati e riordina visivamente
         return allChapters.map((chapter, index) => {
             chapter.sortingIndex = index
             return chapter
@@ -156,7 +136,12 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         })
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
-        const manga = this.parser.parseGridItems($)
+        const manga = []
+        
+        $('.item, .list-truyen-item-wrap, .search-story-item').each((_: any, item: any) => {
+            const m = this.parser.parseUniversalItem($, item, 'grid')
+            if (m) manga.push(m)
+        })
         
         return App.createPagedResults({
             results: manga,
@@ -165,6 +150,7 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
+        // Stringhe esplicite per evitare ReferenceError
         const trendingSection = App.createHomeSection({ id: 'trending', title: 'Trending Comics 🔥', containsMoreItems: false, type: 'singleRowLarge' })
         const latestSection = App.createHomeSection({ id: 'latest', title: 'Latest Updates 🆙', containsMoreItems: true, type: 'continuous' })
         const topMonthSection = App.createHomeSection({ id: 'top_month', title: 'Top Month ⭐', containsMoreItems: false, type: 'singleRowNormal' })
@@ -186,15 +172,41 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         const $home = this.cheerio.load(responseHome.data)
         const $new = this.cheerio.load(responseNew.data)
 
-        trendingSection.items = this.parser.parseTrendingItems($home)
-        topMonthSection.items = this.parser.parseTopSectionItems($home, '#topMonth')
-        topWeekSection.items = this.parser.parseTopSectionItems($home, '#topWeek')
-        latestSection.items = this.parser.parseLatestItems($new)
-
+        // 1. Trending (Home -> .items-slide)
+        const trendingItems: PartialSourceManga[] = []
+        $('.items-slide .item').each((_: any, item: any) => {
+            const m = this.parser.parseUniversalItem($home, item, 'slide')
+            if (m) trendingItems.push(m)
+        })
+        trendingSection.items = trendingItems
         sectionCallback(trendingSection)
-        sectionCallback(topMonthSection)
-        sectionCallback(topWeekSection)
+
+        // 2. Latest (New Comic Page -> .items .row)
+        const latestItems: PartialSourceManga[] = []
+        $('.items .row .item').each((_: any, item: any) => {
+            const m = this.parser.parseUniversalItem($new, item, 'list')
+            if (m) latestItems.push(m)
+        })
+        latestSection.items = latestItems
         sectionCallback(latestSection)
+
+        // 3. Top Month (Home -> #topMonth)
+        const monthItems: PartialSourceManga[] = []
+        $('#topMonth li').each((_: any, item: any) => {
+            const m = this.parser.parseUniversalItem($home, item, 'top')
+            if (m) monthItems.push(m)
+        })
+        topMonthSection.items = monthItems
+        sectionCallback(topMonthSection)
+
+        // 4. Top Week (Home -> #topWeek)
+        const weekItems: PartialSourceManga[] = []
+        $('#topWeek li').each((_: any, item: any) => {
+            const m = this.parser.parseUniversalItem($home, item, 'top')
+            if (m) weekItems.push(m)
+        })
+        topWeekSection.items = weekItems
+        sectionCallback(topWeekSection)
     }
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
@@ -206,12 +218,15 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
             const response = await this.requestManager.schedule(request, 1)
             const $ = this.cheerio.load(response.data)
             
-            const manga = this.parser.parseLatestItems($)
-            const nextPage = manga.length > 0 ? page + 1 : undefined
+            const manga: PartialSourceManga[] = []
+            $('.items .row .item').each((_: any, item: any) => {
+                const m = this.parser.parseUniversalItem($, item, 'list')
+                if (m) manga.push(m)
+            })
 
             return App.createPagedResults({
                 results: manga,
-                metadata: nextPage ? { page: nextPage } : undefined
+                metadata: manga.length > 0 ? { page: page + 1 } : undefined
             })
         }
         
