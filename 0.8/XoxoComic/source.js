@@ -847,7 +847,7 @@ var _Sources = (() => {
           let type = multiPartMatch[1]?.replace(/_/g, " ").trim() ?? "Vol";
           const volNum = parseInt(multiPartMatch[2] ?? "0");
           const partNum = parseFloat(multiPartMatch[3] ?? "0");
-          name = `Vol. ${type} ${volNum} Ch.${partNum}`;
+          name = `Vol. ${type} ${volNum} Part. ${partNum}`;
           chapNum = partNum;
         } else if (specialMatch && !cleanName.toLowerCase().includes("issue") && !cleanName.toLowerCase().includes("chapter")) {
           let type = specialMatch[1]?.replace(/_/g, " ").trim();
@@ -872,7 +872,6 @@ var _Sources = (() => {
           name,
           chapNum,
           volume: void 0,
-          // Nessun volume per evitare prefissi doppi
           time,
           langCode: "en"
         }));
