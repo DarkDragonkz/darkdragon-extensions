@@ -20,7 +20,7 @@ import { XoxoComicParser } from './XoxoComicParser'
 const DOMAIN = 'https://xoxocomic.com'
 
 export const XoxoComicInfo: SourceInfo = {
-    version: '1.1.2', // Bump versione
+    version: '1.1.3', // Bump versione per fix duplicazione nomi
     name: 'XoxoComic',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -80,6 +80,7 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         
+        // Controlla tutte le pagine
         const totalPages = this.parser.getChapterPageCount($)
         let allChapters = this.parser.parseChapters($, mangaId)
 
@@ -94,9 +95,6 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
             }
 
             const responses = await Promise.all(promises)
-            
-            // I risultati di Promise.all sono ordinati, quindi Page 2, Page 3...
-            // Concateniamo nell'ordine corretto
             for (const res of responses) {
                 const $page = this.cheerio.load(res.data)
                 const pageChapters = this.parser.parseChapters($page, mangaId)
@@ -104,8 +102,7 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
             }
         }
 
-        // FIX: Assegna sortingIndex basato sull'ordine della lista completa
-        // Questo garantisce che "Vol 1 Part 1" stia dove il sito dice che deve stare
+        // Importante: riordina per sortingIndex per mantenere l'ordine corretto (anche se non numerico)
         return allChapters.map((chapter, index) => {
             chapter.sortingIndex = index
             return chapter

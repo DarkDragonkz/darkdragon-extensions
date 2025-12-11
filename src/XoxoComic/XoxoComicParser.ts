@@ -106,13 +106,18 @@ export class XoxoComicParser {
         })
     }
 
+    // FIX PAGINAZIONE: Scansiona tutti i numeri per trovare il massimo
     getChapterPageCount($: any): number {
-        const lastPageLink = $('.pagination li a').last().attr('href')
-        if (lastPageLink) {
-            const match = lastPageLink.match(/page=(\d+)/)
-            if (match) return parseInt(match[1])
-        }
-        return 1
+        let maxPage = 1
+        $('.pagination li a').each((_: any, el: any) => {
+            const href = $(el).attr('href')
+            const match = href?.match(/page=(\d+)/)
+            if (match) {
+                const pageNum = parseInt(match[1])
+                if (pageNum > maxPage) maxPage = pageNum
+            }
+        })
+        return maxPage
     }
 
     parseChapters($: any, mangaId: string): Chapter[] {
@@ -135,67 +140,51 @@ export class XoxoComicParser {
                 if (!isNaN(parsed.getTime())) time = parsed
             }
 
-            // --- SMART CLEANING ---
-            // Rimuove il nome del manga e l'anno (es "The Sandman (1989)")
-            // Regex flessibile: cerca la fine delle parentesi dell'anno e prende tutto dopo
-            let cleanName = rawTitle.replace(/^.*?\(\d{4}\)\s*/, '').trim()
+            // --- SMART RENAMING LOGIC ---
             
-            // Fallback se la regex dell'anno fallisce (es. titolo senza anno)
-            // Rimuove "mangaId" dal titolo sostituendo trattini con spazi
+            let cleanName = rawTitle.replace(/^.*?\(\d{4}\)\s*/, '').trim()
             const looseMangaName = mangaId.replace(/-/g, ' ')
             if (cleanName === rawTitle && rawTitle.toLowerCase().includes(looseMangaName)) {
                  cleanName = rawTitle.replace(new RegExp(looseMangaName, 'gi'), '').trim()
             }
-
-            // Rimuove underscore iniziali/finali rimasti
             cleanName = cleanName.replace(/^_+|_+$/g, '')
 
             let name = cleanName
             let chapNum = 0
-            let volume = undefined
+            // NOTA: Volume lasciato undefined per evitare il prefisso automatico di Paperback
 
-            // CASO 1: MULTIPART con PARTE (Deluxe Edition, TPB)
-            // Supporta: _The_Deluxe_Edition_1_(Part_1) O The Deluxe Edition 1 Part 1
-            // Cattura: (Tipo) (Numero Volume) (Numero Parte)
-            const multiPartMatch = cleanName.match(/([a-zA-Z_\s]+)[_\s](\d+)[_\s]?\(?Part[_\s](\d+)\)?/i)
+            // CASO 1: Multipart (Deluxe Edition, TPB)
+            const multiPartMatch = cleanName.match(/_?([a-zA-Z_]+)_(\d+)_?\(Part_(\d+)\)/i)
             
-            // CASO 2: SPECIAL / ANNUAL con Numero
-            // Cattura: (Tipo) (Numero)
-            const specialMatch = cleanName.match(/([a-zA-Z_\s]+)[_\s](\d+)/i)
+            // CASO 2: SPECIAL / ANNUAL
+            const specialMatch = cleanName.match(/_?([a-zA-Z_]+)_(\d+)/i)
 
             if (multiPartMatch && (cleanName.toLowerCase().includes('part') || cleanName.toLowerCase().includes('edition'))) {
                 let type = multiPartMatch[1]?.replace(/_/g, ' ').trim() ?? 'Vol'
                 const volNum = parseInt(multiPartMatch[2] ?? '0')
                 const partNum = parseFloat(multiPartMatch[3] ?? '0')
                 
-                // Formatta il nome esattamente come richiesto
+                // NOME PURO: Vol. The Deluxe Edition 1 Ch.1
                 name = `Vol. ${type} ${volNum} Ch.${partNum}`
-                
                 chapNum = partNum
-                volume = volNum
+                // volume = undefined (Volutamente non settato)
             } 
             else if (specialMatch && !cleanName.toLowerCase().includes('issue') && !cleanName.toLowerCase().includes('chapter')) {
                 let type = specialMatch[1]?.replace(/_/g, ' ').trim()
                 const num = parseFloat(specialMatch[2] ?? '0')
-                
                 name = `${type} #${num}`
                 chapNum = num
-                // Non assegniamo volume per lasciare questi capitoli separati dai volumi numerati
             }
             else {
-                // CASO 3: ISSUE / CHAPTER STANDARD
-                // Cerca numero alla fine o dopo Issue/Chapter
                 const issueMatch = cleanName.match(/(?:Issue|Chapter|^)\s*#?(\d+(\.\d+)?)/i)
                 if (issueMatch) {
                     chapNum = parseFloat(issueMatch[1] ?? '0')
                     name = `Issue #${chapNum}`
                 } else {
-                    // Fallback estremo: cerca l'ultimo numero nella stringa
                     const fallbackNum = cleanName.match(/(\d+(\.\d+)?)/g)
                     if (fallbackNum) {
                         chapNum = parseFloat(fallbackNum[fallbackNum.length - 1] ?? '0')
                     }
-                    // Pulisce eventuali underscore rimasti nel nome visualizzato
                     name = cleanName.replace(/_/g, ' ').trim()
                 }
             }
@@ -204,7 +193,7 @@ export class XoxoComicParser {
                 id: chapterId,
                 name: name,
                 chapNum: chapNum,
-                volume: volume,
+                volume: undefined, // IMPORTANTE: Undefined = Nessun prefisso automatico
                 time: time,
                 langCode: 'en'
             }))
