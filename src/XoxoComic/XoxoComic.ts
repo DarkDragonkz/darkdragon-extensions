@@ -13,6 +13,8 @@ import {
     MangaProviding,
     ChapterProviding,
     HomePageSectionsProviding,
+    HomeSectionType,
+    Request
 } from '@paperback/types'
 
 import { XoxoComicParser } from './XoxoComicParser'
@@ -20,7 +22,7 @@ import { XoxoComicParser } from './XoxoComicParser'
 const DOMAIN = 'https://xoxocomic.com'
 
 export const XoxoComicInfo: SourceInfo = {
-    version: '1.1.3', // Bump versione per fix duplicazione nomi
+    version: '1.2.0', // Major bump per Home Revamp
     name: 'XoxoComic',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -80,7 +82,6 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         
-        // Controlla tutte le pagine
         const totalPages = this.parser.getChapterPageCount($)
         let allChapters = this.parser.parseChapters($, mangaId)
 
@@ -102,7 +103,6 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
             }
         }
 
-        // Importante: riordina per sortingIndex per mantenere l'ordine corretto (anche se non numerico)
         return allChapters.map((chapter, index) => {
             chapter.sortingIndex = index
             return chapter
@@ -135,25 +135,69 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        const request = App.createRequest({ url: this.baseUrl, method: 'GET' })
-        const response = await this.requestManager.schedule(request, 1)
-        const $ = this.cheerio.load(response.data)
-        this.parser.parseHomeSections($, sectionCallback)
+        // 1. Definisci le sezioni
+        const sections = [
+            App.createHomeSection({ id: 'trending', title: 'Trending Comics 🔥', containsMoreItems: true, type: HomeSectionType.singleRowLarge }),
+            App.createHomeSection({ id: 'latest', title: 'Latest Updates 🆙', containsMoreItems: true, type: HomeSectionType.continuous }),
+            App.createHomeSection({ id: 'top_month', title: 'Top Month ⭐', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
+            App.createHomeSection({ id: 'top_week', title: 'Top Week ⚡', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
+        ]
+
+        // 2. Definisci le URL corrispondenti
+        const urls = [
+            `${this.baseUrl}/hot-comic`,      // Trending
+            `${this.baseUrl}/comic-update`,   // Latest
+            `${this.baseUrl}/popular-comic`,  // Top Month (Popular)
+            `${this.baseUrl}/new-comic`       // Top Week (New Arrivals)
+        ]
+
+        // 3. Esegui le richieste in parallelo (Senior Pattern)
+        const promises = urls.map(url => App.createRequest({ url: url, method: 'GET' }))
+        
+        // Invia le sezioni vuote prima per mostrare lo scheletro UI
+        for (const section of sections) sectionCallback(section)
+
+        const responses = await Promise.all(promises.map(req => this.requestManager.schedule(req, 1)))
+
+        // 4. Popola le sezioni
+        for (let i = 0; i < sections.length; i++) {
+            const $ = this.cheerio.load(responses[i].data)
+            sections[i].items = this.parser.parseGridItems($)
+            sectionCallback(sections[i])
+        }
     }
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
-        let url = `${this.baseUrl}/latest-comic?page=${page}`
-        if (homepageSectionId === 'popular') url = `${this.baseUrl}/popular-comic?page=${page}`
-        
+        let url = ''
+
+        switch (homepageSectionId) {
+            case 'trending':
+                url = `${this.baseUrl}/hot-comic?page=${page}`
+                break
+            case 'latest':
+                url = `${this.baseUrl}/comic-update?page=${page}`
+                break
+            case 'top_month':
+                url = `${this.baseUrl}/popular-comic?page=${page}`
+                break
+            case 'top_week':
+                url = `${this.baseUrl}/new-comic?page=${page}`
+                break
+            default:
+                return App.createPagedResults({ results: [] })
+        }
+
         const request = App.createRequest({ url: url, method: 'GET' })
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         
         const manga = this.parser.parseGridItems($)
+        const nextPage = manga.length > 0 ? page + 1 : undefined
+
         return App.createPagedResults({
             results: manga,
-            metadata: manga.length > 0 ? { page: page + 1 } : undefined
+            metadata: nextPage ? { page: nextPage } : undefined
         })
     }
     

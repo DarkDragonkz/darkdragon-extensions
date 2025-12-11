@@ -139,7 +139,7 @@ export class XoxoComicParser {
                 if (!isNaN(parsed.getTime())) time = parsed
             }
 
-            // --- SMART RENAMING LOGIC ---
+            // --- SMART CLEANING ---
             
             let cleanName = rawTitle.replace(/^.*?\(\d{4}\)\s*/, '').trim()
             const looseMangaName = mangaId.replace(/-/g, ' ')
@@ -151,8 +151,10 @@ export class XoxoComicParser {
             let name = cleanName
             let chapNum = 0
             
-            // Regex flessibile: Accetta sia '_' che spazi ' ' come separatori
+            // CASO 1: MULTIPART (Deluxe, TPB)
             const multiPartMatch = cleanName.match(/_?([a-zA-Z_\s]+)[\s_](\d+)[\s_]?\(?Part[\s_](\d+)\)?/i)
+            
+            // CASO 2: SPECIAL / ANNUAL
             const specialMatch = cleanName.match(/_?([a-zA-Z_\s]+)[\s_](\d+)/i)
 
             if (multiPartMatch && (cleanName.toLowerCase().includes('part') || cleanName.toLowerCase().includes('edition'))) {
@@ -160,7 +162,6 @@ export class XoxoComicParser {
                 const volNum = parseInt(multiPartMatch[2] ?? '0')
                 const partNum = parseFloat(multiPartMatch[3] ?? '0')
                 
-                // MODIFICA QUI: Uso "Part." invece di "Ch."
                 name = `Vol. ${type} ${volNum} Part. ${partNum}`
                 chapNum = partNum
             } 
@@ -228,7 +229,8 @@ export class XoxoComicParser {
         const results: PartialSourceManga[] = []
         const seenIds = new Set<string>()
 
-        $('.item, .list-truyen-item-wrap').each((_: any, item: any) => {
+        // Selettore universale per tutti i tipi di liste
+        $('.item, .list-truyen-item-wrap, .searched-item').each((_: any, item: any) => {
             const manga = this.parseMangaItem($, item)
             if (manga && !seenIds.has(manga.mangaId)) {
                 seenIds.add(manga.mangaId)
@@ -237,28 +239,5 @@ export class XoxoComicParser {
         })
 
         return results
-    }
-
-    parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
-        const latestSection = App.createHomeSection({ 
-            id: 'latest', 
-            title: 'Latest Updates 🆕', 
-            containsMoreItems: true, 
-            type: HomeSectionType.continuous 
-        })
-        const popularSection = App.createHomeSection({ 
-            id: 'popular', 
-            title: 'Popular Comics 🔥', 
-            containsMoreItems: true, 
-            type: HomeSectionType.singleRowLarge 
-        })
-        
-        const items = this.parseGridItems($)
-        
-        latestSection.items = items
-        popularSection.items = items.slice(0, 15)
-
-        sectionCallback(popularSection)
-        sectionCallback(latestSection)
     }
 }
