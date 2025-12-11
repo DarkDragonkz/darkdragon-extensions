@@ -637,13 +637,13 @@ var _Sources = (() => {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.HomeSectionType = void 0;
-      var HomeSectionType2;
-      (function(HomeSectionType3) {
-        HomeSectionType3["singleRowNormal"] = "singleRowNormal";
-        HomeSectionType3["singleRowLarge"] = "singleRowLarge";
-        HomeSectionType3["doubleRow"] = "doubleRow";
-        HomeSectionType3["featured"] = "featured";
-      })(HomeSectionType2 = exports.HomeSectionType || (exports.HomeSectionType = {}));
+      var HomeSectionType;
+      (function(HomeSectionType2) {
+        HomeSectionType2["singleRowNormal"] = "singleRowNormal";
+        HomeSectionType2["singleRowLarge"] = "singleRowLarge";
+        HomeSectionType2["doubleRow"] = "doubleRow";
+        HomeSectionType2["featured"] = "featured";
+      })(HomeSectionType = exports.HomeSectionType || (exports.HomeSectionType = {}));
     }
   });
 
@@ -979,8 +979,8 @@ var _Sources = (() => {
   // src/XoxoComic/XoxoComic.ts
   var DOMAIN = "https://xoxocomic.com";
   var XoxoComicInfo = {
-    version: "1.3.1",
-    // Bump versione finale
+    version: "1.3.2",
+    // Bump versione per fix ReferenceError
     name: "XoxoComic",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -1079,10 +1079,30 @@ var _Sources = (() => {
       });
     }
     async getHomePageSections(sectionCallback) {
-      const trendingSection = App.createHomeSection({ id: "trending", title: "Trending Comics \u{1F525}", containsMoreItems: false, type: HomeSectionType.singleRowLarge });
-      const latestSection = App.createHomeSection({ id: "latest", title: "Latest Updates \u{1F199}", containsMoreItems: true, type: HomeSectionType.continuous });
-      const topMonthSection = App.createHomeSection({ id: "top_month", title: "Top Month \u2B50", containsMoreItems: false, type: HomeSectionType.singleRowNormal });
-      const topWeekSection = App.createHomeSection({ id: "top_week", title: "Top Week \u26A1", containsMoreItems: false, type: HomeSectionType.singleRowNormal });
+      const trendingSection = App.createHomeSection({
+        id: "trending",
+        title: "Trending Comics \u{1F525}",
+        containsMoreItems: false,
+        type: "singleRowLarge"
+      });
+      const latestSection = App.createHomeSection({
+        id: "latest",
+        title: "Latest Updates \u{1F199}",
+        containsMoreItems: true,
+        type: "continuous"
+      });
+      const topMonthSection = App.createHomeSection({
+        id: "top_month",
+        title: "Top Month \u2B50",
+        containsMoreItems: false,
+        type: "singleRowNormal"
+      });
+      const topWeekSection = App.createHomeSection({
+        id: "top_week",
+        title: "Top Week \u26A1",
+        containsMoreItems: false,
+        type: "singleRowNormal"
+      });
       const requestHome = App.createRequest({ url: this.baseUrl, method: "GET" });
       const requestNew = App.createRequest({ url: `${this.baseUrl}/new-comic`, method: "GET" });
       sectionCallback(trendingSection);
