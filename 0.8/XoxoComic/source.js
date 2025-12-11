@@ -830,40 +830,39 @@ var _Sources = (() => {
           if (!isNaN(parsed.getTime())) time = parsed;
         }
         let cleanName = rawTitle.replace(/^.*?\(\d{4}\)\s*/, "").trim();
-        if (cleanName === rawTitle && rawTitle.toLowerCase().includes(mangaId.replace(/-/g, " "))) {
-          cleanName = rawTitle.replace(new RegExp(mangaId.replace(/-/g, " "), "i"), "").trim();
+        const looseMangaName = mangaId.replace(/-/g, " ");
+        if (cleanName === rawTitle && rawTitle.toLowerCase().includes(looseMangaName)) {
+          cleanName = rawTitle.replace(new RegExp(looseMangaName, "gi"), "").trim();
         }
+        cleanName = cleanName.replace(/^_+|_+$/g, "");
         let name = cleanName;
         let chapNum = 0;
         let volume = void 0;
-        const multiPartMatch = cleanName.match(/_?([a-zA-Z_]+)_(\d+)_?\(Part_(\d+)\)/i);
-        if (multiPartMatch) {
+        const multiPartMatch = cleanName.match(/([a-zA-Z_\s]+)[_\s](\d+)[_\s]?\(?Part[_\s](\d+)\)?/i);
+        const specialMatch = cleanName.match(/([a-zA-Z_\s]+)[_\s](\d+)/i);
+        if (multiPartMatch && (cleanName.toLowerCase().includes("part") || cleanName.toLowerCase().includes("edition"))) {
           let type = multiPartMatch[1]?.replace(/_/g, " ").trim() ?? "Vol";
           const volNum = parseInt(multiPartMatch[2] ?? "0");
           const partNum = parseFloat(multiPartMatch[3] ?? "0");
-          if (type.toUpperCase() === "TPB") type = "TPB";
           name = `Vol. ${type} ${volNum} Ch.${partNum}`;
           chapNum = partNum;
           volume = volNum;
+        } else if (specialMatch && !cleanName.toLowerCase().includes("issue") && !cleanName.toLowerCase().includes("chapter")) {
+          let type = specialMatch[1]?.replace(/_/g, " ").trim();
+          const num = parseFloat(specialMatch[2] ?? "0");
+          name = `${type} #${num}`;
+          chapNum = num;
         } else {
-          const singleSpecialMatch = cleanName.match(/_?([a-zA-Z_]+)_(\d+)/i);
-          if (singleSpecialMatch && !cleanName.toLowerCase().includes("issue") && !cleanName.toLowerCase().includes("chapter")) {
-            const type = singleSpecialMatch[1]?.replace(/_/g, " ").trim();
-            const num = parseFloat(singleSpecialMatch[2] ?? "0");
-            name = `${type} #${num}`;
-            chapNum = num;
+          const issueMatch = cleanName.match(/(?:Issue|Chapter|^)\s*#?(\d+(\.\d+)?)/i);
+          if (issueMatch) {
+            chapNum = parseFloat(issueMatch[1] ?? "0");
+            name = `Issue #${chapNum}`;
           } else {
-            const issueMatch = cleanName.match(/(?:Issue|Chapter)\s*#?(\d+(\.\d+)?)/i);
-            if (issueMatch) {
-              chapNum = parseFloat(issueMatch[1] ?? "0");
-              name = `Issue #${chapNum}`;
-            } else {
-              const fallbackNum = cleanName.match(/(\d+(\.\d+)?)/g);
-              if (fallbackNum) {
-                chapNum = parseFloat(fallbackNum[fallbackNum.length - 1] ?? "0");
-              }
-              name = cleanName.replace(/_/g, " ").trim();
+            const fallbackNum = cleanName.match(/(\d+(\.\d+)?)/g);
+            if (fallbackNum) {
+              chapNum = parseFloat(fallbackNum[fallbackNum.length - 1] ?? "0");
             }
+            name = cleanName.replace(/_/g, " ").trim();
           }
         }
         chapters.push(App.createChapter({
@@ -936,8 +935,8 @@ var _Sources = (() => {
   // src/XoxoComic/XoxoComic.ts
   var DOMAIN = "https://xoxocomic.com";
   var XoxoComicInfo = {
-    version: "1.1.1",
-    // Bump versione per fix pagination
+    version: "1.1.2",
+    // Bump versione
     name: "XoxoComic",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -1009,7 +1008,10 @@ var _Sources = (() => {
           allChapters = allChapters.concat(pageChapters);
         }
       }
-      return allChapters;
+      return allChapters.map((chapter, index) => {
+        chapter.sortingIndex = index;
+        return chapter;
+      });
     }
     async getChapterDetails(mangaId, chapterId) {
       let url = chapterId.startsWith("http") ? chapterId : `${this.baseUrl}/${chapterId}`;
