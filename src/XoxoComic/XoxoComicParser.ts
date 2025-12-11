@@ -13,8 +13,16 @@ const BASE_URL = 'https://xoxocomic.com'
 
 export class XoxoComicParser {
 
+    /**
+     * Helper cruciale per evitare l'errore Kingfisher.
+     * Ignora immagini base64 e placeholder.
+     */
     private getImageSrc(url: string | undefined): string {
-        if (!url || url.includes('logo') || url.includes('placeholder')) return 'https://paperback.moe/icons/logo-alt.svg'
+        if (!url) return 'https://paperback.moe/icons/logo-alt.svg'
+        
+        // FIX CRITICO: Se è base64 (data:image...), è un placeholder inutile. Ignoralo.
+        if (url.startsWith('data:')) return '' 
+        if (url.includes('logo') || url.includes('placeholder')) return 'https://paperback.moe/icons/logo-alt.svg'
         
         url = url.trim()
         if (url.startsWith('//')) {
@@ -29,32 +37,34 @@ export class XoxoComicParser {
     private parseMangaItem($: any, element: any): PartialSourceManga | null {
         const item = $(element)
         
-        // Link
-        let link = item.is('a') ? item : item.find('a[href*="/comic/"]').first()
-        if (!link.attr('href')) link = item.find('h3 a, .title a').first()
+        let link = item.find('a').first()
+        // Se il link non punta a un fumetto, cerca meglio
+        if (!link.attr('href')?.includes('/comic/')) {
+             link = item.find('h3 a, .title a').first()
+        }
 
         const href = link.attr('href')
         const id = href?.split('/').filter((p: string) => p && p !== 'comic' && p !== 'xoxocomic.com').pop()
 
         if (!id) return null
 
-        // Titolo
         let title = item.find('h3').text().trim()
+        if (!title) title = link.text().trim()
         if (!title) title = item.find('.title').text().trim()
-        if (!title) title = link.text().trim() || link.attr('title') || 'Unknown'
+        if (!title) title = 'Unknown Title'
 
-        // Immagine
+        // Logica Immagini: Priorità a data-original per evitare base64
         const img = item.find('img').first()
         let imageSrc = img.attr('data-original') || img.attr('data-src') || img.attr('src')
         
-        // Fix per sfondi CSS
-        if (!imageSrc) {
+        // Fallback stile CSS (background-image)
+        if (!imageSrc || imageSrc.startsWith('data:')) {
             const style = item.find('.div-poster, .image').attr('style')
             const match = style?.match(/url\(['"]?(.*?)['"]?\)/)
             if (match) imageSrc = match[1]
         }
 
-        const image = this.getImageSrc(imageSrc)
+        const image = this.getImageSrc(imageSrc) || 'https://paperback.moe/icons/logo-alt.svg'
         const subtitle = item.find('.chapter, .chapter-name').last().text().trim()
 
         return App.createPartialSourceManga({
@@ -66,40 +76,42 @@ export class XoxoComicParser {
     }
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
-        // STRATEGIA 1: META TAGS (Più affidabile)
-        let title = $('meta[property="og:title"]').attr('content')?.replace('- XoxoComic', '').trim()
-        let imageSrc = $('meta[property="og:image"]').attr('content')
-        let desc = $('meta[name="description"]').attr('content') || $('meta[property="og:description"]').attr('content')
+        // 1. Titolo: prova selettori specifici
+        let title = $('h2.listmanga-header').text().trim()
+        if (!title) title = $('.manga-info h1').text().trim()
+        if (!title) title = $('meta[property="og:title"]').attr('content')?.replace('- XoxoComic', '').trim() ?? 'Unknown'
 
-        // STRATEGIA 2: Fallback HTML
-        if (!title) title = $('h2.listmanga-header, h1.title-manga, h1').first().text().trim()
-        if (!imageSrc) imageSrc = $('.col-md-4 .img-responsive, .manga-info img').first().attr('src')
-        if (!desc) desc = $('.manga-content p, .well p, #noidungm').text().trim()
-
-        const image = this.getImageSrc(imageSrc)
-        if (!title) title = 'Unknown Title'
-        if (!desc) desc = 'No description available'
+        // 2. Immagine: Cerca data-original per evitare base64
+        let img = $('.col-md-4 .img-responsive, .manga-info img').first()
+        let imageSrc = img.attr('data-original') || img.attr('src')
+        if (!imageSrc) imageSrc = $('meta[property="og:image"]').attr('content')
+        
+        const image = this.getImageSrc(imageSrc) || 'https://paperback.moe/icons/logo-alt.svg'
 
         let author = 'Unknown'
         let artist = 'Unknown'
         let status = 'Ongoing'
+        let desc = ''
 
-        // Parsing Metadati
-        // Cerca liste di definizione o label generiche
+        // 3. Metadati
         $('dt, .manga-info li b').each((_: any, el: any) => {
             const label = $(el).text().toLowerCase()
             const value = $(el).next('dd').text().trim() || $(el).parent().text().replace(label, '').trim()
 
-            if (label.includes('author')) author = value
-            if (label.includes('artist')) artist = value
+            if (label.includes('author')) author = value.replace(/:/g, '').trim()
+            if (label.includes('artist')) artist = value.replace(/:/g, '').trim()
             if (label.includes('status')) {
                 if (value.toLowerCase().includes('completed')) status = 'Completed'
             }
         })
 
-        // Generi
+        // 4. Descrizione (Pulisce "Summary:")
+        desc = $('#noidungm, .manga-content p, .well p').first().text().trim()
+        if (!desc) desc = $('meta[name="description"]').attr('content') ?? ''
+        desc = desc.replace(/^Summary:/i, '').trim()
+        if (!desc) desc = 'No description available'
+
         const arrayTags: Tag[] = []
-        // Cerca link che contengono "genre" ovunque nella pagina
         $('a[href*="/genre/"]').each((_: any, a: any) => {
             const label = $(a).text().trim()
             const id = $(a).attr('href')?.split('/').pop() ?? label
@@ -124,45 +136,30 @@ export class XoxoComicParser {
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
         
-        // CERCA OVUNQUE: Qualsiasi link che sembri un capitolo
-        // Escludi link header/footer/sidebar generici
-        $('a').each((_: any, a: any) => {
-            const link = $(a)
+        // Selettore specifico per la lista capitoli per evitare bottoni "Start Reading"
+        // Cerca dentro 'ul.chapters' O '.chapter-list'
+        $('ul.chapters li, .chapter-list .row').each((_: any, li: any) => {
+            const link = $(li).find('a').first()
+            const title = link.text().trim()
             const href = link.attr('href')
-            if (!href) return
-
-            // Deve contenere l'ID del manga o "chapter" o "issue"
-            // E non deve essere il link alla pagina manga stessa
-            const isChapterLink = (href.includes(mangaId) || href.includes('chapter') || href.includes('issue')) 
-                                  && href.length > (BASE_URL.length + mangaId.length + 5)
-                                  && !href.endsWith('/comic/' + mangaId)
             
-            if (!isChapterLink) return
+            // FIX: Ignora bottoni "Start Reading" o "Read Now"
+            if (title.toLowerCase().includes('start reading') || title.toLowerCase().includes('read now')) return
 
-            // Verifica che sia dentro una lista o una tabella (per evitare link "Latest" nella sidebar)
-            const parentClass = link.closest('ul, div, li').attr('class') || ''
-            if (!parentClass && link.parents().length < 5) return // Troppo in alto nell'albero DOM
-
-            let chapterId = href.replace(BASE_URL, '')
+            let chapterId = href?.replace(BASE_URL, '') ?? ''
             if (chapterId.startsWith('/')) chapterId = chapterId.substring(1)
 
-            const title = link.text().trim()
-            if (!title) return
+            if (!chapterId) return
 
-            // Evita duplicati
-            if (chapters.some(c => c.id === chapterId)) return
+            const dateText = $(li).find('.date-chapter-title-rtl, .time').text().trim()
+            let time = new Date()
+            if (dateText) {
+                const parsed = new Date(dateText)
+                if (!isNaN(parsed.getTime())) time = parsed
+            }
 
-            // Parsing Numero
             const numMatch = title.match(/(\d+(\.\d+)?)/)
             const chapNum = numMatch ? parseFloat(numMatch[0]) : 0
-
-            // Cerca data vicino al link
-            const dateText = link.parent().text().replace(title, '').trim()
-            let time = new Date()
-            if (dateText.match(/\d{4}/)) { // Se sembra una data
-                 const parsed = new Date(dateText)
-                 if (!isNaN(parsed.getTime())) time = parsed
-            }
 
             chapters.push(App.createChapter({
                 id: chapterId,
@@ -179,22 +176,34 @@ export class XoxoComicParser {
     parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
 
-        // 1. Estrazione Array JS (Metodo veloce)
+        // 1. TENTATIVO JAVASCRIPT (Il più affidabile su XoxoComic)
+        // Cerca: var lstImages = new Array("...");
         const scriptMatch = html.match(/var\s+lstImages\s*=\s*new\s+Array\((.*?)\);/)
+        
         if (scriptMatch && scriptMatch[1]) {
             const urls = scriptMatch[1].split(',').map((u: string) => u.trim().replace(/['"]/g, ''))
-            for (const url of urls) if (url) pages.push(this.getImageSrc(url))
+            for (const url of urls) {
+                // Pulizia URL
+                const cleanUrl = this.getImageSrc(url)
+                if (cleanUrl && !cleanUrl.startsWith('data:')) {
+                    pages.push(cleanUrl)
+                }
+            }
         } 
         
-        // 2. Fallback: Cerca tag <img> standard se JS fallisce
+        // 2. FALLBACK HTML (Solo se lo script fallisce)
         if (pages.length === 0) {
+            // Cerca tutti i tag img che non sono icone
             const imgRegex = /<img[^>]+src="([^">]+)"/g
             let match
             while ((match = imgRegex.exec(html)) !== null) {
-                const src = match[1]
-                if (src && !src.includes('logo') && !src.includes('banner')) {
-                    pages.push(this.getImageSrc(src))
-                }
+                const rawSrc = match[1]
+                
+                // Saltiamo roba che puzza di placeholder o logo
+                if (rawSrc.includes('logo') || rawSrc.includes('banner') || rawSrc.startsWith('data:')) continue
+
+                const cleanUrl = this.getImageSrc(rawSrc)
+                if (cleanUrl) pages.push(cleanUrl)
             }
         }
 
@@ -209,7 +218,7 @@ export class XoxoComicParser {
         const results: PartialSourceManga[] = []
         const seenIds = new Set<string>()
 
-        $('.item, .list-truyen-item-wrap, .search-story-item').each((_: any, item: any) => {
+        $('.item, .list-truyen-item-wrap').each((_: any, item: any) => {
             const manga = this.parseMangaItem($, item)
             if (manga && !seenIds.has(manga.mangaId)) {
                 seenIds.add(manga.mangaId)
@@ -231,8 +240,7 @@ export class XoxoComicParser {
         const latestItems: PartialSourceManga[] = []
         const seenIds = new Set<string>()
 
-        // Cerca qualsiasi 'item' in pagina
-        $('.item, .content .row .col-md-3').each((_: any, item: any) => {
+        $('.item').each((_: any, item: any) => {
             const manga = this.parseMangaItem($, item)
             if (manga && !seenIds.has(manga.mangaId)) {
                 seenIds.add(manga.mangaId)
