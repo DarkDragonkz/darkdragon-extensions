@@ -29,6 +29,7 @@ export class MangaWorldParser {
     private cleanTitle(title: string): string {
         if (!title) return 'Unknown'
         title = title.trim()
+        // Rimuovi duplicazioni speculari (es. "One PieceOne Piece")
         if (title.length > 0 && title.length % 2 === 0) {
             const half = title.substring(0, title.length / 2)
             if (half === title.substring(title.length / 2)) {
@@ -49,6 +50,7 @@ export class MangaWorldParser {
         if (dateStr.includes('oggi')) return now
         if (dateStr.includes('ieri')) return new Date(now.setDate(now.getDate() - 1))
 
+        // Traduzione mesi
         for (const [it, en] of Object.entries(this.months)) {
             if (dateStr.includes(it)) {
                 dateStr = dateStr.replace(it, en)
@@ -158,65 +160,96 @@ export class MangaWorldParser {
 
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
-        const arrChapters = $('.chapter').toArray()
-        
+        const addedIds = new Set<string>() // Per evitare duplicati se il sito è buggato
+
         // Recuperiamo il titolo della serie per pulirlo dai nomi dei capitoli
         let seriesName = $('.name.bigger').text().trim()
         seriesName = this.cleanTitle(seriesName)
 
-        for (const item of arrChapters) {
-            const link = $('a.chap', item)
-            const id = link.attr('href')?.replace(`${BASE_URL}/manga/${mangaId}/read/`, '') ?? ''
-            
-            // Titolo grezzo: "Martial Peak Capitolo 01 Scan ITA"
-            let rawName = link.attr('title') ?? ''
-            
-            // 1. Rimuovi il nome della serie (Case Insensitive)
-            // Es: "Martial Peak Capitolo 01" -> "Capitolo 01"
-            let name = rawName.replace(new RegExp(seriesName, 'gi'), '').trim()
-            
-            // 2. Rimuovi "Scan ITA", "ITA", ecc.
-            name = name.replace(/scan ita/gi, '').replace(/\sita\s?$/gi, '').trim()
-            
-            // 3. Rimuovi trattini iniziali o spazi residui
-            name = name.replace(/^(-|\s)+/, '').trim()
+        [cite_start]// 1. LOGICA VOLUMI (Prioritaria) [cite: 1, 9]
+        // Cerca elementi con classe .volume-element (One Piece, Naruto, ecc.)
+        const volumeElements = $('.volume-element').toArray()
+        
+        if (volumeElements.length > 0) {
+            for (const volumeEl of volumeElements) {
+                [cite_start]// Estrai numero volume: "Volume 113" -> 113 [cite: 1]
+                const volName = $('.volume-name', volumeEl).text().trim()
+                const volMatch = volName.match(/Volume\s+(\d+)/i)
+                const volumeNumber = volMatch ? Number(volMatch[1]) : undefined
 
-            // 4. Estrazione Volume (se presente nel titolo)
-            // Es: "Volume 1 Capitolo 2" -> volume: 1
-            let volume: number | undefined = undefined
-            const volMatch = name.match(/vol(?:ume)?\.?\s*(\d+)/i)
-            if (volMatch) {
-                volume = Number(volMatch[1])
-                // Opzionale: Rimuovi la scritta "Volume X" dal titolo per non ripeterla
-                // name = name.replace(volMatch[0], '').trim()
+                [cite_start]// Itera i capitoli dentro questo volume [cite: 1]
+                const chapterNodes = $('.chapter', volumeEl).toArray()
+                for (const node of chapterNodes) {
+                    this.processChapter($, node, mangaId, seriesName, chapters, addedIds, volumeNumber)
+                }
             }
-
-            // Parsing numero capitolo
-            const chapText = $('.d-inline-block', item).text().trim()
-            const chapNumMatch = chapText.match(/(\d+(\.\d+)?)/)
-            const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0
-
-            // Se il nome è rimasto vuoto dopo la pulizia (es. era solo "Martial Peak 123"),
-            // ricostruiscilo come "Capitolo X"
-            if (!name) {
-                name = `Capitolo ${chapNum}`
-            }
-
-            const dateText = $('.chap-date', item).text().trim()
-            const time = this.parseDate(dateText)
-
-            chapters.push(
-                App.createChapter({
-                    id,
-                    name, // Ora conterrà solo "Capitolo 01" (o "Volume 1 Capitolo 1")
-                    chapNum,
-                    volume, // Se trovato, Paperback raggrupperà per volume
-                    time,
-                    langCode: 'it',
-                })
-            )
+        } 
+        
+        // 2. LOGICA FLAT (Fallback)
+        // Se non ci sono volumi O se ci sono capitoli orfani fuori dai volumi (Webtoons come Martial Peak)
+        // Seleziona tutti i capitoli e processa solo quelli non ancora aggiunti
+        const allChapters = $('.chapter').toArray()
+        for (const node of allChapters) {
+            this.processChapter($, node, mangaId, seriesName, chapters, addedIds, undefined)
         }
+
         return chapters
+    }
+
+    /**
+     * Logica unificata per processare un singolo nodo capitolo HTML
+     */
+    private processChapter($: any, item: any, mangaId: string, seriesName: string, chapters: Chapter[], addedIds: Set<string>, volume?: number) {
+        const link = $('a.chap', item)
+        const href = link.attr('href')
+        if (!href) return
+
+        const id = href.replace(`${BASE_URL}/manga/${mangaId}/read/`, '')
+        
+        // Evita duplicati
+        if (addedIds.has(id)) return
+        addedIds.add(id)
+
+        // Parsing numero capitolo dal testo "Capitolo 1168"
+        const chapText = $('.d-inline-block', item).text().trim()
+        const chapNumMatch = chapText.match(/(\d+(\.\d+)?)/)
+        const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0
+
+        // PULIZIA NOME (Name Cleaning)
+        // Titolo grezzo: "Martial Peak Capitolo 01 Scan ITA"
+        let rawName = link.attr('title') ?? ''
+        
+        // 1. Rimuovi il nome della serie (Case Insensitive)
+        let name = rawName.replace(new RegExp(seriesName, 'gi'), '').trim()
+        
+        // 2. Rimuovi "Scan ITA", "ITA", "Capitolo X"
+        name = name.replace(/scan ita/gi, '')
+                   .replace(/ita/gi, '')
+                   .replace(/capitolo\s*\d+(\.\d+)?/gi, '') // Rimuove "Capitolo 123" dal nome, dato che Paperback lo mette da solo
+                   .replace(/-|\s+$/g, '') // Rimuovi trattini finali
+                   .trim()
+
+        // Se il nome è rimasto vuoto (molto probabile), mettiamo un placeholder vuoto o il titolo originale pulito
+        // Se lasciamo 'undefined', Paperback userà "Chapter X". Se mettiamo stringa vuota, userà "Chapter X".
+        // Se c'è un titolo reale (es. "L'inizio dell'avventura"), rimarrà quello.
+        if (!name || name.length < 2) {
+            // Se vogliamo forzare "Capitolo X", possiamo farlo, ma Paperback gestisce "Ch. X" nativamente.
+            name = '' 
+        }
+
+        const dateText = $('.chap-date', item).text().trim()
+        const time = this.parseDate(dateText)
+
+        chapters.push(
+            App.createChapter({
+                id,
+                name, // Ora sarà pulito (es. "" o "Titolo del capitolo")
+                chapNum,
+                volume, // Se trovato nel blocco volume, Paperback raggrupperà correttamente
+                time,
+                langCode: 'it',
+            })
+        )
     }
 
     parseChapterDetails($: any, mangaId: string, id: string): ChapterDetails {
