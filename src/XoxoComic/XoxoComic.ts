@@ -20,7 +20,7 @@ import { XoxoComicParser } from './XoxoComicParser'
 const DOMAIN = 'https://xoxocomic.com'
 
 export const XoxoComicInfo: SourceInfo = {
-    version: '1.4.0', // Bump versione: Refactoring e UI Enhance
+    version: '1.4.1', // Bump versione per Fix ReferenceError $
     name: 'XoxoComic',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -78,9 +78,9 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         let allChapters = this.parser.parseChapters($, mangaId)
         let maxPage = this.parser.getChapterPageCount($)
         
-        // Loop Discovery con Limite di Sicurezza (Senior Dev Pattern)
+        // Loop Discovery con Limite di Sicurezza
         const fetchedPages = new Set<number>([1])
-        const MAX_SAFETY_PAGES = 50 // Previene loop infiniti in caso di bug del sito
+        const MAX_SAFETY_PAGES = 50 
         
         while (true) {
             const pagesToFetch: number[] = []
@@ -107,7 +107,6 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
                 const pageChapters = this.parser.parseChapters($page, mangaId)
                 allChapters = allChapters.concat(pageChapters)
                 
-                // Aggiorna maxPage se ne scopriamo di nuove
                 const foundMax = this.parser.getChapterPageCount($page)
                 if (foundMax > maxPage) maxPage = foundMax
             }
@@ -138,6 +137,7 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         const $ = this.cheerio.load(response.data)
         const manga = []
         
+        // Qui $ è definito (linea sopra), quindi funziona
         $('.item, .list-truyen-item-wrap, .search-story-item').each((_: any, item: any) => {
             const m = this.parser.parseUniversalItem($, item, 'grid')
             if (m) manga.push(m)
@@ -150,7 +150,6 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        // Stringhe esplicite per evitare ReferenceError
         const trendingSection = App.createHomeSection({ id: 'trending', title: 'Trending Comics 🔥', containsMoreItems: false, type: 'singleRowLarge' })
         const latestSection = App.createHomeSection({ id: 'latest', title: 'Latest Updates 🆙', containsMoreItems: true, type: 'continuous' })
         const topMonthSection = App.createHomeSection({ id: 'top_month', title: 'Top Month ⭐', containsMoreItems: false, type: 'singleRowNormal' })
@@ -174,7 +173,8 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
 
         // 1. Trending (Home -> .items-slide)
         const trendingItems: PartialSourceManga[] = []
-        $('.items-slide .item').each((_: any, item: any) => {
+        // FIX: Uso $home invece di $
+        $home('.items-slide .item').each((_: any, item: any) => {
             const m = this.parser.parseUniversalItem($home, item, 'slide')
             if (m) trendingItems.push(m)
         })
@@ -183,7 +183,8 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
 
         // 2. Latest (New Comic Page -> .items .row)
         const latestItems: PartialSourceManga[] = []
-        $('.items .row .item').each((_: any, item: any) => {
+        // FIX: Uso $new invece di $
+        $new('.items .row .item').each((_: any, item: any) => {
             const m = this.parser.parseUniversalItem($new, item, 'list')
             if (m) latestItems.push(m)
         })
@@ -192,7 +193,8 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
 
         // 3. Top Month (Home -> #topMonth)
         const monthItems: PartialSourceManga[] = []
-        $('#topMonth li').each((_: any, item: any) => {
+        // FIX: Uso $home invece di $
+        $home('#topMonth li').each((_: any, item: any) => {
             const m = this.parser.parseUniversalItem($home, item, 'top')
             if (m) monthItems.push(m)
         })
@@ -201,7 +203,8 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
 
         // 4. Top Week (Home -> #topWeek)
         const weekItems: PartialSourceManga[] = []
-        $('#topWeek li').each((_: any, item: any) => {
+        // FIX: Uso $home invece di $
+        $home('#topWeek li').each((_: any, item: any) => {
             const m = this.parser.parseUniversalItem($home, item, 'top')
             if (m) weekItems.push(m)
         })
@@ -219,6 +222,7 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
             const $ = this.cheerio.load(response.data)
             
             const manga: PartialSourceManga[] = []
+            // Qui $ è definito
             $('.items .row .item').each((_: any, item: any) => {
                 const m = this.parser.parseUniversalItem($, item, 'list')
                 if (m) manga.push(m)
@@ -226,7 +230,7 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
 
             return App.createPagedResults({
                 results: manga,
-                metadata: manga.length > 0 ? { page: page + 1 } : undefined
+                metadata: nextPage: manga.length > 0 ? { page: page + 1 } : undefined // Correzione piccola typo
             })
         }
         
