@@ -863,43 +863,61 @@ var _Sources = (() => {
     }
     parseChapters($, mangaId) {
       const chapters = [];
-      const arrChapters = $(".chapter").toArray();
+      const addedIds = /* @__PURE__ */ new Set();
       let seriesName = $(".name.bigger").text().trim();
-      seriesName = this.cleanTitle(seriesName);
-      for (const item of arrChapters) {
-        const link = $("a.chap", item);
-        const id = link.attr("href")?.replace(`${BASE_URL}/manga/${mangaId}/read/`, "") ?? "";
-        let rawName = link.attr("title") ?? "";
-        let name = rawName.replace(new RegExp(seriesName, "gi"), "").trim();
-        name = name.replace(/scan ita/gi, "").replace(/\sita\s?$/gi, "").trim();
-        name = name.replace(/^(-|\s)+/, "").trim();
-        let volume = void 0;
-        const volMatch = name.match(/vol(?:ume)?\.?\s*(\d+)/i);
-        if (volMatch) {
-          volume = Number(volMatch[1]);
+      seriesName = this.cleanTitle(seriesName)[cite_start];
+      const volumeElements = $(".volume-element").toArray();
+      if (volumeElements.length > 0) {
+        for (const volumeEl of volumeElements) {
+          [cite_start];
+          const volName = $(".volume-name", volumeEl).text().trim();
+          const volMatch = volName.match(/Volume\s+(\d+)/i);
+          const volumeNumber = volMatch ? Number(volMatch[1]) : (void 0)[cite_start];
+          const chapterNodes = $(".chapter", volumeEl).toArray();
+          for (const node of chapterNodes) {
+            this.processChapter($, node, mangaId, seriesName, chapters, addedIds, volumeNumber);
+          }
         }
-        const chapText = $(".d-inline-block", item).text().trim();
-        const chapNumMatch = chapText.match(/(\d+(\.\d+)?)/);
-        const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0;
-        if (!name) {
-          name = `Capitolo ${chapNum}`;
-        }
-        const dateText = $(".chap-date", item).text().trim();
-        const time = this.parseDate(dateText);
-        chapters.push(
-          App.createChapter({
-            id,
-            name,
-            // Ora conterrà solo "Capitolo 01" (o "Volume 1 Capitolo 1")
-            chapNum,
-            volume,
-            // Se trovato, Paperback raggrupperà per volume
-            time,
-            langCode: "it"
-          })
-        );
+      }
+      const allChapters = $(".chapter").toArray();
+      for (const node of allChapters) {
+        this.processChapter($, node, mangaId, seriesName, chapters, addedIds, void 0);
       }
       return chapters;
+    }
+    /**
+     * Logica unificata per processare un singolo nodo capitolo HTML
+     */
+    processChapter($, item, mangaId, seriesName, chapters, addedIds, volume) {
+      const link = $("a.chap", item);
+      const href = link.attr("href");
+      if (!href) return;
+      const id = href.replace(`${BASE_URL}/manga/${mangaId}/read/`, "");
+      if (addedIds.has(id)) return;
+      addedIds.add(id);
+      const chapText = $(".d-inline-block", item).text().trim();
+      const chapNumMatch = chapText.match(/(\d+(\.\d+)?)/);
+      const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0;
+      let rawName = link.attr("title") ?? "";
+      let name = rawName.replace(new RegExp(seriesName, "gi"), "").trim();
+      name = name.replace(/scan ita/gi, "").replace(/ita/gi, "").replace(/capitolo\s*\d+(\.\d+)?/gi, "").replace(/-|\s+$/g, "").trim();
+      if (!name || name.length < 2) {
+        name = "";
+      }
+      const dateText = $(".chap-date", item).text().trim();
+      const time = this.parseDate(dateText);
+      chapters.push(
+        App.createChapter({
+          id,
+          name,
+          // Ora sarà pulito (es. "" o "Titolo del capitolo")
+          chapNum,
+          volume,
+          // Se trovato nel blocco volume, Paperback raggrupperà correttamente
+          time,
+          langCode: "it"
+        })
+      );
     }
     parseChapterDetails($, mangaId, id) {
       const pages = [];
