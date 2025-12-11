@@ -637,13 +637,13 @@ var _Sources = (() => {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.HomeSectionType = void 0;
-      var HomeSectionType2;
-      (function(HomeSectionType3) {
-        HomeSectionType3["singleRowNormal"] = "singleRowNormal";
-        HomeSectionType3["singleRowLarge"] = "singleRowLarge";
-        HomeSectionType3["doubleRow"] = "doubleRow";
-        HomeSectionType3["featured"] = "featured";
-      })(HomeSectionType2 = exports.HomeSectionType || (exports.HomeSectionType = {}));
+      var HomeSectionType3;
+      (function(HomeSectionType4) {
+        HomeSectionType4["singleRowNormal"] = "singleRowNormal";
+        HomeSectionType4["singleRowLarge"] = "singleRowLarge";
+        HomeSectionType4["doubleRow"] = "doubleRow";
+        HomeSectionType4["featured"] = "featured";
+      })(HomeSectionType3 = exports.HomeSectionType || (exports.HomeSectionType = {}));
     }
   });
 
@@ -966,8 +966,8 @@ var _Sources = (() => {
   // src/MangaWorld/MangaWorld.ts
   var MW_DOMAIN = "https://www.mangaworld.mx";
   var MangaWorldInfo = {
-    version: "3.4.0",
-    // Major bump per refactoring e UI
+    version: "3.4.1",
+    // Bump minore per test UI
     name: "MangaWorld",
     description: "Extension that pulls manga from MangaWorld.",
     author: "NmN & DarkDragonkz",
@@ -988,19 +988,16 @@ var _Sources = (() => {
     constructor(cheerio) {
       this.cheerio = cheerio;
       this.baseUrl = MW_DOMAIN;
-      // RIDOTTO A 2: 10 retry causano blocchi infiniti se il sito è down
-      this.RETRIES = 2;
       this.parser = new MangaWorldParser();
       this.requestManager = App.createRequestManager({
-        requestsPerSecond: 5,
-        // Abbassato leggermente per sicurezza
+        requestsPerSecond: 3,
         requestTimeout: 2e4,
         interceptor: {
           interceptRequest: async (request) => {
             request.headers = {
               ...request.headers ?? {},
-              "referer": `${this.baseUrl}/`,
-              "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+              "Referer": `${this.baseUrl}/`,
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             };
             return request;
           },
@@ -1018,7 +1015,7 @@ var _Sources = (() => {
         url: `${this.baseUrl}/manga/${mangaId}`,
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, this.RETRIES);
+      const response = await this.requestManager.schedule(request, 1);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseMangaDetails($, mangaId);
     }
@@ -1027,71 +1024,82 @@ var _Sources = (() => {
         url: `${this.baseUrl}/manga/${mangaId}`,
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, this.RETRIES);
+      const response = await this.requestManager.schedule(request, 1);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseChapters($, mangaId);
     }
     async getChapterDetails(mangaId, chapterId) {
       const request = App.createRequest({
-        url: `${this.baseUrl}/manga/${mangaId}/read/${chapterId}/?style=list`,
+        url: `${this.baseUrl}/manga/${mangaId}/read/${chapterId}?style=list`,
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, this.RETRIES);
-      const $ = this.cheerio.load(response.data);
-      return this.parser.parseChapterDetails($, mangaId, chapterId);
+      const response = await this.requestManager.schedule(request, 1);
+      return this.parser.parseChapterDetails(response.data ?? "", mangaId, chapterId);
     }
-    async getTags() {
+    async getHomePageSections(sectionCallback) {
+      const sectionMonth = App.createHomeSection({
+        id: "month",
+        title: "Top Mensile \u{1F525}",
+        containsMoreItems: false,
+        // Solitamente top month è fissa a 10 item
+        type: import_types2.HomeSectionType.singleRowLarge
+      });
+      const sectionLatest = App.createHomeSection({
+        id: "latest",
+        title: "Ultime Uscite \u{1F195}",
+        containsMoreItems: true,
+        type: import_types2.HomeSectionType.continuous
+      });
+      const sectionTrending = App.createHomeSection({
+        id: "trending",
+        title: "In Tendenza \u26A1",
+        containsMoreItems: false,
+        type: import_types2.HomeSectionType.singleRowNormal
+      });
       const request = App.createRequest({
         url: this.baseUrl,
         method: "GET"
       });
-      const response = await this.requestManager.schedule(request, this.RETRIES);
+      sectionCallback(sectionMonth);
+      sectionCallback(sectionLatest);
+      sectionCallback(sectionTrending);
+      const response = await this.requestManager.schedule(request, 1);
       const $ = this.cheerio.load(response.data);
-      return this.parser.parseTags($, this.baseUrl);
+      this.parser.parseHomeSections($, sectionMonth, sectionLatest, sectionTrending);
+      sectionCallback(sectionMonth);
+      sectionCallback(sectionLatest);
+      sectionCallback(sectionTrending);
     }
-    async getSearchResults(query, metadata) {
-      let page = metadata?.page ?? 1;
-      if (page === -1) return App.createPagedResults({ results: [], metadata: void 0 });
-      const request = this.constructSearchRequest(page, query);
-      const response = await this.requestManager.schedule(request, this.RETRIES);
+    async getViewMoreItems(homepageSectionId, metadata) {
+      const page = metadata?.page ?? 1;
+      let param = "";
+      switch (homepageSectionId) {
+        case "latest":
+          param = "archive?sort=newest";
+          break;
+        case "month":
+          param = "archive?sort=most_read";
+          break;
+        default:
+          return App.createPagedResults({ results: [] });
+      }
+      const request = App.createRequest({
+        url: `${this.baseUrl}/${param}&page=${page}`,
+        method: "GET"
+      });
+      const response = await this.requestManager.schedule(request, 1);
       const $ = this.cheerio.load(response.data);
-      const manga = this.parser.parseSearchResults($);
+      const manga = this.parser.parseViewMore($);
       const nextPage = manga.length > 0 ? page + 1 : void 0;
       return App.createPagedResults({
         results: manga,
         metadata: nextPage ? { page: nextPage } : void 0
       });
     }
-    async getHomePageSections(sectionCallback) {
-      const request = App.createRequest({
-        url: `${this.baseUrl}`,
-        method: "GET"
-      });
-      const response = await this.requestManager.schedule(request, this.RETRIES);
-      const $ = this.cheerio.load(response.data);
-      this.parser.parseHomeSections($, sectionCallback);
-    }
-    async getViewMoreItems(homepageSectionId, metadata) {
+    async getSearchResults(query, metadata) {
       const page = metadata?.page ?? 1;
-      let url = "";
-      switch (homepageSectionId) {
-        case "1":
-          url = `${this.baseUrl}/?page=${page}`;
-          break;
-        case "2":
-          url = `${this.baseUrl}/archive?sort=most_read&page=${page}`;
-          break;
-        case "3":
-          url = `${this.baseUrl}/archive?sort=most_read&page=${page}`;
-          break;
-        default:
-          return App.createPagedResults({ results: [] });
-      }
-      const request = App.createRequest({
-        url,
-        method: "GET"
-      });
-      const response = await this.requestManager.schedule(request, this.RETRIES);
+      const request = this.constructSearchRequest(page, query);
+      const response = await this.requestManager.schedule(request, 1);
       const $ = this.cheerio.load(response.data);
       const manga = this.parser.parseViewMore($);
       const nextPage = manga.length > 0 ? page + 1 : void 0;
@@ -1107,7 +1115,7 @@ var _Sources = (() => {
         headers: {
           "referer": `${this.baseUrl}/`,
           "origin": `${this.baseUrl}/`,
-          "user-agent": await this.requestManager.getDefaultUserAgent()
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
       });
     }
