@@ -20,7 +20,7 @@ import { XoxoComicParser } from './XoxoComicParser'
 const DOMAIN = 'https://xoxocomic.com'
 
 export const XoxoComicInfo: SourceInfo = {
-    version: '1.1.1', // Bump versione per fix pagination
+    version: '1.1.2', // Bump versione
     name: 'XoxoComic',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -76,16 +76,13 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
     async getChapters(mangaId: string): Promise<Chapter[]> {
         const urlBase = mangaId.includes('/') ? `${this.baseUrl}/${mangaId}` : `${this.baseUrl}/comic/${mangaId}`
         
-        // 1. Scarica la prima pagina
         const request = App.createRequest({ url: urlBase, method: 'GET' })
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         
-        // 2. Controlla quante pagine ci sono
         const totalPages = this.parser.getChapterPageCount($)
         let allChapters = this.parser.parseChapters($, mangaId)
 
-        // 3. Se ci sono più pagine, scaricale tutte in parallelo
         if (totalPages > 1) {
             const promises = []
             for (let i = 2; i <= totalPages; i++) {
@@ -97,6 +94,9 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
             }
 
             const responses = await Promise.all(promises)
+            
+            // I risultati di Promise.all sono ordinati, quindi Page 2, Page 3...
+            // Concateniamo nell'ordine corretto
             for (const res of responses) {
                 const $page = this.cheerio.load(res.data)
                 const pageChapters = this.parser.parseChapters($page, mangaId)
@@ -104,12 +104,16 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
             }
         }
 
-        return allChapters
+        // FIX: Assegna sortingIndex basato sull'ordine della lista completa
+        // Questo garantisce che "Vol 1 Part 1" stia dove il sito dice che deve stare
+        return allChapters.map((chapter, index) => {
+            chapter.sortingIndex = index
+            return chapter
+        })
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
         let url = chapterId.startsWith('http') ? chapterId : `${this.baseUrl}/${chapterId}`
-        // Assicurati di richiedere "all" pages
         if (!url.endsWith('/all')) url = `${url}/all`
 
         const request = App.createRequest({ url: url, method: 'GET' })
