@@ -733,7 +733,7 @@ var _Sources = (() => {
   var BASE_URL = "https://www.mangaworld.mx";
   var MangaWorldParser = class {
     /**
-     * Corregge il bug di MangaWorld che a volte raddoppia i titoli (es. "NarutoNaruto")
+     * Pulisce i titoli duplicati (es. "NarutoNaruto" -> "Naruto")
      */
     cleanTitle(title) {
       if (!title) return "Unknown";
@@ -746,9 +746,6 @@ var _Sources = (() => {
       }
       return title;
     }
-    /**
-     * Gestisce URL relativi e lazy loading
-     */
     getImageSrc(element) {
       let image = element.attr("src") ?? "";
       if (!image || image.includes("loading") || image.startsWith("data:")) {
@@ -759,9 +756,6 @@ var _Sources = (() => {
       }
       return image || "https://paperback.moe/icons/logo-alt.svg";
     }
-    /**
-     * Converte date italiane (es. "12 Ottobre 2023") in Date object
-     */
     parseItalianDate(dateStr) {
       const months = {
         "gennaio": 0,
@@ -810,7 +804,7 @@ var _Sources = (() => {
     // --- PARSERS ---
     parseMangaDetails($, mangaId) {
       const infoBox = $(".comic-info");
-      const rawTitle = $("h1.name", infoBox).text().trim() || $(".comic-title", infoBox).text().trim();
+      const rawTitle = $(".comic-title", infoBox).text().trim();
       const title = this.cleanTitle(rawTitle);
       const image = this.getImageSrc($(".comic-thumb img", infoBox));
       let desc = $("#noidungm").text().trim();
@@ -818,8 +812,8 @@ var _Sources = (() => {
       let author = "Unknown";
       let status = "Ongoing";
       let artist = "Unknown";
-      $(".meta-data .row, .specs .row").each((_, row) => {
-        const label = $(row).text().toLowerCase();
+      $(".meta-data .row").each((_, row) => {
+        const label = $(row).find("label").text().toLowerCase();
         const value = $(row).find("span, a").text().trim();
         if (label.includes("autore")) author = value;
         if (label.includes("artista")) artist = value;
@@ -851,13 +845,13 @@ var _Sources = (() => {
     }
     parseChapters($, mangaId) {
       const chapters = [];
-      $(".chapter-list .chapter-item, .list-chapters .chapter-item").each((_, item) => {
+      $(".chapter-list .chapter-item").each((_, item) => {
         const link = $(item).find("a");
         const href = link.attr("href");
         if (!href) return;
         const chapterId = href.split("/").pop() ?? "";
         const rawTitle = link.text().trim();
-        const dateText = $(item).find(".chapter-date, .date").text().trim();
+        const dateText = $(item).find(".chapter-date").text().trim();
         const time = this.parseItalianDate(dateText);
         const volMatch = rawTitle.match(/Vol\.?\s*(\d+)/i);
         const chapMatch = rawTitle.match(/(?:Cap|Ch)\.?\s*(\d+(\.\d+)?)/i);
@@ -878,7 +872,6 @@ var _Sources = (() => {
           time,
           langCode: "it",
           sortingIndex: chapters.length
-          // Mantiene l'ordine della pagina
         }));
       });
       return chapters;
@@ -915,14 +908,16 @@ var _Sources = (() => {
       const link = item.find("a").first();
       const href = link.attr("href");
       const id = href?.split("/manga/")[1]?.split("/")[0] ?? "";
-      const rawTitle = item.find(".comic-title").text().trim() || item.find(".title").text().trim() || link.attr("title");
-      const title = this.cleanTitle(rawTitle ?? "Unknown");
+      let rawTitle = item.find(".manga-title").text().trim();
+      if (!rawTitle) rawTitle = item.find(".title, h3").text().trim();
+      if (!rawTitle) rawTitle = link.attr("title") ?? "Unknown";
+      const title = this.cleanTitle(rawTitle);
       const image = this.getImageSrc(item.find("img").first());
       let subtitle = void 0;
       if (subtitleSelector) {
         subtitle = item.find(subtitleSelector).text().trim();
       } else {
-        subtitle = item.find(".chapter-text, .latest-chapter, .chapter").first().text().trim();
+        subtitle = item.find(".chapter-text, .latest-chapter").first().text().trim();
       }
       return App.createPartialSourceManga({
         mangaId: id,
@@ -939,13 +934,18 @@ var _Sources = (() => {
       month.items = monthItems;
       const latestItems = [];
       $(".comics-grid .entry").each((_, item) => {
-        latestItems.push(this.parseCommonManga($, item, ".chapter-link, .chapter a"));
+        latestItems.push(this.parseCommonManga($, item, ".chapter-link"));
       });
       latest.items = latestItems;
       const trendingItems = [];
-      $(".entry.vertical, #side-content .entry").each((_, item) => {
+      $(".entry.vertical").each((_, item) => {
         trendingItems.push(this.parseCommonManga($, item));
       });
+      if (trendingItems.length === 0) {
+        $("#side-content .entry").each((_, item) => {
+          trendingItems.push(this.parseCommonManga($, item));
+        });
+      }
       trending.items = trendingItems;
     }
     parseViewMore($) {
