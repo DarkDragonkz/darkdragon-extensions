@@ -750,8 +750,8 @@ var _Sources = (() => {
     }
     // --- PARSER UNIFICATO PER ITEM ---
     // Questa funzione sostituisce parseTrendingItems, parseLatestItems, parseTopSectionItems e parseGridItems
-    parseUniversalItem($2, element, context) {
-      const item = $2(element);
+    parseUniversalItem($, element, context) {
+      const item = $(element);
       let link, title, imageSrc, id, subtitle;
       switch (context) {
         case "slide":
@@ -796,24 +796,24 @@ var _Sources = (() => {
       });
     }
     // --- MANGA DETAILS ---
-    parseMangaDetails($2, mangaId) {
-      let rawTitle = $2(".title-detail").text().trim() || $2("h1").first().text().trim() || $2("title").text().trim();
+    parseMangaDetails($, mangaId) {
+      let rawTitle = $(".title-detail").text().trim() || $("h1").first().text().trim() || $("title").text().trim();
       const title = this.cleanTitle(rawTitle);
-      const image = this.getImageSrc($2(".col-image img").attr("src"));
-      let desc = this.decodeHTMLEntity($2(".detail-content p").first().text().trim());
-      if (!desc) desc = $2('meta[name="description"]').attr("content") ?? "No description";
+      const image = this.getImageSrc($(".col-image img").attr("src"));
+      let desc = this.decodeHTMLEntity($(".detail-content p").first().text().trim());
+      if (!desc) desc = $('meta[name="description"]').attr("content") ?? "No description";
       let author = "Unknown";
       let status = "Ongoing";
-      $2(".list-info li").each((_, row) => {
-        const label = $2(row).find(".name").text().toLowerCase();
-        const value = $2(row).find(".col-xs-8").text().trim();
+      $(".list-info li").each((_, row) => {
+        const label = $(row).find(".name").text().toLowerCase();
+        const value = $(row).find(".col-xs-8").text().trim();
         if (label.includes("author")) author = value;
         if (label.includes("status") && value.toLowerCase().includes("completed")) status = "Completed";
       });
       const arrayTags = [];
-      $2(".list-info .kind a").each((_, a) => {
-        const label = $2(a).text().trim();
-        const id = $2(a).attr("href")?.split("/").pop() ?? label;
+      $(".list-info .kind a").each((_, a) => {
+        const label = $(a).text().trim();
+        const id = $(a).attr("href")?.split("/").pop() ?? label;
         if (label) arrayTags.push(App.createTag({ id, label }));
       });
       const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })];
@@ -830,11 +830,11 @@ var _Sources = (() => {
       });
     }
     // --- CAPITOLI ---
-    getChapterPageCount($2) {
+    getChapterPageCount($) {
       let maxPage = 1;
-      $2(".pagination li a").each((_, el) => {
-        const href = $2(el).attr("href");
-        const text = $2(el).text().trim();
+      $(".pagination li a").each((_, el) => {
+        const href = $(el).attr("href");
+        const text = $(el).text().trim();
         const textNum = parseInt(text);
         if (!isNaN(textNum)) {
           if (textNum > maxPage) maxPage = textNum;
@@ -878,16 +878,16 @@ var _Sources = (() => {
         return { name: cleanName.replace(/_/g, " ").trim(), chapNum };
       }
     }
-    parseChapters($2, mangaId) {
+    parseChapters($, mangaId) {
       const chapters = [];
-      $2(".list-chapter li.row:not(.heading)").each((_, li) => {
-        const link = $2(li).find("a").first();
+      $(".list-chapter li.row:not(.heading)").each((_, li) => {
+        const link = $(li).find("a").first();
         const rawTitle = link.text().trim();
         const href = link.attr("href");
         if (!href) return;
         let chapterId = href.replace(BASE_URL, "");
         if (chapterId.startsWith("/")) chapterId = chapterId.substring(1);
-        const dateText = $2(li).find(".col-xs-3").text().trim();
+        const dateText = $(li).find(".col-xs-3").text().trim();
         let time = /* @__PURE__ */ new Date();
         if (dateText && !dateText.includes("Day")) {
           const parsed = new Date(dateText);
@@ -938,8 +938,8 @@ var _Sources = (() => {
   // src/XoxoComic/XoxoComic.ts
   var DOMAIN = "https://xoxocomic.com";
   var XoxoComicInfo = {
-    version: "1.4.0",
-    // Bump versione: Refactoring e UI Enhance
+    version: "1.4.2",
+    // Bump versione per Fix Typos
     name: "XoxoComic",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -985,16 +985,16 @@ var _Sources = (() => {
       const url = mangaId.includes("/") ? `${this.baseUrl}/${mangaId}` : `${this.baseUrl}/comic/${mangaId}`;
       const request = App.createRequest({ url, method: "GET" });
       const response = await this.requestManager.schedule(request, 1);
-      const $2 = this.cheerio.load(response.data);
-      return this.parser.parseMangaDetails($2, mangaId);
+      const $ = this.cheerio.load(response.data);
+      return this.parser.parseMangaDetails($, mangaId);
     }
     async getChapters(mangaId) {
       const urlBase = mangaId.includes("/") ? `${this.baseUrl}/${mangaId}` : `${this.baseUrl}/comic/${mangaId}`;
       const request = App.createRequest({ url: urlBase, method: "GET" });
       const response = await this.requestManager.schedule(request, 1);
-      const $2 = this.cheerio.load(response.data);
-      let allChapters = this.parser.parseChapters($2, mangaId);
-      let maxPage = this.parser.getChapterPageCount($2);
+      const $ = this.cheerio.load(response.data);
+      let allChapters = this.parser.parseChapters($, mangaId);
+      let maxPage = this.parser.getChapterPageCount($);
       const fetchedPages = /* @__PURE__ */ new Set([1]);
       const MAX_SAFETY_PAGES = 50;
       while (true) {
@@ -1039,10 +1039,10 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      const $2 = this.cheerio.load(response.data);
+      const $ = this.cheerio.load(response.data);
       const manga = [];
-      $2(".item, .list-truyen-item-wrap, .search-story-item").each((_, item) => {
-        const m = this.parser.parseUniversalItem($2, item, "grid");
+      $(".item, .list-truyen-item-wrap, .search-story-item").each((_, item) => {
+        const m = this.parser.parseUniversalItem($, item, "grid");
         if (m) manga.push(m);
       });
       return App.createPagedResults({
@@ -1068,28 +1068,28 @@ var _Sources = (() => {
       const $home = this.cheerio.load(responseHome.data);
       const $new = this.cheerio.load(responseNew.data);
       const trendingItems = [];
-      $(".items-slide .item").each((_, item) => {
+      $home(".items-slide .item").each((_, item) => {
         const m = this.parser.parseUniversalItem($home, item, "slide");
         if (m) trendingItems.push(m);
       });
       trendingSection.items = trendingItems;
       sectionCallback(trendingSection);
       const latestItems = [];
-      $(".items .row .item").each((_, item) => {
+      $new(".items .row .item").each((_, item) => {
         const m = this.parser.parseUniversalItem($new, item, "list");
         if (m) latestItems.push(m);
       });
       latestSection.items = latestItems;
       sectionCallback(latestSection);
       const monthItems = [];
-      $("#topMonth li").each((_, item) => {
+      $home("#topMonth li").each((_, item) => {
         const m = this.parser.parseUniversalItem($home, item, "top");
         if (m) monthItems.push(m);
       });
       topMonthSection.items = monthItems;
       sectionCallback(topMonthSection);
       const weekItems = [];
-      $("#topWeek li").each((_, item) => {
+      $home("#topWeek li").each((_, item) => {
         const m = this.parser.parseUniversalItem($home, item, "top");
         if (m) weekItems.push(m);
       });
@@ -1102,10 +1102,10 @@ var _Sources = (() => {
         const url = `${this.baseUrl}/new-comic?page=${page}`;
         const request = App.createRequest({ url, method: "GET" });
         const response = await this.requestManager.schedule(request, 1);
-        const $2 = this.cheerio.load(response.data);
+        const $ = this.cheerio.load(response.data);
         const manga = [];
-        $2(".items .row .item").each((_, item) => {
-          const m = this.parser.parseUniversalItem($2, item, "list");
+        $(".items .row .item").each((_, item) => {
+          const m = this.parser.parseUniversalItem($, item, "list");
           if (m) manga.push(m);
         });
         return App.createPagedResults({
