@@ -139,49 +139,51 @@ export class XoxoComicParser {
                 if (!isNaN(parsed.getTime())) time = parsed
             }
 
-            // --- UNIFIED NAMING LOGIC ---
+            // --- SMART CLEANING (ROBUSTA) ---
             
-            // Pulizia base: Rimuove titolo manga e anno
+            // Pulisce l'anno e il titolo del manga
             let cleanName = rawTitle.replace(/^.*?\(\d{4}\)\s*/, '').trim()
             const looseMangaName = mangaId.replace(/-/g, ' ')
             if (cleanName === rawTitle && rawTitle.toLowerCase().includes(looseMangaName)) {
                  cleanName = rawTitle.replace(new RegExp(looseMangaName, 'gi'), '').trim()
             }
-            cleanName = cleanName.replace(/^_+|_+$/g, '')
+            cleanName = cleanName.replace(/^_+|_+$/g, '') // Toglie _ inizio/fine
 
             let name = cleanName
             let chapNum = 0
             
-            // CASO 1: MULTIPART (Deluxe, TPB) -> "Vol. Deluxe 1 Ch. 1"
-            const multiPartMatch = cleanName.match(/_?([a-zA-Z_]+)_(\d+)_?\(Part_(\d+)\)/i)
+            // Regex aggiornata: Accetta sia '_' che spazi ' ' come separatori
+            // ([\s_]) cattura lo spazio o l'underscore
             
-            // CASO 2: SPECIAL / ANNUAL -> "Vol. Special 1"
-            const specialMatch = cleanName.match(/_?([a-zA-Z_]+)_(\d+)/i)
+            // CASO 1: MULTIPART (Deluxe, TPB)
+            // Es: _The_Deluxe_Edition_1_(Part_1)  OPPURE  The Deluxe Edition 2 (Part 1)
+            const multiPartMatch = cleanName.match(/_?([a-zA-Z_\s]+)[\s_](\d+)[\s_]?\(?Part[\s_](\d+)\)?/i)
+            
+            // CASO 2: SPECIAL / ANNUAL
+            const specialMatch = cleanName.match(/_?([a-zA-Z_\s]+)[\s_](\d+)/i)
 
-            // 1. GESTIONE DELUXE / TPB
             if (multiPartMatch && (cleanName.toLowerCase().includes('part') || cleanName.toLowerCase().includes('edition'))) {
                 let type = multiPartMatch[1]?.replace(/_/g, ' ').trim() ?? 'Vol'
                 const volNum = parseInt(multiPartMatch[2] ?? '0')
                 const partNum = parseFloat(multiPartMatch[3] ?? '0')
                 
+                // Formato standardizzato
                 name = `Vol. ${type} ${volNum} Ch.${partNum}`
                 chapNum = partNum
             } 
-            // 2. GESTIONE SPECIAL / ANNUAL
             else if (specialMatch && !cleanName.toLowerCase().includes('issue') && !cleanName.toLowerCase().includes('chapter')) {
                 let type = specialMatch[1]?.replace(/_/g, ' ').trim()
                 const num = parseFloat(specialMatch[2] ?? '0')
                 
-                // Uniformiamo lo stile: Vol. [Tipo] [Numero]
+                // Formato standardizzato
                 name = `Vol. ${type} ${num}`
                 chapNum = num
             }
-            // 3. GESTIONE ISSUE STANDARD
             else {
+                // CASO 3: ISSUE / CHAPTER STANDARD
                 const issueMatch = cleanName.match(/(?:Issue|Chapter|^)\s*#?(\d+(\.\d+)?)/i)
                 if (issueMatch) {
                     chapNum = parseFloat(issueMatch[1] ?? '0')
-                    // Standard Paperback: "Ch. [Num]" è più pulito di "Issue #Num"
                     name = `Ch. ${chapNum}`
                 } else {
                     const fallbackNum = cleanName.match(/(\d+(\.\d+)?)/g)
@@ -196,7 +198,7 @@ export class XoxoComicParser {
                 id: chapterId,
                 name: name,
                 chapNum: chapNum,
-                volume: undefined, // Disabilitato per evitare prefissi doppi
+                volume: undefined, // Nessun volume per evitare prefissi doppi
                 time: time,
                 langCode: 'en'
             }))
