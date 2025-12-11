@@ -733,6 +733,25 @@ var _Sources = (() => {
   var import_types = __toESM(require_lib());
   var BASE_URL = "https://www.mangaworld.mx";
   var MangaWorldParser = class {
+    constructor() {
+      /**
+       * Mappa dei mesi italiani per il parsing delle date
+       */
+      this.months = {
+        "gennaio": "January",
+        "febbraio": "February",
+        "marzo": "March",
+        "aprile": "April",
+        "maggio": "May",
+        "giugno": "June",
+        "luglio": "July",
+        "agosto": "August",
+        "settembre": "September",
+        "ottobre": "October",
+        "novembre": "November",
+        "dicembre": "December"
+      };
+    }
     /**
      * Pulisce i titoli duplicati (es. "NarutoNaruto" -> "Naruto")
      */
@@ -748,7 +767,29 @@ var _Sources = (() => {
       return title;
     }
     /**
-     * Helper centralizzato per estrarre l'URL dell'immagine gestendo lazy loading e path relativi.
+     * Helper per le date italiane
+     * Formati gestiti: "07 Dicembre 2025", "Oggi", "Ieri"
+     */
+    parseDate(dateStr) {
+      dateStr = dateStr.trim().toLowerCase();
+      const now = /* @__PURE__ */ new Date();
+      if (!dateStr) return now;
+      if (dateStr.includes("oggi")) return now;
+      if (dateStr.includes("ieri")) return new Date(now.setDate(now.getDate() - 1));
+      for (const [it, en] of Object.entries(this.months)) {
+        if (dateStr.includes(it)) {
+          dateStr = dateStr.replace(it, en);
+          break;
+        }
+      }
+      const parsed = Date.parse(dateStr);
+      if (!isNaN(parsed)) {
+        return new Date(parsed);
+      }
+      return now;
+    }
+    /**
+     * Helper centralizzato per estrarre l'URL dell'immagine gestendo lazy loading
      */
     getImageSrc(element) {
       let image = element.attr("src") ?? "";
@@ -761,7 +802,7 @@ var _Sources = (() => {
       return image || "https://paperback.moe/icons/logo-alt.svg";
     }
     /**
-     * Helper centralizzato per parsare un elemento della lista (Home, Search, ViewMore).
+     * Helper per parsare un elemento della lista
      */
     parseCommonManga($, element, extraSubtitleSelector) {
       const href = $("a", element).attr("href") ?? "";
@@ -791,12 +832,20 @@ var _Sources = (() => {
       let hentai = false;
       let author = "Unknown";
       let artist = "Unknown";
+      let status = import_types.MangaStatus.ONGOING;
       $(".meta-data.row.px-1 .col-12").each((_, obj) => {
         const text = $(obj).text().trim();
         if (text.toLowerCase().includes("autore:")) {
           author = text.replace(/autore:\s*/i, "").trim();
         } else if (text.toLowerCase().includes("artista:")) {
           artist = text.replace(/artista:\s*/i, "").trim();
+        } else if (text.toLowerCase().includes("stato:")) {
+          const statusText = $("a", obj).text().trim().toLowerCase();
+          if (statusText.includes("finito") || statusText.includes("completato")) {
+            status = import_types.MangaStatus.COMPLETED;
+          } else {
+            status = import_types.MangaStatus.ONGOING;
+          }
         }
       });
       const arrayTags = [];
@@ -812,8 +861,7 @@ var _Sources = (() => {
         mangaInfo: App.createMangaInfo({
           titles: [title],
           image,
-          status: "Ongoing",
-          // MangaWorld non espone chiaramente lo status completato nei meta rapidi
+          status,
           artist,
           author,
           tags: tagSections,
@@ -826,19 +874,20 @@ var _Sources = (() => {
       const chapters = [];
       const arrChapters = $(".chapter").toArray();
       for (const item of arrChapters) {
-        const link = $("a", item);
+        const link = $("a.chap", item);
         const id = link.attr("href")?.replace(`${BASE_URL}/manga/${mangaId}/read/`, "") ?? "";
         const name = link.attr("title") ?? "";
         const chapText = $(".d-inline-block", item).text().trim();
         const chapNumMatch = chapText.match(/(\d+(\.\d+)?)/);
         const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0;
+        const dateText = $(".chap-date", item).text().trim();
+        const time = this.parseDate(dateText);
         chapters.push(
           App.createChapter({
             id,
             name,
             chapNum,
-            time: /* @__PURE__ */ new Date(),
-            // MangaWorld non ha date precise facili da parsare nel formato lista standard
+            time,
             langCode: "it"
           })
         );
@@ -882,7 +931,6 @@ var _Sources = (() => {
     parseHomeSections($, sectionCallback) {
       const sectionMonth = App.createHomeSection({
         id: "2",
-        // Manteniamo gli ID originali per compatibilità getViewMoreItems
         title: "Manga del Mese \u{1F31F}",
         containsMoreItems: true,
         type: import_types.HomeSectionType.singleRowLarge
@@ -966,8 +1014,8 @@ var _Sources = (() => {
   // src/MangaWorld/MangaWorld.ts
   var MW_DOMAIN = "https://www.mangaworld.mx";
   var MangaWorldInfo = {
-    version: "3.4.0",
-    // Major bump per refactoring e UI
+    version: "3.5.0",
+    // Bump version per fix date e status
     name: "MangaWorld",
     description: "Extension that pulls manga from MangaWorld.",
     author: "NmN & DarkDragonkz",
@@ -988,23 +1036,27 @@ var _Sources = (() => {
     constructor(cheerio) {
       this.cheerio = cheerio;
       this.baseUrl = MW_DOMAIN;
-      // RIDOTTO A 2: 10 retry causano blocchi infiniti se il sito è down
       this.RETRIES = 2;
       this.parser = new MangaWorldParser();
       this.requestManager = App.createRequestManager({
-        requestsPerSecond: 5,
-        // Abbassato leggermente per sicurezza
+        requestsPerSecond: 4,
+        // 4-5 è safe per MangaWorld
         requestTimeout: 2e4,
         interceptor: {
           interceptRequest: async (request) => {
             request.headers = {
               ...request.headers ?? {},
               "referer": `${this.baseUrl}/`,
-              "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+              // Usa UserAgent dinamico se possibile, altrimenti un fallback recente
+              "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             };
             return request;
           },
           interceptResponse: async (response) => {
+            const data = response.data;
+            if (typeof data === "string" && (data.includes("Just a moment...") || data.includes("Cloudflare"))) {
+              throw new Error("Cloudflare check required");
+            }
             return response;
           }
         }
@@ -1079,8 +1131,6 @@ var _Sources = (() => {
           url = `${this.baseUrl}/?page=${page}`;
           break;
         case "2":
-          url = `${this.baseUrl}/archive?sort=most_read&page=${page}`;
-          break;
         case "3":
           url = `${this.baseUrl}/archive?sort=most_read&page=${page}`;
           break;
@@ -1107,7 +1157,7 @@ var _Sources = (() => {
         headers: {
           "referer": `${this.baseUrl}/`,
           "origin": `${this.baseUrl}/`,
-          "user-agent": await this.requestManager.getDefaultUserAgent()
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
       });
     }
