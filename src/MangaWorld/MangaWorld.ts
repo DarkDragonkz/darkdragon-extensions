@@ -21,7 +21,7 @@ import { URLBuilder } from '../helper'
 const MW_DOMAIN = 'https://www.mangaworld.mx'
 
 export const MangaWorldInfo: SourceInfo = {
-    version: '3.5.1', // Bump UI
+    version: '3.6.0',
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld.',
     author: 'NmN & DarkDragonkz',
@@ -97,7 +97,7 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        // UI MIGLIORATA: Top Mensile Grande
+        // UI MIGLIORATA: Solo tipi di sezione cambiati, logica identica
         const sectionMonth = App.createHomeSection({
             id: 'month',
             title: 'Top Mensile 🔥',
