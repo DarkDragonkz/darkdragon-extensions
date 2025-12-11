@@ -753,116 +753,93 @@ var _Sources = (() => {
     { id: "21", value: "Philosophical" },
     { id: "22", value: "Psychological" },
     { id: "23", value: "Romance" },
-    { id: "24", value: "Sci-Fi" },
-    { id: "25", value: "Slice of Life" },
-    { id: "87268", value: "Smut" },
-    { id: "26", value: "Sports" },
-    { id: "27", value: "Superhero" },
-    { id: "28", value: "Thriller" },
-    { id: "29", value: "Tragedy" },
-    { id: "30", value: "Wuxia" }
-  ];
-  var THEMES = [
-    { id: "31", value: "Aliens" },
-    { id: "32", value: "Animals" },
-    { id: "33", value: "Cooking" },
-    { id: "34", value: "Crossdressing" },
-    { id: "35", value: "Delinquents" },
-    { id: "36", value: "Demons" },
-    { id: "37", value: "Genderswap" },
-    { id: "38", value: "Ghosts" },
-    { id: "39", value: "Gyaru" },
-    { id: "40", value: "Harem" },
-    { id: "41", value: "Incest" },
-    { id: "42", value: "Loli" },
-    { id: "43", value: "Mafia" },
-    { id: "44", value: "Magic" },
-    { id: "45", value: "Martial Arts" },
-    { id: "46", value: "Military" },
-    { id: "47", value: "Monster Girls" },
-    { id: "48", value: "Monsters" },
-    { id: "49", value: "Music" },
-    { id: "50", value: "Ninja" },
-    { id: "51", value: "Office Workers" },
-    { id: "52", value: "Police" },
-    { id: "53", value: "Post-Apocalyptic" },
-    { id: "54", value: "Reincarnation" },
-    { id: "55", value: "Reverse Harem" },
-    { id: "56", value: "Samurai" },
-    { id: "57", value: "School Life" },
-    { id: "58", value: "Shota" },
-    { id: "59", value: "Supernatural" },
-    { id: "60", value: "Survival" },
-    { id: "61", value: "Time Travel" },
-    { id: "62", value: "Traditional Games" },
-    { id: "63", value: "Vampires" },
-    { id: "64", value: "Video Games" },
-    { id: "65", value: "Villainess" },
-    { id: "66", value: "Virtual Reality" },
-    { id: "67", value: "Zombies" }
+    { id: "87268", value: "Sci-Fi" },
+    { id: "25", value: "Seinen" },
+    { id: "26", value: "Shoujo" },
+    { id: "27", value: "Shoujo Ai" },
+    { id: "28", value: "Shounen" },
+    { id: "29", value: "Shounen Ai" },
+    { id: "30", value: "Slice of Life" },
+    { id: "87269", value: "Smut" },
+    { id: "32", value: "Sports" },
+    { id: "33", value: "Superhero" },
+    { id: "34", value: "Thriller" },
+    { id: "35", value: "Tragedy" },
+    { id: "36", value: "Wuxia" },
+    { id: "37", value: "Yaoi" },
+    { id: "38", value: "Yuri" }
   ];
   var ComixParser = class {
     parseMangaDetails(data, mangaId) {
-      const manga = data.result;
-      const title = manga.title || "Unknown";
-      const image = manga.poster?.large || manga.poster?.medium || manga.poster?.small || "https://paperback.moe/icons/logo-alt.svg";
-      const desc = manga.synopsis || "No description available";
+      const item = data.result;
+      const titles = [item.title];
+      if (item.alt_titles && Array.isArray(item.alt_titles)) {
+        titles.push(...item.alt_titles);
+      }
+      const authors = item.author?.map((a) => a.title) || [];
+      const artists = item.artist?.map((a) => a.title) || [];
+      const image = item.poster?.large || item.poster?.medium || "https://paperback.moe/icons/logo-alt.svg";
+      let desc = item.synopsis || "No synopsis available.";
+      if (item.rated_avg) {
+        desc = `\u2B50 Rating: ${item.rated_avg}/10
+
+${desc}`;
+      }
+      if (item.alt_titles && item.alt_titles.length > 0) {
+        desc += `
+
+Alt Titles:
+${item.alt_titles.join(", ")}`;
+      }
       let status = "Ongoing";
-      if (manga.status === "finished") status = "Completed";
-      else if (manga.status === "on_hiatus") status = "Hiatus";
-      else if (manga.status === "discontinued") status = "Discontinued";
-      const authors = Array.isArray(manga.author) ? manga.author.map((a) => a.title).join(", ") : "Unknown";
-      const artists = Array.isArray(manga.artist) ? manga.artist.map((a) => a.title).join(", ") : "Unknown";
-      const termIds = manga.term_ids || [];
-      const genresTags = [];
-      const themesTags = [];
-      GENRES.forEach((g) => {
-        if (termIds.includes(Number(g.id))) genresTags.push(App.createTag({ id: g.id, label: g.value }));
-      });
-      THEMES.forEach((t) => {
-        if (termIds.includes(Number(t.id))) themesTags.push(App.createTag({ id: t.id, label: t.value }));
-      });
-      const tagSections = [];
-      if (genresTags.length > 0) tagSections.push(App.createTagSection({ id: "genres", label: "Genres", tags: genresTags }));
-      if (themesTags.length > 0) tagSections.push(App.createTagSection({ id: "themes", label: "Themes", tags: themesTags }));
+      if (item.status === "finished") status = "Completed";
+      if (item.status === "canceled") status = "Dropped";
+      const tags = [];
+      if (item.term_ids && Array.isArray(item.term_ids)) {
+        for (const id of item.term_ids) {
+          const genre = GENRES.find((g) => g.id === String(id));
+          if (genre) {
+            tags.push(App.createTag({ id: genre.id, label: genre.value }));
+          }
+        }
+      }
+      if (item.is_nsfw) {
+        tags.push(App.createTag({ id: "nsfw", label: "NSFW" }));
+      }
       return App.createSourceManga({
         id: mangaId,
         mangaInfo: App.createMangaInfo({
-          titles: [title],
+          titles,
           image,
           status,
-          author: authors,
-          artist: artists,
-          tags: tagSections,
-          desc
+          author: authors.join(", "),
+          artist: artists.join(", "),
+          tags: [App.createTagSection({ id: "0", label: "Genres", tags })],
+          desc,
+          rating: item.rated_avg ? parseFloat(item.rated_avg) : void 0
         })
       });
     }
-    parseChapters(chaptersData) {
+    parseChapters(items) {
       const chapters = [];
-      for (let i = 0; i < chaptersData.length; i++) {
-        const chap = chaptersData[i];
-        const id = String(chap.chapter_id);
-        const num = parseFloat(chap.number) || 0;
-        const volume = chap.volume || 0;
-        let name = "";
-        if (volume > 0) name += `Vol.${volume} `;
-        name += `Ch.${num}`;
-        if (chap.name) {
-          const cleanChapName = chap.name.replace(/chapter\s*\d+/gi, "").trim();
-          if (cleanChapName) {
-            name += ` - ${cleanChapName}`;
-          }
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        let time = /* @__PURE__ */ new Date();
+        if (item.created_at) {
+          time = new Date(item.created_at * 1e3);
         }
-        const time = new Date(chap.updated_at * 1e3);
+        let name = item.name ? `${item.name}` : `Chapter ${item.number}`;
+        if (item.number && !name.includes(String(item.number))) {
+          name = `Ch. ${item.number} - ${name}`;
+        }
         chapters.push(App.createChapter({
-          id,
+          id: String(item.chapter_id),
           name,
-          chapNum: num,
-          volume,
+          chapNum: parseFloat(item.number),
+          volume: item.volume ? parseFloat(item.volume) : void 0,
+          // Supporto Volumi
           time,
-          langCode: chap.language || "en",
-          group: chap.scanlation_group?.name || void 0,
+          langCode: item.language || "en",
           sortingIndex: i
         }));
       }
@@ -880,7 +857,8 @@ var _Sources = (() => {
         pages
       });
     }
-    parseSearchResults(data) {
+    // Aggiunto parametro 'context' per sottotitoli intelligenti
+    parseSearchResults(data, context = "search") {
       const results = [];
       const items = data.result?.items || [];
       for (const item of items) {
@@ -888,10 +866,16 @@ var _Sources = (() => {
         const title = item.title;
         const image = item.poster?.large || item.poster?.medium || "https://paperback.moe/icons/logo-alt.svg";
         let subtitle = void 0;
-        if (item.latest_chapter) {
-          subtitle = `Ch. ${item.latest_chapter}`;
-        } else if (item.status) {
-          subtitle = item.status === "finished" ? "Completed" : "Ongoing";
+        if (context === "latest" || context === "search") {
+          if (item.latest_chapter) {
+            subtitle = `Ch. ${item.latest_chapter}`;
+          }
+        } else if (context === "popular") {
+          if (item.author && item.author.length > 0) {
+            subtitle = item.author[0].title;
+          } else if (item.status) {
+            subtitle = item.status === "finished" ? "Completed" : "Ongoing";
+          }
         }
         if (id && title) {
           results.push(App.createPartialSourceManga({
@@ -910,8 +894,8 @@ var _Sources = (() => {
   var BASE_URL = "https://comix.to";
   var API_URL = "https://comix.to/api/v2";
   var ComixInfo = {
-    version: "2.0.9",
-    // Bump version (Fix Search Relevance)
+    version: "2.1.0",
+    // Bump version (UI & Volume Support)
     name: "Comix",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -1017,7 +1001,7 @@ var _Sources = (() => {
       const request = App.createRequest({ url, method: "GET" });
       const response = await this.requestManager.schedule(request, 1);
       const data = JSON.parse(response.data ?? "{}");
-      let manga = this.parser.parseSearchResults(data);
+      let manga = this.parser.parseSearchResults(data, "search");
       if (query.title && manga.length > 0) {
         const q = query.title.toLowerCase().trim();
         manga.sort((a, b) => {
@@ -1041,31 +1025,43 @@ var _Sources = (() => {
     async getHomePageSections(sectionCallback) {
       const sections = [
         {
+          // Top Trending - Usa layout GRANDE
           request: App.createRequest({ url: `${this.apiUrl}/top?type=trending&days=7&limit=15&includes[]=author`, method: "GET" }),
-          section: App.createHomeSection({ id: "popular", title: "Popular \u{1F525}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowLarge })
+          section: App.createHomeSection({ id: "popular", title: "Trending Now \u{1F525}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowLarge }),
+          context: "popular"
         },
         {
+          // Most Followed - Usa layout Normale
           request: App.createRequest({ url: `${this.apiUrl}/top?type=follows&days=7&limit=20&includes[]=author`, method: "GET" }),
-          section: App.createHomeSection({ id: "follow", title: "Most Followed \u{1F496}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal })
+          section: App.createHomeSection({ id: "follow", title: "Most Followed \u{1F496}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
+          context: "popular"
         },
         {
+          // Recently Added
           request: App.createRequest({ url: `${this.apiUrl}/manga?order[created_at]=desc&page=1&limit=20&includes[]=author`, method: "GET" }),
-          section: App.createHomeSection({ id: "recent", title: "Recently Added \u{1F195}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal })
+          section: App.createHomeSection({ id: "recent", title: "New Arrivals \u{1F195}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
+          context: "popular"
         },
         {
+          // Hot Updates - Scroll Continuo
           request: App.createRequest({ url: `${this.apiUrl}/manga?order[chapter_updated_at]=desc&page=1&limit=20&scope=hot`, method: "GET" }),
-          section: App.createHomeSection({ id: "updatesHot", title: "Latest Hot Updates \u26A1", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal })
+          section: App.createHomeSection({ id: "updatesHot", title: "Hot Updates \u26A1", containsMoreItems: true, type: import_types.HomeSectionType.continuous }),
+          context: "latest"
+          // Mostra "Ch. X"
         },
         {
+          // Latest Updates - Scroll Continuo
           request: App.createRequest({ url: `${this.apiUrl}/manga?order[chapter_updated_at]=desc&page=1&limit=20&scope=new`, method: "GET" }),
-          section: App.createHomeSection({ id: "updatesNew", title: "Latest Updates \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.continuous })
+          section: App.createHomeSection({ id: "updatesNew", title: "Latest Updates \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.continuous }),
+          context: "latest"
+          // Mostra "Ch. X"
         }
       ];
       const promises = sections.map(async (item) => {
         try {
           const response = await this.requestManager.schedule(item.request, 1);
           const data = JSON.parse(response.data ?? "{}");
-          item.section.items = this.parser.parseSearchResults(data);
+          item.section.items = this.parser.parseSearchResults(data, item.context);
           sectionCallback(item.section);
         } catch (e) {
           console.error(`Error fetching section ${item.section.id}: ${e}`);
@@ -1077,21 +1073,27 @@ var _Sources = (() => {
     async getViewMoreItems(homepageSectionId, metadata) {
       const page = metadata?.page ?? 1;
       let url = "";
+      let context = "search";
       switch (homepageSectionId) {
         case "popular":
           url = `${this.apiUrl}/top?type=trending&days=7&limit=20&page=${page}&includes[]=author`;
+          context = "popular";
           break;
         case "follow":
           url = `${this.apiUrl}/top?type=follows&days=7&limit=20&page=${page}&includes[]=author`;
+          context = "popular";
           break;
         case "recent":
           url = `${this.apiUrl}/manga?order[created_at]=desc&limit=20&page=${page}&includes[]=author`;
+          context = "popular";
           break;
         case "updatesHot":
           url = `${this.apiUrl}/manga?order[chapter_updated_at]=desc&limit=20&page=${page}&scope=hot`;
+          context = "latest";
           break;
         case "updatesNew":
           url = `${this.apiUrl}/manga?order[chapter_updated_at]=desc&limit=20&page=${page}&scope=new`;
+          context = "latest";
           break;
         default:
           return App.createPagedResults({ results: [] });
@@ -1099,7 +1101,7 @@ var _Sources = (() => {
       const request = App.createRequest({ url, method: "GET" });
       const response = await this.requestManager.schedule(request, 1);
       const data = JSON.parse(response.data ?? "{}");
-      const manga = this.parser.parseSearchResults(data);
+      const manga = this.parser.parseSearchResults(data, context);
       const nextPage = manga.length >= 20 ? page + 1 : void 0;
       return App.createPagedResults({
         results: manga,
