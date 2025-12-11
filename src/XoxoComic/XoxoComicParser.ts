@@ -1,169 +1,275 @@
 import {
     Chapter,
     ChapterDetails,
-    ContentRating,
     HomeSection,
-    PagedResults,
-    SearchRequest,
-    SourceInfo,
-    SourceIntents,
+    HomeSectionType,
     SourceManga,
-    BadgeColor,
-    SearchResultsProviding,
-    MangaProviding,
-    ChapterProviding,
-    HomePageSectionsProviding,
+    PartialSourceManga,
+    Tag,
+    TagSection,
 } from '@paperback/types'
 
-import { XoxoComicParser } from './XoxoComicParser'
+const BASE_URL = 'https://xoxocomic.com'
 
-const DOMAIN = 'https://xoxocomic.com'
+export class XoxoComicParser {
 
-export const XoxoComicInfo: SourceInfo = {
-    version: '1.1.1', // Bump versione per fix pagination
-    name: 'XoxoComic',
-    icon: 'icon.png',
-    author: 'DarkDragonkz',
-    authorWebsite: 'https://github.com/DarkDragonkz',
-    description: `Extension that pulls comics from ${DOMAIN}`,
-    contentRating: ContentRating.MATURE,
-    websiteBaseURL: DOMAIN,
-    sourceTags: [
-        {
-            text: 'Comics',
-            type: BadgeColor.GREY,
-        },
-    ],
-    intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,
-}
+    private getImageSrc(url: string | undefined): string {
+        if (!url || url.includes('logo') || url.includes('placeholder')) return 'https://paperback.moe/icons/logo-alt.svg'
+        if (url.startsWith('data:')) return 'https://paperback.moe/icons/logo-alt.svg'
+        
+        url = url.trim()
+        if (url.startsWith('//')) {
+            url = `https:${url}`
+        } else if (url.startsWith('/')) {
+            url = BASE_URL + url
+        }
+        
+        return url
+    }
 
-export class XoxoComic implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding {
-    baseUrl = DOMAIN
-    parser = new XoxoComicParser()
-    
-    constructor(private cheerio: any) {}
+    private parseMangaItem($: any, element: any): PartialSourceManga | null {
+        const item = $(element)
+        
+        let link = item.find('a').first()
+        if (!link.attr('href')) link = item.find('h3 a').first()
 
-    requestManager = App.createRequestManager({
-        requestsPerSecond: 4,
-        requestTimeout: 20000,
-        interceptor: {
-            interceptRequest: async (request: any) => {
-                request.headers = {
-                    ...(request.headers ?? {}),
-                    'Referer': `${DOMAIN}/`,
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        const href = link.attr('href')
+        const id = href?.split('/').filter((p: string) => p && p !== 'comic' && p !== 'xoxocomic.com').pop()
+
+        if (!id) return null
+
+        let title = item.find('h3').text().trim()
+        if (!title) title = link.attr('title') || link.text().trim()
+        if (!title) title = 'Unknown Title'
+
+        let img = item.find('img').first()
+        let imageSrc = img.attr('data-original') || img.attr('data-src') || img.attr('src')
+        
+        if (!imageSrc || imageSrc.startsWith('data:')) {
+            const style = item.find('.div-poster, .image').attr('style')
+            const match = style?.match(/url\(['"]?(.*?)['"]?\)/)
+            if (match) imageSrc = match[1]
+        }
+
+        const image = this.getImageSrc(imageSrc)
+        const subtitle = item.find('.chapter a').first().text().trim()
+
+        return App.createPartialSourceManga({
+            mangaId: id,
+            image: image,
+            title: title,
+            subtitle: subtitle || undefined
+        })
+    }
+
+    parseMangaDetails($: any, mangaId: string): SourceManga {
+        let title = $('.title-detail').text().trim()
+        if (!title) title = $('h1').first().text().trim()
+        
+        const imageSrc = $('.col-image img').attr('src')
+        const image = this.getImageSrc(imageSrc)
+
+        let desc = $('.detail-content p').first().text().trim()
+        if (!desc) desc = $('meta[name="description"]').attr('content') ?? 'No description'
+
+        let author = 'Unknown'
+        let status = 'Ongoing'
+
+        $('.list-info li').each((_: any, row: any) => {
+            const label = $(row).find('.name').text().toLowerCase()
+            const value = $(row).find('.col-xs-8').text().trim()
+
+            if (label.includes('author')) author = value
+            if (label.includes('status')) {
+                if (value.toLowerCase().includes('completed')) status = 'Completed'
+            }
+        })
+
+        const arrayTags: Tag[] = []
+        $('.list-info .kind a').each((_: any, a: any) => {
+            const label = $(a).text().trim()
+            const id = $(a).attr('href')?.split('/').pop() ?? label
+            if (label) arrayTags.push(App.createTag({ id, label }))
+        })
+        const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
+
+        return App.createSourceManga({
+            id: mangaId,
+            mangaInfo: App.createMangaInfo({
+                titles: [title],
+                image: image,
+                status: status,
+                author: author,
+                tags: tagSections,
+                desc: desc
+            })
+        })
+    }
+
+    getChapterPageCount($: any): number {
+        const lastPageLink = $('.pagination li a').last().attr('href')
+        if (lastPageLink) {
+            const match = lastPageLink.match(/page=(\d+)/)
+            if (match) return parseInt(match[1])
+        }
+        return 1
+    }
+
+    parseChapters($: any, mangaId: string): Chapter[] {
+        const chapters: Chapter[] = []
+        
+        $('.list-chapter li.row:not(.heading)').each((_: any, li: any) => {
+            const link = $(li).find('a').first()
+            const rawTitle = link.text().trim()
+            const href = link.attr('href')
+            
+            if (!href) return
+
+            let chapterId = href.replace(BASE_URL, '')
+            if (chapterId.startsWith('/')) chapterId = chapterId.substring(1)
+
+            const dateText = $(li).find('.col-xs-3').text().trim()
+            let time = new Date()
+            if (dateText && !dateText.includes('Day')) {
+                const parsed = new Date(dateText)
+                if (!isNaN(parsed.getTime())) time = parsed
+            }
+
+            // --- SMART RENAMING LOGIC ---
+            
+            // 1. Rimuove prefissi del manga (es "The Sandman (1989)")
+            let cleanName = rawTitle.replace(/^.*?\(\d{4}\)\s*/, '').trim()
+            // Se la regex fallisce (nessun anno), prova a rimuovere semplicemente il titolo se matcha l'ID
+            if (cleanName === rawTitle && rawTitle.toLowerCase().includes(mangaId.replace(/-/g, ' '))) {
+                 cleanName = rawTitle.replace(new RegExp(mangaId.replace(/-/g, ' '), 'i'), '').trim()
+            }
+
+            let name = cleanName
+            let chapNum = 0
+            let volume = undefined
+
+            // CASO 1: Multipart (Deluxe Edition, TPB)
+            // Pattern: _Tipo_Vol_(Part_Ch) -> Es: _The_Deluxe_Edition_1_(Part_1)
+            const multiPartMatch = cleanName.match(/_?([a-zA-Z_]+)_(\d+)_?\(Part_(\d+)\)/i)
+            
+            if (multiPartMatch) {
+                let type = multiPartMatch[1]?.replace(/_/g, ' ').trim() ?? 'Vol' // "The Deluxe Edition"
+                const volNum = parseInt(multiPartMatch[2] ?? '0')
+                const partNum = parseFloat(multiPartMatch[3] ?? '0')
+                
+                // Pulizia estetica tipo
+                if (type.toUpperCase() === 'TPB') type = 'TPB'
+                
+                // Formato richiesto: Vol. The Deluxe Edition 1 Ch.1
+                name = `Vol. ${type} ${volNum} Ch.${partNum}`
+                
+                chapNum = partNum
+                volume = volNum
+            } 
+            // CASO 2: Speciali / Annual (Single Part)
+            // Pattern: _Special_1
+            else {
+                const singleSpecialMatch = cleanName.match(/_?([a-zA-Z_]+)_(\d+)/i)
+                // Assicuriamoci che non sia un "Issue" camuffato
+                if (singleSpecialMatch && !cleanName.toLowerCase().includes('issue') && !cleanName.toLowerCase().includes('chapter')) {
+                    const type = singleSpecialMatch[1]?.replace(/_/g, ' ').trim()
+                    const num = parseFloat(singleSpecialMatch[2] ?? '0')
+                    
+                    name = `${type} #${num}`
+                    chapNum = num
                 }
-                return request
-            },
-            interceptResponse: async (response: any) => {
-                return response
+                // CASO 3: Standard Issue / Chapter
+                else {
+                    const issueMatch = cleanName.match(/(?:Issue|Chapter)\s*#?(\d+(\.\d+)?)/i)
+                    if (issueMatch) {
+                        chapNum = parseFloat(issueMatch[1] ?? '0')
+                        name = `Issue #${chapNum}`
+                    } else {
+                        // Fallback: cerca l'ultimo numero
+                        const fallbackNum = cleanName.match(/(\d+(\.\d+)?)/g)
+                        if (fallbackNum) {
+                            chapNum = parseFloat(fallbackNum[fallbackNum.length - 1] ?? '0')
+                        }
+                        name = cleanName.replace(/_/g, ' ').trim()
+                    }
+                }
             }
-        }
-    })
 
-    getMangaShareUrl(mangaId: string): string {
-        return `${this.baseUrl}/comic/${mangaId}`
+            chapters.push(App.createChapter({
+                id: chapterId,
+                name: name,
+                chapNum: chapNum,
+                volume: volume,
+                time: time,
+                langCode: 'en'
+            }))
+        })
+
+        return chapters
     }
 
-    async getMangaDetails(mangaId: string): Promise<SourceManga> {
-        const url = mangaId.includes('/') ? `${this.baseUrl}/${mangaId}` : `${this.baseUrl}/comic/${mangaId}`
-        const request = App.createRequest({ url: url, method: 'GET' })
-        const response = await this.requestManager.schedule(request, 1)
-        const $ = this.cheerio.load(response.data)
-        return this.parser.parseMangaDetails($, mangaId)
-    }
-
-    async getChapters(mangaId: string): Promise<Chapter[]> {
-        const urlBase = mangaId.includes('/') ? `${this.baseUrl}/${mangaId}` : `${this.baseUrl}/comic/${mangaId}`
+    parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
+        const pages: string[] = []
         
-        // 1. Scarica la prima pagina
-        const request = App.createRequest({ url: urlBase, method: 'GET' })
-        const response = await this.requestManager.schedule(request, 1)
-        const $ = this.cheerio.load(response.data)
-        
-        // 2. Controlla quante pagine ci sono
-        const totalPages = this.parser.getChapterPageCount($)
-        let allChapters = this.parser.parseChapters($, mangaId)
-
-        // 3. Se ci sono più pagine, scaricale tutte in parallelo
-        if (totalPages > 1) {
-            const promises = []
-            for (let i = 2; i <= totalPages; i++) {
-                const req = App.createRequest({
-                    url: `${urlBase}?page=${i}`,
-                    method: 'GET'
-                })
-                promises.push(this.requestManager.schedule(req, 1))
-            }
-
-            const responses = await Promise.all(promises)
-            for (const res of responses) {
-                const $page = this.cheerio.load(res.data)
-                const pageChapters = this.parser.parseChapters($page, mangaId)
-                allChapters = allChapters.concat(pageChapters)
-            }
+        const imgRegex = /<img[^>]+data-original=["']([^"']+)["']/g
+        let match
+        while ((match = imgRegex.exec(html)) !== null) {
+            const url = match[1]
+            if (url) pages.push(this.getImageSrc(url))
         }
 
-        return allChapters
-    }
+        if (pages.length === 0) {
+            const genericRegex = /<img[^>]+src=["']([^"']+)["']/g
+            while ((match = genericRegex.exec(html)) !== null) {
+                const url = match[1]
+                if (url && !url.startsWith('data:') && !url.includes('loading') && !url.includes('logo')) {
+                    pages.push(this.getImageSrc(url))
+                }
+            }
+        }
 
-    async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        let url = chapterId.startsWith('http') ? chapterId : `${this.baseUrl}/${chapterId}`
-        // Assicurati di richiedere "all" pages
-        if (!url.endsWith('/all')) url = `${url}/all`
-
-        const request = App.createRequest({ url: url, method: 'GET' })
-        const response = await this.requestManager.schedule(request, 1)
-        return this.parser.parseChapterDetails(response.data ?? '', mangaId, chapterId)
-    }
-
-    async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        const page = metadata?.page ?? 1
-        const request = App.createRequest({
-            url: `${this.baseUrl}/search-comic?keyword=${encodeURIComponent(query.title ?? '')}&page=${page}`,
-            method: 'GET'
-        })
-        const response = await this.requestManager.schedule(request, 1)
-        const $ = this.cheerio.load(response.data)
-        const manga = this.parser.parseGridItems($)
-        
-        return App.createPagedResults({
-            results: manga,
-            metadata: manga.length > 0 ? { page: page + 1 } : undefined
+        return App.createChapterDetails({
+            id: chapterId,
+            mangaId: mangaId,
+            pages: pages
         })
     }
 
-    async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        const request = App.createRequest({ url: this.baseUrl, method: 'GET' })
-        const response = await this.requestManager.schedule(request, 1)
-        const $ = this.cheerio.load(response.data)
-        this.parser.parseHomeSections($, sectionCallback)
-    }
+    parseGridItems($: any): PartialSourceManga[] {
+        const results: PartialSourceManga[] = []
+        const seenIds = new Set<string>()
 
-    async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
-        const page = metadata?.page ?? 1
-        let url = `${this.baseUrl}/latest-comic?page=${page}`
-        if (homepageSectionId === 'popular') url = `${this.baseUrl}/popular-comic?page=${page}`
-        
-        const request = App.createRequest({ url: url, method: 'GET' })
-        const response = await this.requestManager.schedule(request, 1)
-        const $ = this.cheerio.load(response.data)
-        
-        const manga = this.parser.parseGridItems($)
-        return App.createPagedResults({
-            results: manga,
-            metadata: manga.length > 0 ? { page: page + 1 } : undefined
-        })
-    }
-    
-    async getCloudflareBypassRequestAsync() {
-        return App.createRequest({
-            url: this.baseUrl,
-            method: 'GET',
-            headers: {
-                'Referer': `${this.baseUrl}/`,
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        $('.item, .list-truyen-item-wrap').each((_: any, item: any) => {
+            const manga = this.parseMangaItem($, item)
+            if (manga && !seenIds.has(manga.mangaId)) {
+                seenIds.add(manga.mangaId)
+                results.push(manga)
             }
         })
+
+        return results
+    }
+
+    parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
+        const latestSection = App.createHomeSection({ 
+            id: 'latest', 
+            title: 'Latest Updates 🆕', 
+            containsMoreItems: true, 
+            type: HomeSectionType.continuous 
+        })
+        const popularSection = App.createHomeSection({ 
+            id: 'popular', 
+            title: 'Popular Comics 🔥', 
+            containsMoreItems: true, 
+            type: HomeSectionType.singleRowLarge 
+        })
+        
+        const items = this.parseGridItems($)
+        
+        latestSection.items = items
+        popularSection.items = items.slice(0, 15)
+
+        sectionCallback(popularSection)
+        sectionCallback(latestSection)
     }
 }
