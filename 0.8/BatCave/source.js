@@ -637,13 +637,13 @@ var _Sources = (() => {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.HomeSectionType = void 0;
-      var HomeSectionType2;
-      (function(HomeSectionType3) {
-        HomeSectionType3["singleRowNormal"] = "singleRowNormal";
-        HomeSectionType3["singleRowLarge"] = "singleRowLarge";
-        HomeSectionType3["doubleRow"] = "doubleRow";
-        HomeSectionType3["featured"] = "featured";
-      })(HomeSectionType2 = exports.HomeSectionType || (exports.HomeSectionType = {}));
+      var HomeSectionType;
+      (function(HomeSectionType2) {
+        HomeSectionType2["singleRowNormal"] = "singleRowNormal";
+        HomeSectionType2["singleRowLarge"] = "singleRowLarge";
+        HomeSectionType2["doubleRow"] = "doubleRow";
+        HomeSectionType2["featured"] = "featured";
+      })(HomeSectionType = exports.HomeSectionType || (exports.HomeSectionType = {}));
     }
   });
 
@@ -727,57 +727,30 @@ var _Sources = (() => {
     BatCave: () => BatCave,
     BatCaveInfo: () => BatCaveInfo
   });
-  var import_types2 = __toESM(require_lib());
+  var import_types = __toESM(require_lib());
 
   // src/BatCave/BatCaveParser.ts
-  var import_types = __toESM(require_lib());
   var BASE_URL = "https://batcave.biz";
   var BatCaveParser = class {
-    /**
-     * Trasforma URL miniatura in HD rimuovendo /thumbs/ o ridimensionamenti.
-     */
     getHighResImage(url) {
       if (!url) return "https://paperback.moe/icons/logo-alt.svg";
-      if (url.startsWith("/")) {
-        url = BASE_URL + url;
+      if (!url.startsWith("http")) {
+        if (url.startsWith("/")) {
+          url = BASE_URL + url;
+        } else {
+          url = BASE_URL + "/" + url;
+        }
       }
       if (url.includes("/thumbs/")) {
         return url.replace("/thumbs/", "/");
       }
       return url;
     }
-    /**
-     * Helper centralizzato per parsare griglie di fumetti
-     */
-    parseGridItems($, containerSelector, itemSelector = "a.popular") {
-      const manga = [];
-      $(containerSelector).find(itemSelector).each((_, element) => {
-        const item = $(element);
-        const id = item.attr("href")?.split("/").pop()?.replace(".html", "");
-        const title = item.find(".caption, .popular__title").text().trim() || item.attr("title");
-        let image = item.find("img").attr("src") || item.find("img").attr("data-src");
-        if (!image) {
-          const style = item.attr("style");
-          const match = style?.match(/url\(['"]?(.*?)['"]?\)/);
-          if (match) image = match[1];
-        }
-        if (id && title) {
-          manga.push(App.createPartialSourceManga({
-            mangaId: id,
-            image: this.getHighResImage(image),
-            title,
-            subtitle: void 0
-            // Opzionale: potremmo mettere "Vol X" se disponibile
-          }));
-        }
-      });
-      return manga;
-    }
     parseMangaDetails($, mangaId) {
       const infoBlock = $(".f-desc");
-      let title = $("h1.title").text().trim();
-      if (!title) title = $(".f-desc h1").text().trim() || "Unknown";
-      const image = this.getHighResImage($(".f-desc img").first().attr("src"));
+      let title = $("h1.title").text().trim() || $(".f-desc h1").text().trim() || "Unknown";
+      const imageSrc = $(".f-desc img").first().attr("src");
+      const image = this.getHighResImage(imageSrc);
       let desc = $(".full-text").text().trim();
       if (!desc) desc = $('meta[name="description"]').attr("content") ?? "";
       let author = "Unknown";
@@ -810,13 +783,13 @@ var _Sources = (() => {
     }
     parseChapters($, mangaId) {
       const chapters = [];
-      $(".list-chapters .chapter-item, .sect--latest .latest__chapter").each((_, item) => {
+      $(".list-chapters .chapter-item").each((_, item) => {
         const link = $(item).find("a");
         const href = link.attr("href");
         if (!href) return;
         const chapterId = href.split("/").pop()?.replace(".html", "") ?? "";
-        const title = link.text().trim() || $(item).find(".latest__title").text().trim();
-        const dateText = $(item).find(".date, .latest__date").text().trim();
+        const title = link.text().trim();
+        const dateText = $(item).find(".date").text().trim();
         let time = /* @__PURE__ */ new Date();
         if (dateText.includes("Today")) {
           time = /* @__PURE__ */ new Date();
@@ -828,8 +801,8 @@ var _Sources = (() => {
             time = /* @__PURE__ */ new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
           }
         }
-        const numMatch = title.match(/(?:Issue|Chapter|#)\s*(\d+(\.\d+)?)/i) || href.match(/-(\d+)(?:-|\.html)/);
-        const chapNum = numMatch ? parseFloat(numMatch[1] ?? "0") : 0;
+        const numMatch = title.match(/(\d+(\.\d+)?)/);
+        const chapNum = numMatch ? parseFloat(numMatch[0]) : 0;
         chapters.push(App.createChapter({
           id: chapterId,
           name: title,
@@ -840,8 +813,6 @@ var _Sources = (() => {
       });
       return chapters;
     }
-    // --- NUOVA LOGICA READER ---
-    // Cerca sia regex JS che fallback HTML
     parseChapterDetails(html, mangaId, chapterId) {
       const pages = [];
       const scriptMatch = html.match(/imgArr\s*=\s*(\[.*?\])/s) || html.match(/var\s+images\s*=\s*(\[.*?\])/s);
@@ -855,31 +826,60 @@ var _Sources = (() => {
             }
           }
         } catch (e) {
-          console.error("BatCave JSON parse failed, trying regex extraction");
-        }
-      }
-      if (pages.length === 0) {
-        const urlRegex = /"([^"]+\.(?:jpg|jpeg|png|webp))"/g;
-        let match;
-        while ((match = urlRegex.exec(html)) !== null) {
-          if (match[1] && !match[1].includes("logo") && !match[1].includes("icon")) {
+          const urlRegex = /"([^"]+\.(?:jpg|jpeg|png|webp))"/g;
+          let match;
+          while ((match = urlRegex.exec(scriptMatch[1])) !== null) {
             pages.push(this.getHighResImage(match[1]));
           }
         }
+      } else {
+        const imgRegex = /<img[^>]+data-src=["']([^"']+)["']/g;
+        let match;
+        while ((match = imgRegex.exec(html)) !== null) {
+          pages.push(this.getHighResImage(match[1]));
+        }
       }
-      const uniquePages = [...new Set(pages)];
       return App.createChapterDetails({
         id: chapterId,
         mangaId,
-        pages: uniquePages
+        pages: [...new Set(pages)]
+        // Rimuove duplicati
       });
+    }
+    // Usato sia per Home che per Search/ViewMore
+    parseGridItems($, container, itemSelector) {
+      const manga = [];
+      $(container).find(itemSelector).each((_, element) => {
+        const item = $(element);
+        const link = item.is("a") ? item : item.find("a").first();
+        const id = link.attr("href")?.split("/").pop()?.replace(".html", "");
+        let title = item.find(".caption").text().trim() || item.find(".popular__title").text().trim() || item.attr("title") || link.text().trim();
+        let image = item.find("img").attr("src") || item.find("img").attr("data-src");
+        if (!image) {
+          const style = item.attr("style");
+          const match = style?.match(/url\(['"]?(.*?)['"]?\)/);
+          if (match) image = match[1];
+        }
+        if (id && title) {
+          manga.push(App.createPartialSourceManga({
+            mangaId: id,
+            image: this.getHighResImage(image),
+            title,
+            subtitle: void 0
+          }));
+        }
+      });
+      return manga;
+    }
+    parseSearchResults($) {
+      return this.parseGridItems($, "#dle-content", ".poster, .short");
     }
     parseHomeSections($, sectionCallback) {
       const hotSection = App.createHomeSection({
         id: "hot",
         title: "Hot Releases \u{1F525}",
         containsMoreItems: false,
-        type: import_types.HomeSectionType.singleRowLarge
+        type: "singleRowLarge"
       });
       hotSection.items = this.parseGridItems($, ".sect--hot", ".poster");
       sectionCallback(hotSection);
@@ -887,72 +887,63 @@ var _Sources = (() => {
         id: "top_rated",
         title: "Top Rated \u2B50",
         containsMoreItems: false,
-        type: import_types.HomeSectionType.singleRowNormal
+        type: "singleRowNormal"
       });
-      topRatedSection.items = this.parseGridItems($, 'div.side-block:has(h2:contains("Top-rated"))', "a.popular");
+      topRatedSection.items = this.parseGridItems($, '.side-block:contains("Top-rated")', "a.popular");
       sectionCallback(topRatedSection);
       const justAddedSection = App.createHomeSection({
         id: "just_added",
         title: "Just Added \u{1F195}",
         containsMoreItems: false,
-        type: import_types.HomeSectionType.singleRowNormal
+        type: "singleRowNormal"
       });
-      justAddedSection.items = this.parseGridItems($, 'div.side-block:has(h2:contains("Just added"))', "a.popular");
+      justAddedSection.items = this.parseGridItems($, '.side-block:contains("Just added")', "a.popular");
       sectionCallback(justAddedSection);
       const latestSection = App.createHomeSection({
         id: "latest",
         title: "Latest Updates \u{1F199}",
         containsMoreItems: true,
-        type: import_types.HomeSectionType.continuous
+        type: "continuous"
       });
       latestSection.items = this.parseGridItems($, ".sect--latest", ".latest__chapter");
       sectionCallback(latestSection);
-    }
-    parseSearchResults($) {
-      let results = this.parseGridItems($, "#dle-content", ".poster");
-      if (results.length === 0) {
-        results = this.parseGridItems($, "#dle-content", ".latest__chapter");
-      }
-      return results;
     }
   };
 
   // src/BatCave/BatCave.ts
   var DOMAIN = "https://batcave.biz";
   var BatCaveInfo = {
-    version: "1.1.0",
-    // Major Bump per UI Revamp
+    version: "1.1.5",
     name: "BatCave",
     icon: "icon.png",
     author: "DarkDragonkz",
     authorWebsite: "https://github.com/DarkDragonkz",
     description: `Extension that pulls comics from ${DOMAIN}`,
-    contentRating: import_types2.ContentRating.MATURE,
+    contentRating: import_types.ContentRating.MATURE,
     websiteBaseURL: DOMAIN,
     sourceTags: [
       {
         text: "Comics",
-        type: import_types2.BadgeColor.GREY
+        type: import_types.BadgeColor.GREY
       }
     ],
-    intents: import_types2.SourceIntents.MANGA_CHAPTERS | import_types2.SourceIntents.HOMEPAGE_SECTIONS | import_types2.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
+    intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
   };
   var BatCave = class {
     constructor(cheerio) {
       this.cheerio = cheerio;
       this.baseUrl = DOMAIN;
       this.parser = new BatCaveParser();
-      // RETRIES abbassato a 2. 10 è eccessivo e blocca l'app
-      this.RETRIES = 2;
+      // Torniamo a un valore alto per sicurezza, come nella versione originale
+      this.RETRIES = 10;
       this.requestManager = App.createRequestManager({
-        requestsPerSecond: 2,
+        requestsPerSecond: 3,
         requestTimeout: 2e4,
         interceptor: {
           interceptRequest: async (request) => {
             request.headers = {
               ...request.headers ?? {},
               "Referer": `${DOMAIN}/`,
-              // User agent più moderno per evitare versioni wap/mobile rotte
               "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             };
             return request;
@@ -1031,10 +1022,7 @@ var _Sources = (() => {
       });
       const response = await this.requestManager.schedule(request, this.RETRIES);
       const $ = this.cheerio.load(response.data);
-      let manga = this.parser.parseGridItems($, ".sect--latest, #dle-content", ".latest__chapter");
-      if (manga.length === 0) {
-        manga = this.parser.parseSearchResults($);
-      }
+      let manga = this.parser.parseGridItems($, ".sect--latest .latest, .content", ".latest__chapter, .short");
       const nextPage = manga.length > 0 ? page + 1 : void 0;
       return App.createPagedResults({
         results: manga,
