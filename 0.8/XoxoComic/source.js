@@ -744,9 +744,6 @@ var _Sources = (() => {
       }
       return url;
     }
-    /**
-     * Helper universale per parsare un blocco manga (Home/Search/ViewMore).
-     */
     parseMangaItem($, element) {
       const item = $(element);
       let link = item.find("a").first();
@@ -809,7 +806,6 @@ var _Sources = (() => {
         })
       });
     }
-    // NUOVO HELPER: Conta le pagine della lista capitoli
     getChapterPageCount($) {
       const lastPageLink = $(".pagination li a").last().attr("href");
       if (lastPageLink) {
@@ -822,7 +818,7 @@ var _Sources = (() => {
       const chapters = [];
       $(".list-chapter li.row:not(.heading)").each((_, li) => {
         const link = $(li).find("a").first();
-        const title = link.text().trim();
+        const rawTitle = link.text().trim();
         const href = link.attr("href");
         if (!href) return;
         let chapterId = href.replace(BASE_URL, "");
@@ -833,12 +829,48 @@ var _Sources = (() => {
           const parsed = new Date(dateText);
           if (!isNaN(parsed.getTime())) time = parsed;
         }
-        const numMatch = title.match(/Issue #(\d+(\.\d+)?)/i) || title.match(/Chapter (\d+)/i);
-        const chapNum = numMatch ? parseFloat(numMatch[1] ?? "0") : 0;
+        let cleanName = rawTitle.replace(/^.*?\(\d{4}\)\s*/, "").trim();
+        if (cleanName === rawTitle && rawTitle.toLowerCase().includes(mangaId.replace(/-/g, " "))) {
+          cleanName = rawTitle.replace(new RegExp(mangaId.replace(/-/g, " "), "i"), "").trim();
+        }
+        let name = cleanName;
+        let chapNum = 0;
+        let volume = void 0;
+        const multiPartMatch = cleanName.match(/_?([a-zA-Z_]+)_(\d+)_?\(Part_(\d+)\)/i);
+        if (multiPartMatch) {
+          let type = multiPartMatch[1]?.replace(/_/g, " ").trim() ?? "Vol";
+          const volNum = parseInt(multiPartMatch[2] ?? "0");
+          const partNum = parseFloat(multiPartMatch[3] ?? "0");
+          if (type.toUpperCase() === "TPB") type = "TPB";
+          name = `Vol. ${type} ${volNum} Ch.${partNum}`;
+          chapNum = partNum;
+          volume = volNum;
+        } else {
+          const singleSpecialMatch = cleanName.match(/_?([a-zA-Z_]+)_(\d+)/i);
+          if (singleSpecialMatch && !cleanName.toLowerCase().includes("issue") && !cleanName.toLowerCase().includes("chapter")) {
+            const type = singleSpecialMatch[1]?.replace(/_/g, " ").trim();
+            const num = parseFloat(singleSpecialMatch[2] ?? "0");
+            name = `${type} #${num}`;
+            chapNum = num;
+          } else {
+            const issueMatch = cleanName.match(/(?:Issue|Chapter)\s*#?(\d+(\.\d+)?)/i);
+            if (issueMatch) {
+              chapNum = parseFloat(issueMatch[1] ?? "0");
+              name = `Issue #${chapNum}`;
+            } else {
+              const fallbackNum = cleanName.match(/(\d+(\.\d+)?)/g);
+              if (fallbackNum) {
+                chapNum = parseFloat(fallbackNum[fallbackNum.length - 1] ?? "0");
+              }
+              name = cleanName.replace(/_/g, " ").trim();
+            }
+          }
+        }
         chapters.push(App.createChapter({
           id: chapterId,
-          name: title,
+          name,
           chapNum,
+          volume,
           time,
           langCode: "en"
         }));
@@ -868,7 +900,6 @@ var _Sources = (() => {
         pages
       });
     }
-    // Usato per search e view more
     parseGridItems($) {
       const results = [];
       const seenIds = /* @__PURE__ */ new Set();
@@ -894,9 +925,9 @@ var _Sources = (() => {
         containsMoreItems: true,
         type: import_types.HomeSectionType.singleRowLarge
       });
-      const latestItems = this.parseGridItems($);
-      latestSection.items = latestItems;
-      popularSection.items = latestItems.slice(0, 10);
+      const items = this.parseGridItems($);
+      latestSection.items = items;
+      popularSection.items = items.slice(0, 15);
       sectionCallback(popularSection);
       sectionCallback(latestSection);
     }
