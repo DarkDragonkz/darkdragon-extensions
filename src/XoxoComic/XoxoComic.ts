@@ -84,6 +84,7 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         const totalPages = this.parser.getChapterPageCount($)
         let allChapters = this.parser.parseChapters($, mangaId)
 
+        // Scarica tutte le pagine dei capitoli se ce n'è più di una
         if (totalPages > 1) {
             const promises = []
             for (let i = 2; i <= totalPages; i++) {
@@ -110,7 +111,6 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
         let url = chapterId.startsWith('http') ? chapterId : `${this.baseUrl}/${chapterId}`
-        // Assicura il caricamento di tutte le pagine
         if (!url.endsWith('/all')) url = `${url}/all`
 
         const request = App.createRequest({ url: url, method: 'GET' })
@@ -140,10 +140,10 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         const topMonthSection = App.createHomeSection({ id: 'top_month', title: 'Top Month ⭐', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
         const topWeekSection = App.createHomeSection({ id: 'top_week', title: 'Top Week ⚡', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
 
+        // Richieste parallele: Home (per Top/Trending) e New (per Latest)
         const requestHome = App.createRequest({ url: this.baseUrl, method: 'GET' })
         const requestNew = App.createRequest({ url: `${this.baseUrl}/new-comic`, method: 'GET' })
 
-        // Invia scheletro sezioni
         sectionCallback(trendingSection)
         sectionCallback(latestSection)
         sectionCallback(topMonthSection)
@@ -157,14 +157,13 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         const $home = this.cheerio.load(responseHome.data)
         const $new = this.cheerio.load(responseNew.data)
 
-        // Parse Trending, Top Month, Top Week (dalla Home)
-        this.parser.parseHomeSections($home, trendingSection, topMonthSection, topWeekSection)
-        
-        // Parse Latest (da New Comic page)
-        const latestItems = this.parser.parseGridItems($new)
-        latestSection.items = latestItems
+        // Parsing
+        trendingSection.items = this.parser.parseTrendingItems($home)
+        topMonthSection.items = this.parser.parseTopSectionItems($home, '#topMonth')
+        topWeekSection.items = this.parser.parseTopSectionItems($home, '#topWeek')
+        latestSection.items = this.parser.parseLatestItems($new)
 
-        // Aggiorna UI
+        // Update UI
         sectionCallback(trendingSection)
         sectionCallback(topMonthSection)
         sectionCallback(topWeekSection)
@@ -174,14 +173,13 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
         
-        // Solo Latest ha il view more
         if (homepageSectionId === 'latest') {
             const url = `${this.baseUrl}/new-comic?page=${page}`
             const request = App.createRequest({ url: url, method: 'GET' })
             const response = await this.requestManager.schedule(request, 1)
             const $ = this.cheerio.load(response.data)
             
-            const manga = this.parser.parseGridItems($)
+            const manga = this.parser.parseLatestItems($) // Usa parser specifico per New Comic
             const nextPage = manga.length > 0 ? page + 1 : undefined
 
             return App.createPagedResults({
