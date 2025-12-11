@@ -806,7 +806,6 @@ var _Sources = (() => {
         })
       });
     }
-    // FIX PAGINAZIONE: Scansiona tutti i numeri per trovare il massimo
     getChapterPageCount($) {
       let maxPage = 1;
       $(".pagination li a").each((_, el) => {
@@ -853,13 +852,13 @@ var _Sources = (() => {
         } else if (specialMatch && !cleanName.toLowerCase().includes("issue") && !cleanName.toLowerCase().includes("chapter")) {
           let type = specialMatch[1]?.replace(/_/g, " ").trim();
           const num = parseFloat(specialMatch[2] ?? "0");
-          name = `${type} #${num}`;
+          name = `Vol. ${type} ${num}`;
           chapNum = num;
         } else {
           const issueMatch = cleanName.match(/(?:Issue|Chapter|^)\s*#?(\d+(\.\d+)?)/i);
           if (issueMatch) {
             chapNum = parseFloat(issueMatch[1] ?? "0");
-            name = `Issue #${chapNum}`;
+            name = `Ch. ${chapNum}`;
           } else {
             const fallbackNum = cleanName.match(/(\d+(\.\d+)?)/g);
             if (fallbackNum) {
@@ -873,7 +872,7 @@ var _Sources = (() => {
           name,
           chapNum,
           volume: void 0,
-          // IMPORTANTE: Undefined = Nessun prefisso automatico
+          // Disabilitato per evitare prefissi doppi
           time,
           langCode: "en"
         }));
