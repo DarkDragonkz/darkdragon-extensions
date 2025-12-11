@@ -13,6 +13,7 @@ import {
     MangaProviding,
     ChapterProviding,
     HomePageSectionsProviding,
+    Request
 } from '@paperback/types'
 
 import { XoxoComicParser } from './XoxoComicParser'
@@ -20,7 +21,7 @@ import { XoxoComicParser } from './XoxoComicParser'
 const DOMAIN = 'https://xoxocomic.com'
 
 export const XoxoComicInfo: SourceInfo = {
-    version: '1.3.1', // Bump versione finale
+    version: '1.3.2', // Bump versione per fix ReferenceError
     name: 'XoxoComic',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -79,11 +80,9 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         
-        // Calcola pagine totali
         const totalPages = this.parser.getChapterPageCount($)
         let allChapters = this.parser.parseChapters($, mangaId)
 
-        // Se ci sono più pagine, scaricale tutte
         if (totalPages > 1) {
             const promises = []
             for (let i = 2; i <= totalPages; i++) {
@@ -134,10 +133,31 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        const trendingSection = App.createHomeSection({ id: 'trending', title: 'Trending Comics 🔥', containsMoreItems: false, type: HomeSectionType.singleRowLarge })
-        const latestSection = App.createHomeSection({ id: 'latest', title: 'Latest Updates 🆙', containsMoreItems: true, type: HomeSectionType.continuous })
-        const topMonthSection = App.createHomeSection({ id: 'top_month', title: 'Top Month ⭐', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
-        const topWeekSection = App.createHomeSection({ id: 'top_week', title: 'Top Week ⚡', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
+        // FIX: Uso stringhe esplicite invece di HomeSectionType per evitare ReferenceError
+        const trendingSection = App.createHomeSection({ 
+            id: 'trending', 
+            title: 'Trending Comics 🔥', 
+            containsMoreItems: false, 
+            type: 'singleRowLarge' 
+        })
+        const latestSection = App.createHomeSection({ 
+            id: 'latest', 
+            title: 'Latest Updates 🆙', 
+            containsMoreItems: true, 
+            type: 'continuous' 
+        })
+        const topMonthSection = App.createHomeSection({ 
+            id: 'top_month', 
+            title: 'Top Month ⭐', 
+            containsMoreItems: false, 
+            type: 'singleRowNormal' 
+        })
+        const topWeekSection = App.createHomeSection({ 
+            id: 'top_week', 
+            title: 'Top Week ⚡', 
+            containsMoreItems: false, 
+            type: 'singleRowNormal' 
+        })
 
         const requestHome = App.createRequest({ url: this.baseUrl, method: 'GET' })
         const requestNew = App.createRequest({ url: `${this.baseUrl}/new-comic`, method: 'GET' })
@@ -155,7 +175,7 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         const $home = this.cheerio.load(responseHome.data)
         const $new = this.cheerio.load(responseNew.data)
 
-        // Parse sezioni
+        // Parsing
         trendingSection.items = this.parser.parseTrendingItems($home)
         topMonthSection.items = this.parser.parseTopSectionItems($home, '#topMonth')
         topWeekSection.items = this.parser.parseTopSectionItems($home, '#topWeek')
