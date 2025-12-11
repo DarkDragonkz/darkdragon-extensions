@@ -13,8 +13,6 @@ import {
     MangaProviding,
     ChapterProviding,
     HomePageSectionsProviding,
-    HomeSectionType,
-    Request
 } from '@paperback/types'
 
 import { XoxoComicParser } from './XoxoComicParser'
@@ -22,7 +20,7 @@ import { XoxoComicParser } from './XoxoComicParser'
 const DOMAIN = 'https://xoxocomic.com'
 
 export const XoxoComicInfo: SourceInfo = {
-    version: '1.3.0',
+    version: '1.3.1', // Bump versione finale
     name: 'XoxoComic',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -81,10 +79,11 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         
+        // Calcola pagine totali
         const totalPages = this.parser.getChapterPageCount($)
         let allChapters = this.parser.parseChapters($, mangaId)
 
-        // Scarica tutte le pagine dei capitoli se ce n'è più di una
+        // Se ci sono più pagine, scaricale tutte
         if (totalPages > 1) {
             const promises = []
             for (let i = 2; i <= totalPages; i++) {
@@ -140,7 +139,6 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         const topMonthSection = App.createHomeSection({ id: 'top_month', title: 'Top Month ⭐', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
         const topWeekSection = App.createHomeSection({ id: 'top_week', title: 'Top Week ⚡', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
 
-        // Richieste parallele: Home (per Top/Trending) e New (per Latest)
         const requestHome = App.createRequest({ url: this.baseUrl, method: 'GET' })
         const requestNew = App.createRequest({ url: `${this.baseUrl}/new-comic`, method: 'GET' })
 
@@ -157,7 +155,7 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
         const $home = this.cheerio.load(responseHome.data)
         const $new = this.cheerio.load(responseNew.data)
 
-        // Parsing
+        // Parse sezioni
         trendingSection.items = this.parser.parseTrendingItems($home)
         topMonthSection.items = this.parser.parseTopSectionItems($home, '#topMonth')
         topWeekSection.items = this.parser.parseTopSectionItems($home, '#topWeek')
@@ -179,7 +177,7 @@ export class XoxoComic implements SearchResultsProviding, MangaProviding, Chapte
             const response = await this.requestManager.schedule(request, 1)
             const $ = this.cheerio.load(response.data)
             
-            const manga = this.parser.parseLatestItems($) // Usa parser specifico per New Comic
+            const manga = this.parser.parseLatestItems($)
             const nextPage = manga.length > 0 ? page + 1 : undefined
 
             return App.createPagedResults({
