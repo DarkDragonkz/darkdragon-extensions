@@ -804,7 +804,8 @@ var _Sources = (() => {
     // --- PARSERS ---
     parseMangaDetails($, mangaId) {
       const infoBox = $(".comic-info");
-      const rawTitle = $(".comic-title", infoBox).text().trim();
+      let rawTitle = $("h1.name", infoBox).text().trim();
+      if (!rawTitle) rawTitle = $(".comic-title", infoBox).text().trim();
       const title = this.cleanTitle(rawTitle);
       const image = this.getImageSrc($(".comic-thumb img", infoBox));
       let desc = $("#noidungm").text().trim();
@@ -812,9 +813,9 @@ var _Sources = (() => {
       let author = "Unknown";
       let status = "Ongoing";
       let artist = "Unknown";
-      $(".meta-data .row").each((_, row) => {
-        const label = $(row).find("label").text().toLowerCase();
-        const value = $(row).find("span, a").text().trim();
+      $('.meta-data [class*="col-"]', infoBox).each((_, col) => {
+        const label = $(col).find(".label").text().toLowerCase();
+        const value = $(col).find(".name").text().trim();
         if (label.includes("autore")) author = value;
         if (label.includes("artista")) artist = value;
         if (label.includes("stato")) {
@@ -824,7 +825,7 @@ var _Sources = (() => {
         }
       });
       const arrayTags = [];
-      $(".comic-info .tags a").each((_, a) => {
+      $(".tags a", infoBox).each((_, a) => {
         const label = $(a).text().trim();
         const id = $(a).attr("href")?.split("genre=")[1] ?? label;
         if (label) arrayTags.push(App.createTag({ id, label }));
@@ -845,8 +846,8 @@ var _Sources = (() => {
     }
     parseChapters($, mangaId) {
       const chapters = [];
-      $(".chapter-list .chapter-item").each((_, item) => {
-        const link = $(item).find("a");
+      $(".chapters-wrapper .chapter-item").each((_, item) => {
+        const link = $(item).find("a.chapter-name, a").first();
         const href = link.attr("href");
         if (!href) return;
         const chapterId = href.split("/").pop() ?? "";
