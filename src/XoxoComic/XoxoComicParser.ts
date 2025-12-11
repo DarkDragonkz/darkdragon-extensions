@@ -27,71 +27,198 @@ export class XoxoComicParser {
         return url
     }
 
-    private parseMangaItem($: any, element: any): PartialSourceManga | null {
-        const item = $(element)
-        
-        let link = item.find('a').first()
-        // Fallback per layout diversi
-        if (!link.attr('href')?.includes('/comic/')) {
-             link = item.find('h3 a, .title a').first()
-        }
+    /**
+     * Helper per parsare la griglia generica (usato in Search e View More)
+     */
+    parseGridItems($: any): PartialSourceManga[] {
+        const results: PartialSourceManga[] = []
+        const seenIds = new Set<string>()
 
-        const href = link.attr('href')
-        const id = href?.split('/').filter((p: string) => p && p !== 'comic' && p !== 'xoxocomic.com').pop()
+        // Cerca item generici (usati nelle pagine dedicate /comic-update, /hot-comic ecc)
+        $('.item, .list-truyen-item-wrap, .search-story-item').each((_: any, item: any) => {
+            const el = $(item)
+            let link = el.find('a').first()
+            if (!link.attr('href')) link = el.find('h3 a').first()
 
-        if (!id) return null
+            const href = link.attr('href')
+            const id = href?.split('/').filter((p: string) => p && p !== 'comic').pop()
 
-        let title = item.find('h3').text().trim()
-        if (!title) title = link.attr('title') || link.text().trim()
-        if (!title) title = 'Unknown Title'
+            if (!id || seenIds.has(id)) return
 
-        let img = item.find('img').first()
-        let imageSrc = img.attr('data-original') || img.attr('data-src') || img.attr('src')
-        
-        if (!imageSrc || imageSrc.startsWith('data:')) {
-            const style = item.find('.div-poster, .image').attr('style')
-            const match = style?.match(/url\(['"]?(.*?)['"]?\)/)
-            if (match) imageSrc = match[1]
-        }
+            let title = el.find('h3').text().trim()
+            if (!title) title = link.attr('title') || link.text().trim()
+            if (!title) title = 'Unknown Title'
 
-        const image = this.getImageSrc(imageSrc)
-        
-        // Sottotitolo: prova vari selettori per il capitolo
-        let subtitle = item.find('.chapter a, .chapter').first().text().trim()
-        if (!subtitle) subtitle = item.find('span').last().text().trim() // Fallback generico
+            let imageSrc = el.find('img').first().attr('src') || el.find('img').first().attr('data-original')
+            const image = this.getImageSrc(imageSrc)
+            const subtitle = el.find('.chapter a').first().text().trim()
 
-        return App.createPartialSourceManga({
-            mangaId: id,
-            image: image,
-            title: title,
-            subtitle: subtitle || undefined
+            seenIds.add(id)
+            results.push(App.createPartialSourceManga({
+                mangaId: id,
+                image: image,
+                title: title,
+                subtitle: subtitle || undefined
+            }))
         })
+
+        return results
     }
 
-    // ... (Metodi parseMangaDetails, parseChapters, parseChapterDetails rimangono identici a prima) ...
-    // Li includo per completezza
+    parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
+        // --- 1. TRENDING COMICS (Vetrina Grande) ---
+        const trendingSection = App.createHomeSection({ 
+            id: 'trending', 
+            title: 'Trending Comics 🔥', 
+            containsMoreItems: true, 
+            type: HomeSectionType.singleRowLarge 
+        })
+        const trendingItems: PartialSourceManga[] = []
+        
+        // Selettore specifico dal file "Trending Comics.txt"
+        $('.items-slide .owl-item .item').each((_: any, item: any) => {
+            const el = $(item)
+            const link = el.find('a').first() // Il link è sull'immagine
+            const id = link.attr('href')?.split('/').pop()
+            
+            const title = el.find('.slide-caption h3 a').text().trim()
+            // Immagine: lazyOwl o src
+            const imageSrc = el.find('img').attr('src') || el.find('img').attr('data-src') || el.find('img').attr('class')?.includes('lazyOwl') && el.find('img').attr('data-src')
+            
+            const image = this.getImageSrc(imageSrc)
+            
+            if (id && title) {
+                trendingItems.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image,
+                    title: title,
+                    subtitle: 'Trending'
+                }))
+            }
+        })
+        trendingSection.items = trendingItems
+        sectionCallback(trendingSection)
+
+
+        // --- 2. LATEST UPDATES (Scroll Infinito) ---
+        const latestSection = App.createHomeSection({ 
+            id: 'latest', 
+            title: 'Latest Updates 🆕', 
+            containsMoreItems: true, 
+            type: HomeSectionType.continuous 
+        })
+        const latestItems: PartialSourceManga[] = []
+        
+        // Selettore specifico dal file "Latest Updates.txt" (.Module-163 .item)
+        $('.Module-163 .items .row .item').each((_: any, item: any) => {
+            const el = $(item)
+            const figcaption = el.find('figure figcaption')
+            
+            const titleLink = figcaption.find('h3 a')
+            const id = titleLink.attr('href')?.split('/').pop()
+            const title = titleLink.text().trim()
+            
+            const imageSrc = el.find('figure .image img').attr('src')
+            const image = this.getImageSrc(imageSrc)
+            
+            // Capitolo: dentro ul > li > i o a
+            const chapter = figcaption.find('ul li a').first().text().trim()
+
+            if (id && title) {
+                latestItems.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image,
+                    title: title,
+                    subtitle: chapter
+                }))
+            }
+        })
+        latestSection.items = latestItems
+        sectionCallback(latestSection)
+
+
+        // --- 3. TOP MONTH (Lista Orizzontale) ---
+        const monthSection = App.createHomeSection({ 
+            id: 'top_month', 
+            title: 'Top Month ⭐', 
+            containsMoreItems: true, 
+            type: HomeSectionType.singleRowNormal 
+        })
+        const monthItems: PartialSourceManga[] = []
+
+        // Selettore specifico dal file "Top Month.txt" (#topMonth)
+        $('#topMonth li.clearfix').each((_: any, item: any) => {
+            const el = $(item)
+            const link = el.find('h3.title a')
+            const id = link.attr('href')?.split('/').pop()
+            const title = link.text().trim()
+            
+            const imageSrc = el.find('.thumb img').attr('src') || el.find('.thumb img').attr('data-original')
+            const image = this.getImageSrc(imageSrc)
+            
+            const chapter = el.find('p.chapter a').text().trim()
+
+            if (id && title) {
+                monthItems.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image,
+                    title: title,
+                    subtitle: chapter
+                }))
+            }
+        })
+        monthSection.items = monthItems
+        sectionCallback(monthSection)
+
+
+        // --- 4. TOP WEEK (Lista Orizzontale) ---
+        const weekSection = App.createHomeSection({ 
+            id: 'top_week', 
+            title: 'Top Week ⚡', 
+            containsMoreItems: true, 
+            type: HomeSectionType.singleRowNormal 
+        })
+        const weekItems: PartialSourceManga[] = []
+
+        // Selettore specifico dal file "Top Week.txt" (#topWeek)
+        $('#topWeek li.clearfix').each((_: any, item: any) => {
+            const el = $(item)
+            const link = el.find('h3.title a')
+            const id = link.attr('href')?.split('/').pop()
+            const title = link.text().trim()
+            
+            const imageSrc = el.find('.thumb img').attr('src') || el.find('.thumb img').attr('data-original')
+            const image = this.getImageSrc(imageSrc)
+            
+            const chapter = el.find('p.chapter a').text().trim()
+
+            if (id && title) {
+                weekItems.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image,
+                    title: title,
+                    subtitle: chapter
+                }))
+            }
+        })
+        weekSection.items = weekItems
+        sectionCallback(weekSection)
+    }
+
+    // --- LE ALTRE FUNZIONI (Dettagli, Capitoli) RIMANGONO INVARIATE ---
+    // (Incollo qui per completezza del file parser, usando la versione aggiornata dei capitoli)
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
-        let title = $('.title-detail').text().trim()
-        if (!title) title = $('h1').first().text().trim()
-        
-        const imageSrc = $('.col-image img').attr('src')
-        const image = this.getImageSrc(imageSrc)
-
-        let desc = $('.detail-content p').first().text().trim()
-        if (!desc) desc = $('meta[name="description"]').attr('content') ?? 'No description'
-
-        let author = 'Unknown'
-        let status = 'Ongoing'
+        let title = $('.title-detail').text().trim() || $('h1').first().text().trim()
+        const image = this.getImageSrc($('.col-image img').attr('src'))
+        let desc = $('.detail-content p').first().text().trim() || 'No description'
+        let author = 'Unknown', status = 'Ongoing'
 
         $('.list-info li').each((_: any, row: any) => {
             const label = $(row).find('.name').text().toLowerCase()
             const value = $(row).find('.col-xs-8').text().trim()
-
             if (label.includes('author')) author = value
-            if (label.includes('status')) {
-                if (value.toLowerCase().includes('completed')) status = 'Completed'
-            }
+            if (label.includes('status') && value.toLowerCase().includes('completed')) status = 'Completed'
         })
 
         const arrayTags: Tag[] = []
@@ -100,7 +227,7 @@ export class XoxoComicParser {
             const id = $(a).attr('href')?.split('/').pop() ?? label
             if (label) arrayTags.push(App.createTag({ id, label }))
         })
-        const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
+        const tagSections = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
 
         return App.createSourceManga({
             id: mangaId,
@@ -118,11 +245,10 @@ export class XoxoComicParser {
     getChapterPageCount($: any): number {
         let maxPage = 1
         $('.pagination li a').each((_: any, el: any) => {
-            const href = $(el).attr('href')
-            const match = href?.match(/page=(\d+)/)
+            const match = $(el).attr('href')?.match(/page=(\d+)/)
             if (match) {
-                const pageNum = parseInt(match[1])
-                if (pageNum > maxPage) maxPage = pageNum
+                const num = parseInt(match[1])
+                if (num > maxPage) maxPage = num
             }
         })
         return maxPage
@@ -190,7 +316,6 @@ export class XoxoComicParser {
                 id: chapterId,
                 name: name,
                 chapNum: chapNum,
-                volume: undefined, 
                 time: time,
                 langCode: 'en'
             }))
@@ -202,46 +327,15 @@ export class XoxoComicParser {
         const pages: string[] = []
         const imgRegex = /<img[^>]+data-original=["']([^"']+)["']/g
         let match
-        while ((match = imgRegex.exec(html)) !== null) {
-            const url = match[1]
-            if (url) pages.push(this.getImageSrc(url))
-        }
+        while ((match = imgRegex.exec(html)) !== null) if (match[1]) pages.push(this.getImageSrc(match[1]))
+        
         if (pages.length === 0) {
             const genericRegex = /<img[^>]+src=["']([^"']+)["']/g
             while ((match = genericRegex.exec(html)) !== null) {
                 const url = match[1]
-                if (url && !url.startsWith('data:') && !url.includes('loading') && !url.includes('logo')) {
-                    pages.push(this.getImageSrc(url))
-                }
+                if (url && !url.startsWith('data:') && !url.includes('loading')) pages.push(this.getImageSrc(url))
             }
         }
-        return App.createChapterDetails({
-            id: chapterId,
-            mangaId: mangaId,
-            pages: pages
-        })
-    }
-
-    // FUNZIONE AGGIORNATA PER SUPPORTARE TUTTE LE LISTE
-    parseGridItems($: any): PartialSourceManga[] {
-        const results: PartialSourceManga[] = []
-        const seenIds = new Set<string>()
-
-        // 1. Selettore Griglia (Hot/Popular/New) -> .item
-        // 2. Selettore Lista (Update) -> .mangalist .manga-item oppure tr
-        // Cerchiamo un selettore "Catch-All" sicuro
-        $('.item, .list-truyen-item-wrap, .search-story-item, .row-list, .col-sm-6').each((_: any, item: any) => {
-            
-            // Filtro anti-junk (alcuni div sono solo container pubblicitari)
-            if ($(item).find('a').length === 0) return
-
-            const manga = this.parseMangaItem($, item)
-            if (manga && !seenIds.has(manga.mangaId)) {
-                seenIds.add(manga.mangaId)
-                results.push(manga)
-            }
-        })
-
-        return results
+        return App.createChapterDetails({ id: chapterId, mangaId: mangaId, pages: pages })
     }
 }
