@@ -40,7 +40,6 @@ export class MangaWorldParser {
 
     /**
      * Helper per le date italiane
-     * Formati gestiti: "07 Dicembre 2025", "Oggi", "Ieri"
      */
     private parseDate(dateStr: string): Date {
         dateStr = dateStr.trim().toLowerCase()
@@ -50,7 +49,6 @@ export class MangaWorldParser {
         if (dateStr.includes('oggi')) return now
         if (dateStr.includes('ieri')) return new Date(now.setDate(now.getDate() - 1))
 
-        // Sostituzione mesi italiani -> inglesi
         for (const [it, en] of Object.entries(this.months)) {
             if (dateStr.includes(it)) {
                 dateStr = dateStr.replace(it, en)
@@ -58,7 +56,6 @@ export class MangaWorldParser {
             }
         }
 
-        // Parsing standard dopo traduzione
         const parsed = Date.parse(dateStr)
         if (!isNaN(parsed)) {
             return new Date(parsed)
@@ -67,9 +64,6 @@ export class MangaWorldParser {
         return now
     }
 
-    /**
-     * Helper centralizzato per estrarre l'URL dell'immagine gestendo lazy loading
-     */
     private getImageSrc(element: any): string {
         let image = element.attr('src') ?? ''
         
@@ -84,9 +78,6 @@ export class MangaWorldParser {
         return image || 'https://paperback.moe/icons/logo-alt.svg'
     }
 
-    /**
-     * Helper per parsare un elemento della lista
-     */
     private parseCommonManga($: any, element: any, extraSubtitleSelector?: string): PartialSourceManga {
         const href = $('a', element).attr('href') ?? ''
         const id = href.match(/[0-9]+\/[a-zA-Z0-9\-]+/i)?.[0] ?? ''
@@ -122,10 +113,8 @@ export class MangaWorldParser {
         let hentai = false
         let author = 'Unknown'
         let artist = 'Unknown'
-        // FIX: Usiamo stringhe dirette invece di MangaStatus.ONGOING per evitare crash runtime
         let status = 'Ongoing'
 
-        // Parsing dinamico dei metadati
         $('.meta-data.row.px-1 .col-12').each((_: any, obj: any) => {
             const text = $(obj).text().trim()
             
@@ -137,8 +126,6 @@ export class MangaWorldParser {
                 const statusText = $('a', obj).text().trim().toLowerCase()
                 if (statusText.includes('finito') || statusText.includes('completato')) {
                     status = 'Completed'
-                } else {
-                    status = 'Ongoing'
                 }
             }
         })
@@ -159,7 +146,7 @@ export class MangaWorldParser {
             mangaInfo: App.createMangaInfo({
                 titles: [title],
                 image,
-                status: status as any, // Cast a any per bypassare controlli TS strict se necessario, ma passa la stringa corretta
+                status: status as any,
                 artist,
                 author,
                 tags: tagSections,
@@ -172,15 +159,48 @@ export class MangaWorldParser {
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
         const arrChapters = $('.chapter').toArray()
+        
+        // Recuperiamo il titolo della serie per pulirlo dai nomi dei capitoli
+        let seriesName = $('.name.bigger').text().trim()
+        seriesName = this.cleanTitle(seriesName)
 
         for (const item of arrChapters) {
             const link = $('a.chap', item)
             const id = link.attr('href')?.replace(`${BASE_URL}/manga/${mangaId}/read/`, '') ?? ''
-            const name = link.attr('title') ?? ''
             
+            // Titolo grezzo: "Martial Peak Capitolo 01 Scan ITA"
+            let rawName = link.attr('title') ?? ''
+            
+            // 1. Rimuovi il nome della serie (Case Insensitive)
+            // Es: "Martial Peak Capitolo 01" -> "Capitolo 01"
+            let name = rawName.replace(new RegExp(seriesName, 'gi'), '').trim()
+            
+            // 2. Rimuovi "Scan ITA", "ITA", ecc.
+            name = name.replace(/scan ita/gi, '').replace(/\sita\s?$/gi, '').trim()
+            
+            // 3. Rimuovi trattini iniziali o spazi residui
+            name = name.replace(/^(-|\s)+/, '').trim()
+
+            // 4. Estrazione Volume (se presente nel titolo)
+            // Es: "Volume 1 Capitolo 2" -> volume: 1
+            let volume: number | undefined = undefined
+            const volMatch = name.match(/vol(?:ume)?\.?\s*(\d+)/i)
+            if (volMatch) {
+                volume = Number(volMatch[1])
+                // Opzionale: Rimuovi la scritta "Volume X" dal titolo per non ripeterla
+                // name = name.replace(volMatch[0], '').trim()
+            }
+
+            // Parsing numero capitolo
             const chapText = $('.d-inline-block', item).text().trim()
             const chapNumMatch = chapText.match(/(\d+(\.\d+)?)/)
             const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0
+
+            // Se il nome è rimasto vuoto dopo la pulizia (es. era solo "Martial Peak 123"),
+            // ricostruiscilo come "Capitolo X"
+            if (!name) {
+                name = `Capitolo ${chapNum}`
+            }
 
             const dateText = $('.chap-date', item).text().trim()
             const time = this.parseDate(dateText)
@@ -188,8 +208,9 @@ export class MangaWorldParser {
             chapters.push(
                 App.createChapter({
                     id,
-                    name,
+                    name, // Ora conterrà solo "Capitolo 01" (o "Volume 1 Capitolo 1")
                     chapNum,
+                    volume, // Se trovato, Paperback raggrupperà per volume
                     time,
                     langCode: 'it',
                 })
@@ -261,7 +282,6 @@ export class MangaWorldParser {
             type: HomeSectionType.singleRowNormal,
         })
 
-        // Popolamento MONTH (Hot)
         const monthItems: PartialSourceManga[] = []
         $('.col-12 .top-wrapper .entry').each((i: number, item: any) => {
             if (i < 10) monthItems.push(this.parseCommonManga($, item))
@@ -269,7 +289,6 @@ export class MangaWorldParser {
         sectionMonth.items = monthItems
         sectionCallback(sectionMonth)
 
-        // Popolamento LATEST (Colonna centrale)
         const latestItems: PartialSourceManga[] = []
         $('.col-sm-12.col-md-8.col-xl-9 .comics-grid .entry').each((_: any, item: any) => {
             latestItems.push(this.parseCommonManga($, item, '.d-flex.flex-wrap.flex-row a'))
@@ -277,7 +296,6 @@ export class MangaWorldParser {
         sectionLatest.items = latestItems
         sectionCallback(sectionLatest)
 
-        // Popolamento TRENDING (Sidebar)
         const trendingItems: PartialSourceManga[] = []
         $('.entry.vertical').each((_: any, item: any) => {
             trendingItems.push(this.parseCommonManga($, item))
