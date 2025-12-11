@@ -746,7 +746,9 @@ var _Sources = (() => {
     parseMangaItem($, element) {
       const item = $(element);
       let link = item.find("a").first();
-      if (!link.attr("href")) link = item.find("h3 a").first();
+      if (!link.attr("href")?.includes("/comic/")) {
+        link = item.find("h3 a, .title a").first();
+      }
       const href = link.attr("href");
       const id = href?.split("/").filter((p) => p && p !== "comic" && p !== "xoxocomic.com").pop();
       if (!id) return null;
@@ -761,7 +763,8 @@ var _Sources = (() => {
         if (match) imageSrc = match[1];
       }
       const image = this.getImageSrc(imageSrc);
-      const subtitle = item.find(".chapter a").first().text().trim();
+      let subtitle = item.find(".chapter a, .chapter").first().text().trim();
+      if (!subtitle) subtitle = item.find("span").last().text().trim();
       return App.createPartialSourceManga({
         mangaId: id,
         image,
@@ -769,6 +772,8 @@ var _Sources = (() => {
         subtitle: subtitle || void 0
       });
     }
+    // ... (Metodi parseMangaDetails, parseChapters, parseChapterDetails rimangono identici a prima) ...
+    // Li includo per completezza
     parseMangaDetails($, mangaId) {
       let title = $(".title-detail").text().trim();
       if (!title) title = $("h1").first().text().trim();
@@ -900,10 +905,12 @@ var _Sources = (() => {
         pages
       });
     }
+    // FUNZIONE AGGIORNATA PER SUPPORTARE TUTTE LE LISTE
     parseGridItems($) {
       const results = [];
       const seenIds = /* @__PURE__ */ new Set();
-      $(".item, .list-truyen-item-wrap, .searched-item").each((_, item) => {
+      $(".item, .list-truyen-item-wrap, .search-story-item, .row-list, .col-sm-6").each((_, item) => {
+        if ($(item).find("a").length === 0) return;
         const manga = this.parseMangaItem($, item);
         if (manga && !seenIds.has(manga.mangaId)) {
           seenIds.add(manga.mangaId);
@@ -917,8 +924,8 @@ var _Sources = (() => {
   // src/XoxoComic/XoxoComic.ts
   var DOMAIN = "https://xoxocomic.com";
   var XoxoComicInfo = {
-    version: "1.2.0",
-    // Major bump per Home Revamp
+    version: "1.2.1",
+    // Bump versione per Home Revamp Fix
     name: "XoxoComic",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -1017,58 +1024,73 @@ var _Sources = (() => {
       });
     }
     async getHomePageSections(sectionCallback) {
-      const sections = [
-        App.createHomeSection({ id: "trending", title: "Trending Comics \u{1F525}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowLarge }),
-        App.createHomeSection({ id: "latest", title: "Latest Updates \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.continuous }),
-        App.createHomeSection({ id: "top_month", title: "Top Month \u2B50", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
-        App.createHomeSection({ id: "top_week", title: "Top Week \u26A1", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal })
-      ];
-      const urls = [
-        `${this.baseUrl}/hot-comic`,
+      const trendingSection = App.createHomeSection({
+        id: "trending",
+        title: "Trending Comics \u{1F525}",
+        containsMoreItems: false,
+        type: import_types.HomeSectionType.singleRowLarge
+      });
+      const latestSection = App.createHomeSection({
+        id: "latest",
+        title: "Latest Updates \u{1F199}",
+        containsMoreItems: true,
+        type: import_types.HomeSectionType.continuous
+      });
+      const topMonthSection = App.createHomeSection({
+        id: "top_month",
+        title: "Top Month \u2B50",
+        containsMoreItems: false,
+        type: import_types.HomeSectionType.singleRowNormal
+      });
+      const topWeekSection = App.createHomeSection({
+        id: "top_week",
+        title: "Top Week \u26A1",
+        containsMoreItems: false,
+        type: import_types.HomeSectionType.singleRowNormal
+      });
+      const requests = [
+        App.createRequest({ url: `${this.baseUrl}/hot-comic`, method: "GET" }),
         // Trending
-        `${this.baseUrl}/comic-update`,
+        App.createRequest({ url: `${this.baseUrl}/comic-update`, method: "GET" }),
         // Latest
-        `${this.baseUrl}/popular-comic`,
-        // Top Month (Popular)
-        `${this.baseUrl}/new-comic`
-        // Top Week (New Arrivals)
+        App.createRequest({ url: `${this.baseUrl}/popular-comic`, method: "GET" }),
+        // Top Month
+        App.createRequest({ url: `${this.baseUrl}/new-comic`, method: "GET" })
+        // Top Week
       ];
-      const promises = urls.map((url) => App.createRequest({ url, method: "GET" }));
-      for (const section of sections) sectionCallback(section);
-      const responses = await Promise.all(promises.map((req) => this.requestManager.schedule(req, 1)));
-      for (let i = 0; i < sections.length; i++) {
-        const $ = this.cheerio.load(responses[i].data);
-        sections[i].items = this.parser.parseGridItems($);
-        sectionCallback(sections[i]);
-      }
+      sectionCallback(trendingSection);
+      sectionCallback(latestSection);
+      sectionCallback(topMonthSection);
+      sectionCallback(topWeekSection);
+      const responses = await Promise.all(requests.map((req) => this.requestManager.schedule(req, 1)));
+      const $trending = this.cheerio.load(responses[0].data);
+      trendingSection.items = this.parser.parseGridItems($trending);
+      sectionCallback(trendingSection);
+      const $latest = this.cheerio.load(responses[1].data);
+      latestSection.items = this.parser.parseGridItems($latest);
+      sectionCallback(latestSection);
+      const $month = this.cheerio.load(responses[2].data);
+      topMonthSection.items = this.parser.parseGridItems($month);
+      sectionCallback(topMonthSection);
+      const $week = this.cheerio.load(responses[3].data);
+      topWeekSection.items = this.parser.parseGridItems($week);
+      sectionCallback(topWeekSection);
     }
     async getViewMoreItems(homepageSectionId, metadata) {
       const page = metadata?.page ?? 1;
       let url = "";
-      switch (homepageSectionId) {
-        case "trending":
-          url = `${this.baseUrl}/hot-comic?page=${page}`;
-          break;
-        case "latest":
-          url = `${this.baseUrl}/comic-update?page=${page}`;
-          break;
-        case "top_month":
-          url = `${this.baseUrl}/popular-comic?page=${page}`;
-          break;
-        case "top_week":
-          url = `${this.baseUrl}/new-comic?page=${page}`;
-          break;
-        default:
-          return App.createPagedResults({ results: [] });
+      if (homepageSectionId === "latest") {
+        url = `${this.baseUrl}/comic-update?page=${page}`;
+      } else {
+        return App.createPagedResults({ results: [] });
       }
       const request = App.createRequest({ url, method: "GET" });
       const response = await this.requestManager.schedule(request, 1);
       const $ = this.cheerio.load(response.data);
       const manga = this.parser.parseGridItems($);
-      const nextPage = manga.length > 0 ? page + 1 : void 0;
       return App.createPagedResults({
         results: manga,
-        metadata: nextPage ? { page: nextPage } : void 0
+        metadata: manga.length > 0 ? { page: page + 1 } : void 0
       });
     }
     async getCloudflareBypassRequestAsync() {
