@@ -13,8 +13,8 @@ import {
     MangaProviding,
     ChapterProviding,
     HomePageSectionsProviding,
-    ConfigurableSource, // Importante per le impostazioni
-    SourceStateManager  // Importante per salvare le preferenze
+    ConfigurableSource,
+    SourceStateManager
 } from '@paperback/types'
 
 import { MangaDexParser } from './MangaDexParser'
@@ -23,37 +23,36 @@ import { getMangaDexSettingsMenu, getSelectedLanguages } from './MangaDexSetting
 const MD_API = 'https://api.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '2.2.0', 
-    name: 'MangaDex (Multi)', // Nome aggiornato
+    version: '2.2.1', // Bump fix settings crash
+    name: 'MangaDex (Multi)',
     icon: 'icon.png',
     author: 'DarkDragonkz',
     authorWebsite: 'https://github.com/DarkDragonkz',
-    description: 'MangaDex source with configurable languages, high-res covers and smart search.',
+    description: 'MangaDex source with configurable languages.',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: 'https://mangadex.org',
     sourceTags: [
         {
-            text: 'Multilingual 🌍', // Tag aggiornato
+            text: 'Multilingual 🌍',
             type: BadgeColor.BLUE,
         },
     ],
-    // Aggiungi SETTINGS_UI agli intents
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.SETTINGS_UI,
 }
 
 export class MangaDex implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding, ConfigurableSource {
     
     parser = new MangaDexParser()
-    stateManager = App.createSourceStateManager() // Inizializza lo State Manager
+    stateManager = App.createSourceStateManager()
 
     constructor(private cheerio: any) {}
 
-    // --- IMPOSTAZIONI ---
+    // --- FIX QUI ---
+    // Aggiunto 'await' perché getMangaDexSettingsMenu ora è asincrona per evitare il crash
     async getSourceMenu(): Promise<any> {
-        return getMangaDexSettingsMenu(this.stateManager)
+        return await getMangaDexSettingsMenu(this.stateManager)
     }
-
-    // --- ENDPOINTS ---
+    // ---------------
 
     requestManager = App.createRequestManager({
         requestsPerSecond: 5,
@@ -86,11 +85,7 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        // 1. Recupera le lingue selezionate dall'utente
         const languages = await getSelectedLanguages(this.stateManager)
-        
-        // 2. Costruisci la query string per le lingue
-        // Es: &translatedLanguage[]=en&translatedLanguage[]=it
         const langQuery = languages.map(l => `translatedLanguage[]=${l}`).join('&')
 
         const limit = 500
@@ -101,9 +96,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
 
         const response = await this.requestManager.schedule(request, 1)
         const data = JSON.parse(response.data ?? '{}')
-        
-        // Gestione paginazione se > 500 capitoli (raro ma possibile per One Piece ecc)
-        // Per semplicità qui prendiamo i primi 500, ma MangaDex supporta offset.
         
         return this.parser.parseChapters(data)
     }
@@ -122,7 +114,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const limit = 20
         const offset = metadata?.offset ?? 0
         
-        // Per la ricerca, vogliamo trovare manga che hanno ALMENO una delle lingue selezionate disponibili
         const languages = await getSelectedLanguages(this.stateManager)
         const langQuery = languages.map(l => `availableTranslatedLanguage[]=${l}`).join('&')
 
@@ -155,24 +146,16 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         sectionCallback(sectionLatest)
         sectionCallback(sectionNew)
 
-        // Recupera lingue per filtrare anche la home page
         const languages = await getSelectedLanguages(this.stateManager)
         const langQuery = languages.map(l => `availableTranslatedLanguage[]=${l}`).join('&')
         const limit = 20
 
         const baseParams = `limit=${limit}&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&${langQuery}`
 
-        // 1. Popular
         const requestPopular = App.createRequest({ url: `${MD_API}/manga?${baseParams}&order[followedCount]=desc`, method: 'GET' })
-        
-        // 2. Latest
-        // Nota: Per "Latest Updates" su MD, di solito si usa l'endpoint /chapter, ma per coerenza usiamo /manga ordinato per latestUploadedChapter
         const requestLatest = App.createRequest({ url: `${MD_API}/manga?${baseParams}&order[latestUploadedChapter]=desc`, method: 'GET' })
-
-        // 3. Recently Added
         const requestNew = App.createRequest({ url: `${MD_API}/manga?${baseParams}&order[createdAt]=desc`, method: 'GET' })
 
-        // Eseguiamo
         const [dataPopular, dataLatest, dataNew] = await Promise.all([
             this.requestManager.schedule(requestPopular, 1),
             this.requestManager.schedule(requestLatest, 1),
