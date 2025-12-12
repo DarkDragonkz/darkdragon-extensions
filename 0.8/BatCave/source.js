@@ -810,7 +810,6 @@ var _Sources = (() => {
           chapNum,
           volume: void 0,
           time: /* @__PURE__ */ new Date(),
-          // Date non presenti in lista
           langCode: "en",
           sortingIndex: chapters.length
         }));
@@ -859,8 +858,8 @@ var _Sources = (() => {
   // src/BatCave/BatCave.ts
   var DOMAIN = "https://batcave.biz";
   var BatCaveInfo = {
-    version: "2.0.0",
-    // Major Update: Nuova Homepage
+    version: "2.0.1",
+    // Bump per fix crash
     name: "BatCave",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -877,9 +876,12 @@ var _Sources = (() => {
     intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
   };
   var BatCave = class {
-    constructor() {
+    // --- FIX: COSTRUTTORE AGGIUNTO ---
+    constructor(cheerio) {
+      this.cheerio = cheerio;
       this.baseUrl = DOMAIN;
       this.parser = new BatCaveParser();
+      // ---------------------------------
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 3,
         requestTimeout: 2e4,
@@ -922,7 +924,6 @@ var _Sources = (() => {
     async getChapterDetails(mangaId, chapterId) {
       const request = App.createRequest({
         url: `${this.baseUrl}/${chapterId}`,
-        // BatCave chapter ID è l'URL completo relativo
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
@@ -958,7 +959,6 @@ var _Sources = (() => {
         title: "The Newest \u{1F4DA}",
         containsMoreItems: true,
         type: import_types.HomeSectionType.continuous
-        // Abilita scroll infinito/view more
       });
       sectionCallback(featured);
       sectionCallback(topRated);
@@ -1019,7 +1019,6 @@ var _Sources = (() => {
       const manga = this.parser.parseSearchResults($);
       return App.createPagedResults({
         results: manga,
-        // Search DLE di solito non ha paginazione facile via API, ritorniamo undefined per ora o gestiamo offset
         metadata: void 0
       });
     }
