@@ -23,7 +23,7 @@ import { URLBuilder } from '../helper'
 const MW_DOMAIN = 'https://www.mangaworld.mx'
 
 export const MangaWorldInfo: SourceInfo = {
-    version: '3.4.0', // Bump version
+    version: '3.5.0', // Bump version per fix stato e capitoli
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld.',
     author: 'NmN',
@@ -145,10 +145,10 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
         let url = ''
 
         switch (homepageSectionId) {
-            case 'ultimi_capitoli': // Ultimi capitoli
+            case 'ultimi_capitoli':
                 url = `${this.baseUrl}/?page=${page}`
                 break
-            case 'manga_mese': // Manga del mese
+            case 'manga_mese':
                 url = `${this.baseUrl}/archive?sort=most_read&page=${page}`
                 break
             default:
