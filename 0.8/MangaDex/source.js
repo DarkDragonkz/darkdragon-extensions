@@ -825,7 +825,6 @@ var _Sources = (() => {
   var LANGUAGES = [
     { id: "en", label: "English \u{1F1EC}\u{1F1E7}", default: true },
     { id: "it", label: "Italiano \u{1F1EE}\u{1F1F9}", default: false },
-    // Default false per non intasare, l'utente lo attiverà
     { id: "es", label: "Espa\xF1ol \u{1F1EA}\u{1F1F8}", default: false },
     { id: "es-la", label: "Espa\xF1ol (LatAm) \u{1F1F2}\u{1F1FD}", default: false },
     { id: "fr", label: "Fran\xE7ais \u{1F1EB}\u{1F1F7}", default: false },
@@ -847,7 +846,11 @@ var _Sources = (() => {
     }
     return selected;
   };
-  var getMangaDexSettingsMenu = (stateManager) => {
+  var getMangaDexSettingsMenu = async (stateManager) => {
+    const values = {};
+    for (const lang of LANGUAGES) {
+      values[lang.id] = await stateManager.retrieve(lang.id) ?? lang.default;
+    }
     return App.createNavigationSection({
       id: "language_settings",
       header: "Lingue Contenuti",
@@ -856,7 +859,8 @@ var _Sources = (() => {
         (lang) => App.createSwitch({
           id: lang.id,
           label: lang.label,
-          value: stateManager.retrieve(lang.id) ?? lang.default,
+          value: values[lang.id],
+          // Ora questo è true/false, non una Promise!
           onChange: async (newValue) => {
             await stateManager.store(lang.id, newValue);
           }
@@ -868,32 +872,29 @@ var _Sources = (() => {
   // src/MangaDex/MangaDex.ts
   var MD_API = "https://api.mangadex.org";
   var MangaDexInfo = {
-    version: "2.2.0",
+    version: "2.2.1",
+    // Bump fix settings crash
     name: "MangaDex (Multi)",
-    // Nome aggiornato
     icon: "icon.png",
     author: "DarkDragonkz",
     authorWebsite: "https://github.com/DarkDragonkz",
-    description: "MangaDex source with configurable languages, high-res covers and smart search.",
+    description: "MangaDex source with configurable languages.",
     contentRating: import_types.ContentRating.MATURE,
     websiteBaseURL: "https://mangadex.org",
     sourceTags: [
       {
         text: "Multilingual \u{1F30D}",
-        // Tag aggiornato
         type: import_types.BadgeColor.BLUE
       }
     ],
-    // Aggiungi SETTINGS_UI agli intents
     intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.SETTINGS_UI
   };
   var MangaDex = class {
-    // Inizializza lo State Manager
     constructor(cheerio) {
       this.cheerio = cheerio;
       this.parser = new MangaDexParser();
       this.stateManager = App.createSourceStateManager();
-      // --- ENDPOINTS ---
+      // ---------------
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 5,
         requestTimeout: 2e4,
@@ -912,9 +913,10 @@ var _Sources = (() => {
         }
       });
     }
-    // --- IMPOSTAZIONI ---
+    // --- FIX QUI ---
+    // Aggiunto 'await' perché getMangaDexSettingsMenu ora è asincrona per evitare il crash
     async getSourceMenu() {
-      return getMangaDexSettingsMenu(this.stateManager);
+      return await getMangaDexSettingsMenu(this.stateManager);
     }
     getMangaShareUrl(mangaId) {
       return `https://mangadex.org/title/${mangaId}`;
