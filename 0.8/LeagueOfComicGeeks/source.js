@@ -728,75 +728,85 @@ var _Sources = (() => {
     LeagueOfComicGeeksInfo: () => LeagueOfComicGeeksInfo
   });
   var import_types = __toESM(require_lib());
-
-  // src/LeagueOfComicGeeks/LocgSettings.ts
+  var LOCG_DOMAIN = "https://leagueofcomicgeeks.com";
   var LOCG_USERNAME = "locg_username";
   var LOCG_PASSWORD = "locg_password";
   var LOCG_SESSION_COOKIE = "locg_session_cookie";
-  var getLocgCredentials = async (stateManager) => {
-    const username = await stateManager.retrieve(LOCG_USERNAME) ?? "";
-    const password = await stateManager.retrieve(LOCG_PASSWORD) ?? "";
-    const sessionCookie = await stateManager.retrieve(LOCG_SESSION_COOKIE) ?? "";
-    return { username, password, sessionCookie };
+  var LeagueOfComicGeeksInfo = {
+    version: "1.0.6",
+    name: "League of Comic Geeks",
+    description: "Syncs reading progress with League of Comic Geeks",
+    author: "Tu",
+    icon: "icon.png",
+    contentRating: import_types.ContentRating.EVERYONE,
+    websiteBaseURL: LOCG_DOMAIN,
+    // DICHIARIAMO ESPLICITAMENTE CHE È UN TRACKER E HA UN MENU IMPOSTAZIONI
+    intents: import_types.SourceIntents.MANGA_TRACKING | import_types.SourceIntents.SETTINGS_UI
   };
-  var routeLocgSettings = (stateManager) => {
-    return App.createDUINavigationButton({
-      id: "locg_settings",
-      label: "League of Comic Geeks Settings",
-      form: App.createDUIForm({
-        sections: async () => [
-          App.createDUISection({
-            id: "login",
-            header: "Login Credentials",
-            footer: 'Inserisci le tue credenziali LOCG. Se il login automatico fallisce, inserisci manualmente il cookie "ci_session" dal browser.',
-            rows: async () => [
-              App.createDUIInputField({
-                id: "username",
+  var LeagueOfComicGeeks = class {
+    constructor(cheerio) {
+      this.cheerio = cheerio;
+      // Inizializziamo i manager manualmente (Obbligatorio se non estendiamo Tracker)
+      this.stateManager = App.createSourceStateManager();
+      this.requestManager = App.createRequestManager({
+        requestsPerSecond: 4,
+        requestTimeout: 15e3
+      });
+    }
+    // --- 1. GESTIONE IMPOSTAZIONI (Login) ---
+    // Nota: I tracker usano spesso 'getTrackerSettingsForm' invece di 'getSourceMenu'
+    async getTrackerSettingsForm() {
+      const username = await this.stateManager.retrieve(LOCG_USERNAME) ?? "";
+      const password = await this.stateManager.retrieve(LOCG_PASSWORD) ?? "";
+      const cookie = await this.stateManager.retrieve(LOCG_SESSION_COOKIE) ?? "";
+      return (0, import_types.createForm)({
+        sections: [
+          (0, import_types.createSection)({
+            header: "Credenziali Login",
+            footer: 'Inserisci le credenziali. Se il login automatico fallisce, puoi inserire manualmente il cookie "ci_session" prendendolo dal browser.',
+            rows: [
+              (0, import_types.createInputRow)({
+                id: LOCG_USERNAME,
                 label: "Username",
-                value: App.createDUIBinding({
-                  get: async () => (await getLocgCredentials(stateManager)).username,
-                  set: async (val) => await stateManager.store(LOCG_USERNAME, val)
-                })
+                value: username
               }),
-              App.createDUIInputField({
-                id: "password",
+              (0, import_types.createInputRow)({
+                id: LOCG_PASSWORD,
                 label: "Password",
-                maskInput: true,
-                value: App.createDUIBinding({
-                  get: async () => (await getLocgCredentials(stateManager)).password,
-                  set: async (val) => await stateManager.store(LOCG_PASSWORD, val)
-                })
+                value: password,
+                maskInput: true
               }),
-              App.createDUIInputField({
-                id: "sessionCookie",
-                label: "Session Cookie (Optional)",
-                value: App.createDUIBinding({
-                  get: async () => (await getLocgCredentials(stateManager)).sessionCookie,
-                  set: async (val) => await stateManager.store(LOCG_SESSION_COOKIE, val)
-                })
+              (0, import_types.createInputRow)({
+                id: LOCG_SESSION_COOKIE,
+                label: "Session Cookie (Opzionale)",
+                value: cookie
+              })
+            ]
+          }),
+          (0, import_types.createSection)({
+            header: "Stato",
+            rows: [
+              (0, import_types.createLabel)({
+                label: "Stato Cookie",
+                value: cookie ? "Cookie Presente \u2705" : "Nessun Cookie \u274C"
               })
             ]
           })
         ]
-      })
-    });
-  };
-
-  // src/LeagueOfComicGeeks/LocgAPI.ts
-  var LOCG_DOMAIN = "https://leagueofcomicgeeks.com";
-  var LocgAPI = class {
-    constructor(requestManager, stateManager) {
-      this.requestManager = requestManager;
-      this.stateManager = stateManager;
+      });
     }
-    // Recupera il cookie o prova a fare il login
+    // Alias per sicurezza (alcune versioni dell'app cercano questo)
+    async getSourceMenu() {
+      return this.getTrackerSettingsForm();
+    }
+    // --- 2. GESTIONE API (Metodi Privati) ---
     async getSession() {
       let cookie = await this.stateManager.retrieve(LOCG_SESSION_COOKIE);
       if (cookie) return cookie;
       const username = await this.stateManager.retrieve(LOCG_USERNAME);
       const password = await this.stateManager.retrieve(LOCG_PASSWORD);
       if (!username || !password) throw new Error("Credenziali mancanti nelle impostazioni");
-      const request = App.createRequest({
+      const request = (0, import_types.createRequestObject)({
         url: `${LOCG_DOMAIN}/login`,
         method: "POST",
         headers: {
@@ -810,8 +820,9 @@ var _Sources = (() => {
         }
       });
       const response = await this.requestManager.schedule(request, 1);
-      const setCookie = response.headers["set-cookie"];
-      if (setCookie) {
+      let setCookie = response.headers["set-cookie"] || response.headers["Set-Cookie"];
+      if (Array.isArray(setCookie)) setCookie = setCookie.join("; ");
+      if (setCookie && typeof setCookie === "string") {
         const match = setCookie.match(/ci_session=([^;]+)/);
         if (match) {
           cookie = match[1];
@@ -819,118 +830,92 @@ var _Sources = (() => {
           return cookie;
         }
       }
-      throw new Error("Login fallito. Controlla le credenziali o inserisci il cookie manualmente.");
+      throw new Error("Login automatico fallito. Inserisci il cookie manualmente.");
     }
-    async searchSeries(query) {
-      const cookie = await this.getSession();
-      const request = App.createRequest({
-        url: `${LOCG_DOMAIN}/search/ajax_search`,
-        method: "GET",
-        param: `q=${encodeURIComponent(query)}&type=series`,
-        // Filtriamo per serie
-        headers: {
-          "Cookie": `ci_session=${cookie}`,
-          "X-Requested-With": "XMLHttpRequest"
-        }
-      });
-      const response = await this.requestManager.schedule(request, 1);
+    async findIssueIdByNumber(seriesId, issueNumber) {
       try {
-        return JSON.parse(response.data ?? "[]");
+        const cookie = await this.getSession();
+        const request = (0, import_types.createRequestObject)({
+          url: `${LOCG_DOMAIN}/comics/series/${seriesId}`,
+          method: "GET",
+          headers: { "Cookie": `ci_session=${cookie}` }
+        });
+        const response = await this.requestManager.schedule(request, 1);
+        const html = response.data ?? "";
+        const regex = new RegExp(`data-issue-id="(\\d+)"[^>]*>#${issueNumber}<`, "i");
+        const match = html.match(regex);
+        if (!match) {
+          const altRegex = new RegExp(`data-issue-id="(\\d+)"[^>]*>\\s*#?${issueNumber}\\s*<`, "i");
+          const altMatch = html.match(altRegex);
+          return altMatch ? altMatch[1] : void 0;
+        }
+        return match ? match[1] : void 0;
       } catch (e) {
-        console.log("Errore parsing ricerca: " + e);
-        return [];
+        console.error(`Errore ricerca issue: ${e}`);
+        return void 0;
       }
     }
-    // Per segnare un capitolo come letto, dobbiamo sapere l'ID dell'issue su LOCG.
-    // Questo è difficile perché Paperback ha solo il numero del capitolo.
-    // Strategia: Cerchiamo la lista degli issue della serie e troviamo quello con il numero corrispondente.
-    async findIssueIdByNumber(seriesId, issueNumber) {
-      const cookie = await this.getSession();
-      const request = App.createRequest({
-        url: `${LOCG_DOMAIN}/comics/series/${seriesId}`,
-        method: "GET",
-        headers: { "Cookie": `ci_session=${cookie}` }
-      });
-      const response = await this.requestManager.schedule(request, 1);
-      const html = response.data ?? "";
-      const regex = new RegExp(`data-issue-id="(\\d+)"[^>]*>#${issueNumber}<`, "i");
-      const match = html.match(regex);
-      return match ? match[1] : void 0;
-    }
-    async markIssueAsRead(issueId) {
-      const cookie = await this.getSession();
-      const request = App.createRequest({
-        url: `${LOCG_DOMAIN}/comic/ajax_add_to_list`,
-        method: "POST",
-        headers: {
-          "Cookie": `ci_session=${cookie}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-          "X-Requested-With": "XMLHttpRequest"
-        },
-        data: {
-          comic_id: issueId,
-          list_id: "1",
-          // 1 Di solito è "Read" o "Collection", da verificare
-          action: "add"
-        }
-      });
-      await this.requestManager.schedule(request, 1);
-    }
-  };
-
-  // src/LeagueOfComicGeeks/LeagueOfComicGeeks.ts
-  var LeagueOfComicGeeksInfo = {
-    version: "1.0.1",
-    name: "League of Comic Geeks",
-    description: "Syncs reading progress with League of Comic Geeks",
-    author: "Tu",
-    icon: "icon.png",
-    contentRating: import_types.ContentRating.EVERYONE,
-    websiteBaseURL: "https://leagueofcomicgeeks.com",
-    intents: import_types.SourceIntents.MANGA_TRACKING | import_types.SourceIntents.SETTINGS_UI
-  };
-  var LeagueOfComicGeeks = class {
-    constructor(cheerio) {
-      this.cheerio = cheerio;
-      // In Paperback 0.8+ queste proprietà vengono iniettate automaticamente se la classe le dichiara
-      this.stateManager = App.createSourceStateManager();
-      this.requestManager = App.createRequestManager({
-        requestsPerSecond: 4,
-        requestTimeout: 15e3
-      });
-      this.api = new LocgAPI(this.requestManager, this.stateManager);
-    }
-    async getSourceMenu() {
-      return (await routeLocgSettings(this.stateManager)).form;
-    }
-    // --- Search ---
+    // --- 3. IMPLEMENTAZIONE TRACKER ---
     async getSearchResults(query, metadata) {
-      const results = await this.api.searchSeries(query.title ?? "");
-      const items = results.map((item) => ({
-        mangaId: String(item.id),
-        // ID Serie su LOCG
-        title: item.title,
-        imageUrl: item.cover_url ?? "",
-        subtitle: `${item.publisher} (${item.year})`
-      }));
-      return App.createPagedResults({
-        results: items,
-        metadata: void 0
-      });
+      try {
+        const cookie = await this.getSession();
+        const request = (0, import_types.createRequestObject)({
+          url: `${LOCG_DOMAIN}/search/ajax_search`,
+          method: "GET",
+          param: `q=${encodeURIComponent(query.title ?? "")}&type=series`,
+          headers: {
+            "Cookie": `ci_session=${cookie}`,
+            "X-Requested-With": "XMLHttpRequest"
+          }
+        });
+        const response = await this.requestManager.schedule(request, 1);
+        const data = JSON.parse(response.data ?? "[]");
+        const items = data.map((item) => ({
+          mangaId: String(item.id),
+          title: item.title,
+          imageUrl: item.cover_url ?? "",
+          subtitle: `${item.publisher} (${item.year})`
+        }));
+        return App.createPagedResults({
+          results: items,
+          metadata: void 0
+        });
+      } catch (e) {
+        console.error(`Errore ricerca LOCG: ${e}`);
+        return App.createPagedResults({ results: [] });
+      }
     }
-    // --- Progress ---
     async getMangaProgress(mangaId) {
       return void 0;
     }
     async updateMangaProgress(mangaId, progress) {
       const lastChapterRead = progress.lastChapterRead;
       if (!lastChapterRead) return;
-      const issueId = await this.api.findIssueIdByNumber(mangaId, lastChapterRead);
-      if (issueId) {
-        await this.api.markIssueAsRead(issueId);
-        console.log(`LOCG: Marked issue ${issueId} (Ch. ${lastChapterRead}) as read.`);
-      } else {
-        console.log(`LOCG: Could not find issue ID for series ${mangaId} chapter ${lastChapterRead}`);
+      try {
+        const issueId = await this.findIssueIdByNumber(mangaId, lastChapterRead);
+        if (issueId) {
+          const cookie = await this.getSession();
+          const request = (0, import_types.createRequestObject)({
+            url: `${LOCG_DOMAIN}/comic/ajax_add_to_list`,
+            method: "POST",
+            headers: {
+              "Cookie": `ci_session=${cookie}`,
+              "Content-Type": "application/x-www-form-urlencoded",
+              "X-Requested-With": "XMLHttpRequest"
+            },
+            data: {
+              comic_id: issueId,
+              list_id: "1",
+              action: "add"
+            }
+          });
+          await this.requestManager.schedule(request, 1);
+          console.log(`LOCG: Segnato issue ${issueId} (Cap. ${lastChapterRead}) come letto.`);
+        } else {
+          console.warn(`LOCG: ID Issue non trovato per la serie ${mangaId} capitolo ${lastChapterRead}`);
+        }
+      } catch (e) {
+        console.error(`Errore aggiornamento LOCG: ${e}`);
       }
     }
   };
