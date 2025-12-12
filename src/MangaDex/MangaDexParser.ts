@@ -24,7 +24,6 @@ export class MangaDexParser {
         const coverRel = relationships.find((r: any) => r.type === 'cover_art')
         const coverFileName = coverRel?.attributes?.fileName
         
-        // Alta qualità per dettagli
         const image = coverFileName ? `${MD_UPLOADS}/covers/${mangaId}/${coverFileName}.512.jpg` : 'https://paperback.moe/icons/logo-alt.svg'
 
         const tags: Tag[] = []
@@ -56,6 +55,15 @@ export class MangaDexParser {
         
         for (const chapter of data.data) {
             const attr = chapter.attributes
+            
+            // --- FIX: Rimuovi capitoli esterni ---
+            // Se c'è un externalUrl (es. link a MangaPlus), saltiamo il capitolo
+            // perché Paperback non può aprirlo nativamente.
+            if (attr.externalUrl) {
+                continue 
+            }
+            // -------------------------------------
+
             const rels = chapter.relationships
             const scanGroup = rels.find((r: any) => r.type === 'scanlation_group')?.attributes?.name
             
@@ -102,7 +110,6 @@ export class MangaDexParser {
             const coverRel = manga.relationships.find((r: any) => r.type === 'cover_art')
             const fileName = coverRel?.attributes?.fileName
             
-            // Qualità buona per le copertine Home Page
             let image = 'https://paperback.moe/icons/logo-alt.svg'
             if (fileName) {
                 image = `${MD_UPLOADS}/covers/${manga.id}/${fileName}.512.jpg`

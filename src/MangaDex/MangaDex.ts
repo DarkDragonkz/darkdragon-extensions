@@ -21,12 +21,12 @@ import { MangaDexParser } from './MangaDexParser'
 const MD_API = 'https://api.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '3.0.0', // Reset versione pulita
+    version: '3.0.1', // Bump per il filtro capitoli esterni
     name: 'MangaDex (EN)',
     icon: 'icon.png',
     author: 'DarkDragonkz',
     authorWebsite: 'https://github.com/DarkDragonkz',
-    description: 'MangaDex English source. High quality covers.',
+    description: 'MangaDex English source. Filters out external links.',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: 'https://mangadex.org',
     sourceTags: [
@@ -76,7 +76,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
         const limit = 500
-        // Hardcoded EN
         const request = App.createRequest({
             url: `${MD_API}/manga/${mangaId}/feed?limit=${limit}&translatedLanguage[]=en&order[chapter]=desc&includeFutureUpdates=0&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
             method: 'GET'
@@ -132,13 +131,13 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         // 3. Recommended - GRANDI
         const s3 = App.createHomeSection({ id: 'recommended', title: 'Recommended ⭐', containsMoreItems: false, type: HomeSectionType.singleRowLarge })
         
-        // 4. Self-Published - Normali, No View More
+        // 4. Self-Published - Normali
         const s4 = App.createHomeSection({ id: 'self_published', title: 'Self-Published 🖊️', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
         
-        // 5. Featured - Normali, No View More
+        // 5. Featured - Normali
         const s5 = App.createHomeSection({ id: 'featured', title: 'Featured ⚡', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
         
-        // 6. Recently Added - Normali, No View More
+        // 6. Recently Added - Normali
         const s6 = App.createHomeSection({ id: 'recently_added', title: 'Recently Added ✨', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
 
         sectionCallback(s1)
@@ -148,30 +147,16 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         sectionCallback(s5)
         sectionCallback(s6)
 
-        // Parametri Comuni
         const base = `limit=15&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&availableTranslatedLanguage[]=en`
-        
-        // Richieste API Specifiche
-        // 1. Popular New (Creati nell'ultimo mese + Popolari)
         const oneMonthAgo = new Date(Date.now() - 2592000000).toISOString().slice(0, 19)
+
         const req1 = App.createRequest({ url: `${MD_API}/manga?${base}&order[followedCount]=desc&createdAtSince=${oneMonthAgo}`, method: 'GET' })
-        
-        // 2. Latest Updates
         const req2 = App.createRequest({ url: `${MD_API}/manga?${base}&order[latestUploadedChapter]=desc`, method: 'GET' })
-        
-        // 3. Recommended (Rating alto)
         const req3 = App.createRequest({ url: `${MD_API}/manga?${base}&order[rating]=desc`, method: 'GET' })
-        
-        // 4. Self-Published (Original Language = EN)
         const req4 = App.createRequest({ url: `${MD_API}/manga?${base}&originalLanguage[]=en&order[followedCount]=desc`, method: 'GET' })
-        
-        // 5. Featured (Popolari di sempre)
         const req5 = App.createRequest({ url: `${MD_API}/manga?${base}&order[relevance]=desc`, method: 'GET' })
-        
-        // 6. Recently Added
         const req6 = App.createRequest({ url: `${MD_API}/manga?${base}&order[createdAt]=desc`, method: 'GET' })
 
-        // Esecuzione Parallela
         const [d1, d2, d3, d4, d5, d6] = await Promise.all([
             this.requestManager.schedule(req1, 1),
             this.requestManager.schedule(req2, 1),
@@ -202,7 +187,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const base = `limit=${limit}&offset=${offset}&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&availableTranslatedLanguage[]=en`
         
         let url = ''
-        // Gestiamo solo 'latest' perché è l'unico con containsMoreItems: true
         if (homepageSectionId === 'latest') {
             url = `${MD_API}/manga?${base}&order[latestUploadedChapter]=desc`
         } else {
