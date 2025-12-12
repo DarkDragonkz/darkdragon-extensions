@@ -22,7 +22,7 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '2.0.0', // Major Update: UI & Core Refactor
+    version: '2.0.1', // Bump versione per fix crash
     name: 'NineMangaIT',
     description: 'Estensione per NineManga (IT) con interfaccia aggiornata.',
     author: 'DarkDragonkz',
@@ -43,8 +43,12 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     baseUrl = IT_DOMAIN
     parser = new NineMangaITParser()
 
+    // --- FIX IMPORTANTE: Costruttore per Cheerio ---
+    constructor(private cheerio: any) {}
+    // ----------------------------------------------
+
     requestManager = App.createRequestManager({
-        requestsPerSecond: 3, // NineManga è un po' lento, meglio non esagerare
+        requestsPerSecond: 3,
         requestTimeout: 20000,
         interceptor: {
             interceptRequest: async (request: any) => {
@@ -76,7 +80,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
         const request = App.createRequest({
-            url: `${this.baseUrl}/manga/${mangaId}.html?warning=1`, // Bypass warning contenuti adulti
+            url: `${this.baseUrl}/manga/${mangaId}.html?warning=1`,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
@@ -85,26 +89,19 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // 1. Carica la prima pagina per capire quante pagine ci sono
         const request = App.createRequest({
             url: `${this.baseUrl}/chapter/${chapterId}.html`,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
-        
-        // La logica complessa di scaricamento parallelo è delegata a questa funzione ausiliaria
-        // per mantenere il codice pulito.
         return this.fetchChapterPages($, mangaId, chapterId)
     }
 
-    // Funzione Helper per scaricare tutte le pagine del capitolo
     async fetchChapterPages($: any, mangaId: string, chapterId: string): Promise<ChapterDetails> {
         const pages: string[] = []
         
-        // Trova il numero totale di pagine dal menu a tendina
         const pageOptions = $('select#page option').length
-        // Fallback: se non c'è select, prova a parsare il testo "1 / 20"
         let totalPages = pageOptions > 0 ? pageOptions : 1
         
         if (totalPages === 1) {
@@ -113,16 +110,13 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
             if (match) totalPages = parseInt(match[1])
         }
 
-        // Crea le richieste per tutte le pagine (es. 2.html, 3.html...)
-        // Nota: La pagina 1 l'abbiamo già, ma per ordine le rifacciamo tutte o aggiungiamo la 1
-        // NineManga URL format: .../chapterId.html, .../chapterId-2.html, etc.
-        
         const promises: Promise<any>[] = []
         
         // Pagina 1
-        pages.push(this.parser.extractImage($))
+        const img1 = this.parser.extractImage($)
+        if (img1) pages.push(img1)
 
-        // Pagine successive (da 2 a totalPages)
+        // Pagine successive
         for (let i = 2; i <= totalPages; i++) {
             const req = App.createRequest({
                 url: `${this.baseUrl}/chapter/${chapterId}-${i}.html`,
@@ -131,7 +125,6 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
             promises.push(this.requestManager.schedule(req, 1))
         }
 
-        // Esegui in parallelo (con limite del requestManager)
         const responses = await Promise.all(promises)
         
         for (const res of responses) {
@@ -143,7 +136,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         return App.createChapterDetails({
             id: chapterId,
             mangaId: mangaId,
-            pages: pages.filter(p => p && !p.includes('logo')) // Filtra immagini rotte
+            pages: pages.filter(p => p && !p.includes('logo'))
         })
     }
 
@@ -154,7 +147,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         
         if (query.title) builder.addQueryParameter('name_s', encodeURIComponent(query.title))
         builder.addQueryParameter('page', page.toString())
-        builder.addQueryParameter('type', 'high') // Ordina per popolarità
+        builder.addQueryParameter('type', 'high') 
 
         const request = App.createRequest({
             url: builder.buildUrl({ addTrailingSlash: true }),
@@ -165,7 +158,6 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($)
         
-        // Paginazione
         const hasNext = $('.pagelist a.next').length > 0
         return App.createPagedResults({
             results: manga,
@@ -174,7 +166,6 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        // UI PREMIUM
         const sectionPopular = App.createHomeSection({ id: 'popular', title: 'Popolari 🔥', containsMoreItems: true, type: HomeSectionType.singleRowLarge })
         const sectionLatest = App.createHomeSection({ id: 'latest', title: 'Ultime Uscite 🆕', containsMoreItems: true, type: HomeSectionType.continuous })
         const sectionNew = App.createHomeSection({ id: 'new', title: 'Nuovi Manga ✨', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
@@ -199,9 +190,9 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         let url = ''
 
         switch(homepageSectionId) {
-            case 'popular': url = `${this.baseUrl}/category/index_${page}.html?sort=click`; break; // Popolari
-            case 'latest': url = `${this.baseUrl}/category/index_${page}.html?sort=time`; break; // Ultimi
-            case 'new': url = `${this.baseUrl}/category/index_${page}.html?sort=date`; break; // Nuovi
+            case 'popular': url = `${this.baseUrl}/category/index_${page}.html?sort=click`; break;
+            case 'latest': url = `${this.baseUrl}/category/index_${page}.html?sort=time`; break;
+            case 'new': url = `${this.baseUrl}/category/index_${page}.html?sort=date`; break;
             default: return App.createPagedResults({ results: [] })
         }
 
@@ -210,7 +201,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         const $ = this.cheerio.load(response.data)
         
         const manga = this.parser.parseViewMore($)
-        const hasNext = $('.pagelist a.next').length > 0 // Controllo generico paginazione NineManga
+        const hasNext = $('.pagelist a.next').length > 0 
 
         return App.createPagedResults({
             results: manga,
