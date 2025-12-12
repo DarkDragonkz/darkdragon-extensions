@@ -15,7 +15,7 @@ import {
     HomePageSectionsProviding,
     ConfigurableSource,
     SourceStateManager,
-    DUIForm // <--- Importante
+    DUIForm
 } from '@paperback/types'
 
 import { MangaDexParser } from './MangaDexParser'
@@ -24,12 +24,12 @@ import { getMangaDexSettingsMenu, getSelectedLanguages } from './MangaDexSetting
 const MD_API = 'https://api.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '2.2.5', // Bump versione DUI
+    version: '2.5.0', // Versione Bumped per forzare l'aggiornamento
     name: 'MangaDex (Multi)',
     icon: 'icon.png',
     author: 'DarkDragonkz',
     authorWebsite: 'https://github.com/DarkDragonkz',
-    description: 'MangaDex source with configurable languages (DUI).',
+    description: 'MangaDex source with configurable languages.',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: 'https://mangadex.org',
     sourceTags: [
@@ -38,6 +38,7 @@ export const MangaDexInfo: SourceInfo = {
             type: BadgeColor.BLUE,
         },
     ],
+    // SETTINGS_UI è fondamentale per vedere l'ingranaggio
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.SETTINGS_UI,
 }
 
@@ -48,13 +49,11 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
 
     constructor(private cheerio: any) {}
 
-    // --- FIX DUI ---
-    // Non serve più async/await qui, la funzione DUI ritorna l'oggetto form immediatamente
-    // e le promise sono gestite internamente dai Binding.
-    getSourceMenu(): Promise<DUIForm> {
-        return Promise.resolve(getMangaDexSettingsMenu(this.stateManager))
+    // Funzione richiesta da ConfigurableSource
+    // Restituisce il menu creato in MangaDexSettings.ts
+    async getSourceMenu(): Promise<DUIForm> {
+        return getMangaDexSettingsMenu(this.stateManager)
     }
-    // ---------------
 
     requestManager = App.createRequestManager({
         requestsPerSecond: 5,

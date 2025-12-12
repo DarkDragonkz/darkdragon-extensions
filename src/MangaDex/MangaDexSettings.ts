@@ -3,7 +3,6 @@ import {
     SourceStateManager
 } from '@paperback/types'
 
-// Lista Lingue
 export const LANGUAGES = [
     { id: 'en', label: 'English 🇬🇧', default: true },
     { id: 'it', label: 'Italiano 🇮🇹', default: false },
@@ -15,7 +14,6 @@ export const LANGUAGES = [
     { id: 'ja', label: '日本語 🇯🇵', default: false },
 ]
 
-// Recupera le lingue attive (Per l'uso interno dell'estensione)
 export const getSelectedLanguages = async (stateManager: SourceStateManager): Promise<string[]> => {
     const selected: string[] = []
     for (const lang of LANGUAGES) {
@@ -25,8 +23,6 @@ export const getSelectedLanguages = async (stateManager: SourceStateManager): Pr
     return selected.length > 0 ? selected : ['en']
 }
 
-// COSTRUZIONE MENU (Stile DUI come Anilist)
-// Nota come usiamo "createDUIBinding": gestisce lui get e set senza crashare
 export const getMangaDexSettingsMenu = (stateManager: SourceStateManager): DUIForm => {
     return App.createDUIForm({
         sections: async () => {
@@ -34,10 +30,9 @@ export const getMangaDexSettingsMenu = (stateManager: SourceStateManager): DUIFo
                 App.createDUISection({
                     id: 'languages_section',
                     header: 'Lingue Contenuti',
-                    footer: 'Seleziona le lingue che vuoi visualizzare.',
+                    footer: 'Scegli quali lingue visualizzare nei capitoli.',
                     isHidden: false,
                     rows: async () => {
-                        // Mappa le lingue in interruttori DUI
                         return LANGUAGES.map(lang => {
                             return App.createDUISwitch({
                                 id: lang.id,

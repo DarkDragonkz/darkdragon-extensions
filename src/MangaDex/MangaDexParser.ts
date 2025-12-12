@@ -24,7 +24,6 @@ export class MangaDexParser {
         const coverRel = relationships.find((r: any) => r.type === 'cover_art')
         const coverFileName = coverRel?.attributes?.fileName
         
-        // Uso 512px per dettagli (buona qualità)
         const image = coverFileName ? `${MD_UPLOADS}/covers/${mangaId}/${coverFileName}.512.jpg` : 'https://paperback.moe/icons/logo-alt.svg'
 
         const tags: Tag[] = []
@@ -71,7 +70,7 @@ export class MangaDexParser {
                 chapNum: parseFloat(attr.chapter) || 0,
                 volume: parseFloat(attr.volume) || undefined,
                 time: time,
-                langCode: attr.translatedLanguage, // La bandierina sarà gestita da Paperback in base al codice ISO
+                langCode: attr.translatedLanguage,
                 group: scanGroup
             }))
         }
@@ -102,7 +101,6 @@ export class MangaDexParser {
             const coverRel = manga.relationships.find((r: any) => r.type === 'cover_art')
             const fileName = coverRel?.attributes?.fileName
             
-            // Uso 256px per le liste (più leggero)
             let image = 'https://paperback.moe/icons/logo-alt.svg'
             if (fileName) {
                 image = `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg`
