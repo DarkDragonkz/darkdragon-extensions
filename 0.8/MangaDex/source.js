@@ -835,45 +835,47 @@ var _Sources = (() => {
     const selected = [];
     for (const lang of LANGUAGES) {
       const isEnabled = await stateManager.retrieve(lang.id) ?? lang.default;
-      if (isEnabled) {
-        selected.push(lang.id);
-      }
+      if (isEnabled) selected.push(lang.id);
     }
-    if (selected.length === 0) return ["en"];
-    return selected;
+    return selected.length > 0 ? selected : ["en"];
   };
-  var getMangaDexSettingsMenu = async (stateManager) => {
-    const values = {};
-    for (const lang of LANGUAGES) {
-      values[lang.id] = await stateManager.retrieve(lang.id) ?? lang.default;
-    }
-    return App.createNavigationSection({
-      id: "lang_settings",
-      header: "Lingue Contenuti",
-      footer: "Seleziona le lingue che vuoi visualizzare nell'app.",
-      items: LANGUAGES.map(
-        (lang) => App.createSwitch({
-          id: lang.id,
-          label: lang.label,
-          value: values[lang.id],
-          // Valore booleano reale (no promise)
-          onChange: async (newValue) => {
-            await stateManager.store(lang.id, newValue);
-          }
-        })
-      )
+  var getMangaDexSettingsMenu = (stateManager) => {
+    return App.createDUIForm({
+      sections: async () => {
+        return [
+          App.createDUISection({
+            id: "languages_section",
+            header: "Lingue Contenuti",
+            footer: "Seleziona le lingue che vuoi visualizzare.",
+            isHidden: false,
+            rows: async () => {
+              return LANGUAGES.map((lang) => {
+                return App.createDUISwitch({
+                  id: lang.id,
+                  label: lang.label,
+                  value: App.createDUIBinding({
+                    get: async () => await stateManager.retrieve(lang.id) ?? lang.default,
+                    set: async (newValue) => await stateManager.store(lang.id, newValue)
+                  })
+                });
+              });
+            }
+          })
+        ];
+      }
     });
   };
 
   // src/MangaDex/MangaDex.ts
   var MD_API = "https://api.mangadex.org";
   var MangaDexInfo = {
-    version: "2.2.0",
+    version: "2.2.5",
+    // Bump versione DUI
     name: "MangaDex (Multi)",
     icon: "icon.png",
     author: "DarkDragonkz",
     authorWebsite: "https://github.com/DarkDragonkz",
-    description: "MangaDex source with configurable languages.",
+    description: "MangaDex source with configurable languages (DUI).",
     contentRating: import_types.ContentRating.MATURE,
     websiteBaseURL: "https://mangadex.org",
     sourceTags: [
@@ -882,16 +884,14 @@ var _Sources = (() => {
         type: import_types.BadgeColor.BLUE
       }
     ],
-    // Aggiunto SETTINGS_UI per abilitare il tasto ingranaggio
     intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.SETTINGS_UI
   };
   var MangaDex = class {
-    // Inizializza lo storage
     constructor(cheerio) {
       this.cheerio = cheerio;
       this.parser = new MangaDexParser();
       this.stateManager = App.createSourceStateManager();
-      // -------------------------
+      // ---------------
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 5,
         requestTimeout: 2e4,
@@ -910,9 +910,11 @@ var _Sources = (() => {
         }
       });
     }
-    // --- MENU IMPOSTAZIONI ---
-    async getSourceMenu() {
-      return await getMangaDexSettingsMenu(this.stateManager);
+    // --- FIX DUI ---
+    // Non serve più async/await qui, la funzione DUI ritorna l'oggetto form immediatamente
+    // e le promise sono gestite internamente dai Binding.
+    getSourceMenu() {
+      return Promise.resolve(getMangaDexSettingsMenu(this.stateManager));
     }
     getMangaShareUrl(mangaId) {
       return `https://mangadex.org/title/${mangaId}`;
