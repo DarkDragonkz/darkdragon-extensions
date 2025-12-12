@@ -6,46 +6,23 @@ import {
     SourceManga,
     PartialSourceManga,
     Tag,
-    TagSection,
+    TagSection
 } from '@paperback/types'
 
 const BASE_URL = 'https://www.mangaworld.mx'
 
 export class MangaWorldParser {
 
-    /**
-     * Data Parser Robusto (sostituisce quello basato su replace)
-     */
-    private parseItalianDate(dateStr: string): Date {
-        const months: { [key: string]: number } = {
-            'gennaio': 0, 'febbraio': 1, 'marzo': 2, 'aprile': 3, 'maggio': 4, 'giugno': 5,
-            'luglio': 6, 'agosto': 7, 'settembre': 8, 'ottobre': 9, 'novembre': 10, 'dicembre': 11,
-            'january': 0, 'february': 1, 'march': 2, 'april': 3, 'may': 4, 'june': 5,
-            'july': 6, 'august': 7, 'september': 8, 'october': 9, 'november': 10, 'december': 11
-        }
-
-        dateStr = dateStr.toLowerCase().trim()
-        if (dateStr.includes('oggi')) return new Date()
-        if (dateStr.includes('ieri')) {
-            const d = new Date()
-            d.setDate(d.getDate() - 1)
-            return d
-        }
-
-        const parts = dateStr.split(' ')
-        if (parts.length >= 3) {
-            const day = parseInt(parts[0] ?? '1')
-            const monthName = parts[1] ?? ''
-            const year = parseInt(parts[2] ?? new Date().getFullYear().toString())
-            if (months[monthName] !== undefined) return new Date(year, months[monthName]!, day)
-        }
-        return new Date()
+    private months: Record<string, string> = {
+        'gennaio': 'January', 'febbraio': 'February', 'marzo': 'March',
+        'aprile': 'April', 'maggio': 'May', 'giugno': 'June',
+        'luglio': 'July', 'agosto': 'August', 'settembre': 'September',
+        'ottobre': 'October', 'novembre': 'November', 'dicembre': 'December'
     }
 
     private cleanTitle(title: string): string {
         if (!title) return 'Unknown'
         title = title.trim()
-        // Fix duplicazione titoli (NarutoNaruto)
         if (title.length > 0 && title.length % 2 === 0) {
             const half = title.substring(0, title.length / 2)
             if (half === title.substring(title.length / 2)) {
@@ -53,6 +30,29 @@ export class MangaWorldParser {
             }
         }
         return title
+    }
+
+    private parseDate(dateStr: string): Date {
+        dateStr = dateStr.trim().toLowerCase()
+        const now = new Date()
+
+        if (!dateStr) return now
+        if (dateStr.includes('oggi')) return now
+        if (dateStr.includes('ieri')) return new Date(now.setDate(now.getDate() - 1))
+
+        for (const [it, en] of Object.entries(this.months)) {
+            if (dateStr.includes(it)) {
+                dateStr = dateStr.replace(it, en)
+                break
+            }
+        }
+
+        const parsed = Date.parse(dateStr)
+        if (!isNaN(parsed)) {
+            return new Date(parsed)
+        }
+
+        return now
     }
 
     private getImageSrc(element: any): string {
@@ -69,204 +69,260 @@ export class MangaWorldParser {
         return image || 'https://paperback.moe/icons/logo-alt.svg'
     }
 
-    // --- PARSERS ---
+    private parseCommonManga($: any, element: any, extraSubtitleSelector?: string): PartialSourceManga {
+        const href = $('a', element).attr('href') ?? ''
+        const id = href.match(/[0-9]+\/[a-zA-Z0-9\-]+/i)?.[0] ?? ''
+
+        let title = $('a', element).attr('title') 
+        if (!title) title = $('.name', element).text().trim()
+        if (!title) title = $('.manga-title', element).text().trim()
+        title = this.cleanTitle(title ?? 'Unknown')
+
+        const imgElement = $('a img', element)
+        const image = this.getImageSrc(imgElement)
+
+        let subtitle: string | undefined = undefined
+        if (extraSubtitleSelector) {
+            subtitle = $(extraSubtitleSelector, element).first().attr('title') ?? $(extraSubtitleSelector, element).first().text().trim()
+        }
+
+        return App.createPartialSourceManga({
+            image,
+            title,
+            mangaId: id,
+            subtitle
+        })
+    }
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
-        const infoBox = $('.comic-info')
+        let title = $('.name.bigger').text().trim() ?? ''
+        title = this.cleanTitle(title)
         
-        const rawTitle = $('.comic-title', infoBox).text().trim()
-        const title = this.cleanTitle(rawTitle)
+        const image = this.getImageSrc($('.thumb.mb-3.text-center img'))
+        const desc = $('#noidungm').text().trim() ?? ''
         
-        const image = this.getImageSrc($('.comic-thumb img', infoBox))
-
-        let desc = $('#noidungm').text().trim()
-        if (!desc) desc = $('.description').text().trim()
-
+        let hentai = false
         let author = 'Unknown'
-        let status = 'Ongoing'
         let artist = 'Unknown'
+        let status = 'Ongoing'
 
-        // Metadati: Cerca sia il vecchio layout (.row) sia quello a colonne (.col-)
-        // Questo evita che i dettagli spariscano se il layout cambia leggermente
-        const metaRows = $('.meta-data .row, .meta-data [class*="col-"]', infoBox)
-        
-        metaRows.each((_: any, row: any) => {
-            const text = $(row).text().toLowerCase()
-            // Estrazione sicura basata sul testo
-            if (text.includes('autore')) author = $(row).find('a, span').last().text().trim()
-            if (text.includes('artista')) artist = $(row).find('a, span').last().text().trim()
-            if (text.includes('stato')) {
-                const val = $(row).find('a, span').last().text().trim().toLowerCase()
-                if (val.includes('completato') || val.includes('finito')) {
+        $('.meta-data.row.px-1 .col-12').each((_: any, obj: any) => {
+            const text = $(obj).text().trim()
+            
+            if (text.toLowerCase().includes('autore:')) {
+                author = text.replace(/autore:\s*/i, '').trim()
+            } else if (text.toLowerCase().includes('artista:')) {
+                artist = text.replace(/artista:\s*/i, '').trim()
+            } else if (text.toLowerCase().includes('stato:')) {
+                const statusText = $('a', obj).text().trim().toLowerCase()
+                if (statusText.includes('finito') || statusText.includes('completato')) {
                     status = 'Completed'
                 }
             }
         })
 
         const arrayTags: Tag[] = []
-        $('.comic-info .tags a').each((_: any, a: any) => {
-            const label = $(a).text().trim()
-            const id = $(a).attr('href')?.split('genre=')[1] ?? label
-            if (label) arrayTags.push(App.createTag({ id, label }))
+        $('.meta-data.row.px-1 .col-12 a[href*="genre="]').each((_: any, e: any) => {
+            const label = $(e).text().trim()
+            const id = $(e).attr('href')?.split('genre=')[1] ?? label
+            
+            if (['ADULTI', 'SMUT', 'MATURO', 'HENTAI'].includes(id.toUpperCase())) hentai = true
+            if (id && label) arrayTags.push({ id, label })
         })
-        const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Generi', tags: arrayTags })]
 
+        const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags.map(x => App.createTag(x)) })]
+        
         return App.createSourceManga({
             id: mangaId,
             mangaInfo: App.createMangaInfo({
                 titles: [title],
-                image: image,
-                status: status,
-                author: author,
-                artist: artist,
+                image,
+                status: status as any,
+                artist,
+                author,
                 tags: tagSections,
-                desc: desc
-            })
+                desc,
+                hentai,
+            }),
         })
     }
 
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
+        const addedIds = new Set<string>()
+
+        let seriesName = $('.name.bigger').text().trim()
+        seriesName = this.cleanTitle(seriesName)
+
+        // Logica Volumi
+        const volumeElements = $('.volume-element').toArray()
         
-        $('.chapter-list .chapter-item').each((_: any, item: any) => {
-            const link = $(item).find('a')
-            const href = link.attr('href')
-            if (!href) return
+        if (volumeElements.length > 0) {
+            for (const volumeEl of volumeElements) {
+                const volName = $('.volume-name', volumeEl).text().trim()
+                const volMatch = volName.match(/Volume\s+(\d+)/i)
+                const volumeNumber = volMatch ? Number(volMatch[1]) : undefined
 
-            const chapterId = href.split('/').pop() ?? ''
-            
-            const rawTitle = link.text().trim()
-            const dateText = $(item).find('.chapter-date').text().trim()
-            
-            // Parsing Data Corretto
-            const time = this.parseItalianDate(dateText)
-
-            const volMatch = rawTitle.match(/Vol\.?\s*(\d+)/i)
-            const chapMatch = rawTitle.match(/(?:Cap|Ch)\.?\s*(\d+(\.\d+)?)/i)
-            
-            const volNum = volMatch ? parseInt(volMatch[1] ?? '0') : undefined
-            const chapNum = chapMatch ? parseFloat(chapMatch[1] ?? '0') : 0
-
-            // Naming Pulito: Evita ripetizioni
-            let name = ''
-            // Rimuove "Capitolo X" dal titolo per vedere se c'è un nome reale
-            const cleanTitle = rawTitle.replace(/Capitolo\s*\d+(\.\d+)?/i, '').replace(/Vol\.\s*\d+/i, '').replace(/^-/, '').trim()
-            
-            if (cleanTitle.length > 0) {
-                name = cleanTitle // Es: "L'inizio dell'avventura"
-            } else {
-                name = `Capitolo ${chapNum}` // Es: "Capitolo 1"
+                const chapterNodes = $('.chapter', volumeEl).toArray()
+                for (const node of chapterNodes) {
+                    this.processChapter($, node, mangaId, seriesName, chapters, addedIds, volumeNumber)
+                }
             }
-
-            chapters.push(App.createChapter({
-                id: chapterId,
-                name: name,
-                chapNum: chapNum,
-                volume: volNum,
-                time: time,
-                langCode: '🇮🇹', // Bandierina
-                sortingIndex: chapters.length
-            }))
-        })
+        } 
+        
+        // Logica Fallback (Webtoon senza volumi o capitoli orfani)
+        const allChapters = $('.chapter').toArray()
+        for (const node of allChapters) {
+            // processChapter controlla internamente se l'ID è già stato aggiunto
+            this.processChapter($, node, mangaId, seriesName, chapters, addedIds, undefined)
+        }
 
         return chapters
     }
 
-    parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
+    private processChapter($: any, item: any, mangaId: string, seriesName: string, chapters: Chapter[], addedIds: Set<string>, volume?: number) {
+        const link = $('a.chap', item)
+        const href = link.attr('href')
+        if (!href) return
+
+        const id = href.replace(`${BASE_URL}/manga/${mangaId}/read/`, '')
+        
+        if (addedIds.has(id)) return
+        addedIds.add(id)
+
+        const chapText = $('.d-inline-block', item).text().trim()
+        const chapNumMatch = chapText.match(/(\d+(\.\d+)?)/)
+        const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0
+
+        let rawName = link.attr('title') ?? ''
+        
+        // Pulizia nome capitolo
+        let name = rawName.replace(new RegExp(seriesName, 'gi'), '').trim()
+        name = name.replace(/scan ita/gi, '')
+                   .replace(/ita/gi, '')
+                   .replace(/capitolo\s*\d+(\.\d+)?/gi, '')
+                   .replace(/-|\s+$/g, '')
+                   .trim()
+
+        if (!name || name.length < 2) {
+            name = '' 
+        }
+
+        const dateText = $('.chap-date', item).text().trim()
+        const time = this.parseDate(dateText)
+
+        chapters.push(
+            App.createChapter({
+                id,
+                name,
+                chapNum,
+                volume,
+                time,
+                langCode: 'it',
+            })
+        )
+    }
+
+    parseChapterDetails($: any, mangaId: string, id: string): ChapterDetails {
         const pages: string[] = []
         
-        // METODO SICURO (REGEX DOM)
-        // Manteniamo questo metodo perché il parsing JSON faceva crashare l'app
-        const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]+class=["']content-image/g
-        let match
-        while ((match = imgRegex.exec(html)) !== null) {
-            const url = this.getImageSrc({ attr: () => match![1] })
-            pages.push(url)
-        }
-
-        // Fallback Reader alternativo (vecchio layout)
-        if (pages.length === 0) {
-             const genericRegex = /<div id="page_\d+">.*?<img[^>]+src=["']([^"']+)["']/gs
-             while ((match = genericRegex.exec(html)) !== null) {
-                 const url = this.getImageSrc({ attr: () => match![1] })
-                 pages.push(url)
-             }
-        }
+        $('.col-12.text-center.position-relative img').each((_: any, item: any) => {
+            const url = this.getImageSrc($(item))
+            if (url && !url.includes('logo-alt.svg')) { 
+                pages.push(url.trim())
+            }
+        })
 
         return App.createChapterDetails({
-            id: chapterId,
-            mangaId: mangaId,
-            pages: pages
+            id,
+            mangaId,
+            pages,
         })
     }
 
-    // --- HOME PAGE & SEARCH ---
+    parseTags($: any, baseUrl: string): TagSection[] {
+        const genres: Tag[] = []
+        const seen = new Set<string>()
 
-    parseCommonManga($: any, element: any, subtitleSelector?: string): PartialSourceManga {
-        const item = $(element)
-        const link = item.find('a').first()
-        const href = link.attr('href')
-        const id = href?.split('/manga/')[1]?.split('/')[0] ?? ''
-
-        // Selettori Stabili
-        let rawTitle = item.find('.comic-title').text().trim()
-        if (!rawTitle) rawTitle = item.find('.title, h3').text().trim()
-        if (!rawTitle) rawTitle = link.attr('title') ?? 'Unknown'
-
-        const title = this.cleanTitle(rawTitle)
-        
-        let image = this.getImageSrc(item.find('img').first())
-        if (image.includes('logo-alt')) image = this.getImageSrc(item.find('.thumb img'))
-
-        let subtitle = undefined
-        if (subtitleSelector) {
-            subtitle = item.find(subtitleSelector).text().trim()
-        } else {
-            subtitle = item.find('.chapter-text, .latest-chapter').first().text().trim()
-        }
-
-        return App.createPartialSourceManga({
-            mangaId: id,
-            image: image,
-            title: title,
-            subtitle: subtitle || undefined
+        $('.dropdown-menu.dropdown-multicol .dropdown-item').each((_: any, item: any) => {
+            const id = $(item).attr('href')?.split('genre=')[1]
+            const label = $(item).text().trim()
+            
+            if (id && label && !seen.has(id)) {
+                seen.add(id)
+                genres.push(App.createTag({ label, id }))
+            }
         })
+        return [App.createTagSection({ id: '0', label: 'Generi', tags: genres })]
     }
 
-    parseHomeSections($: any, month: HomeSection, latest: HomeSection, trending: HomeSection): void {
-        
-        // 1. TOP MONTH (Usa selettori 3.4.0)
+    parseSearchResults($: any): PartialSourceManga[] {
+        const results: PartialSourceManga[] = []
+        $('.comics-grid .entry').each((_: any, item: any) => {
+            results.push(this.parseCommonManga($, item))
+        })
+        return results
+    }
+
+    parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
+        const sectionMonth = App.createHomeSection({
+            id: '2', 
+            title: 'Manga del Mese 🌟',
+            containsMoreItems: true,
+            type: HomeSectionType.singleRowLarge 
+        })
+
+        const sectionLatest = App.createHomeSection({
+            id: '1',
+            title: 'Ultimi Capitoli 🔥',
+            containsMoreItems: true,
+            type: HomeSectionType.continuous 
+        })
+
+        const sectionTrending = App.createHomeSection({
+            id: '3',
+            title: 'In Tendenza 📈',
+            containsMoreItems: true,
+            type: HomeSectionType.singleRowNormal,
+        })
+
+        // Selettore comune per trovare l'ultimo capitolo nelle card
+        // Questo cerca un link dentro un div che di solito contiene il capitolo
+        const chapterSelector = '.d-flex.flex-wrap.flex-row a, .chapter a, .latest-chapter'
+
+        // 1. Popolamento MANGA DEL MESE (Vetrina)
         const monthItems: PartialSourceManga[] = []
         $('.col-12 .top-wrapper .entry').each((i: number, item: any) => {
-            if (i < 10) monthItems.push(this.parseCommonManga($, item))
+            // ORA passiamo il selettore del capitolo anche qui!
+            // Prima era: this.parseCommonManga($, item)
+            if (i < 10) monthItems.push(this.parseCommonManga($, item, chapterSelector))
         })
-        month.items = monthItems
+        sectionMonth.items = monthItems
+        sectionCallback(sectionMonth)
 
-        // 2. LATEST
+        // 2. Popolamento ULTIMI CAPITOLI (Colonna centrale)
         const latestItems: PartialSourceManga[] = []
         $('.col-sm-12.col-md-8.col-xl-9 .comics-grid .entry').each((_: any, item: any) => {
-            latestItems.push(this.parseCommonManga($, item, '.d-flex.flex-wrap.flex-row a'))
+            latestItems.push(this.parseCommonManga($, item, chapterSelector))
         })
-        latest.items = latestItems
+        sectionLatest.items = latestItems
+        sectionCallback(sectionLatest)
 
-        // 3. TRENDING
+        // 3. Popolamento IN TENDENZA (Sidebar)
+        // La sidebar spesso non ha il capitolo visibile, ma proviamo comunque
         const trendingItems: PartialSourceManga[] = []
         $('.entry.vertical').each((_: any, item: any) => {
-            trendingItems.push(this.parseCommonManga($, item))
+            trendingItems.push(this.parseCommonManga($, item, chapterSelector))
         })
-        if (trendingItems.length === 0) {
-            $('#side-content .entry').each((_: any, item: any) => {
-                trendingItems.push(this.parseCommonManga($, item))
-            })
-        }
-        trending.items = trendingItems
+        sectionTrending.items = trendingItems
+        sectionCallback(sectionTrending)
     }
 
     parseViewMore($: any): PartialSourceManga[] {
-        const manga: PartialSourceManga[] = []
+        const results: PartialSourceManga[] = []
         $('.comics-grid .entry').each((_: any, item: any) => {
-            manga.push(this.parseCommonManga($, item))
+            results.push(this.parseCommonManga($, item, '.d-flex.flex-wrap.flex-row a'))
         })
-        return manga
+        return results
     }
 }
