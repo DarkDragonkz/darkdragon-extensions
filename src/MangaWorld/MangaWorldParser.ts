@@ -25,13 +25,11 @@ export class MangaWorldParser {
         return title
     }
 
-    // Funzione helper per convertire le date italiane
     private parseDate(dateStr: string): Date {
         if (!dateStr) return new Date()
         
         dateStr = dateStr.trim().toLowerCase()
         
-        // Mappatura mesi italiani
         const months: { [key: string]: string } = {
             'gennaio': 'January', 'febbraio': 'February', 'marzo': 'March',
             'aprile': 'April', 'maggio': 'May', 'giugno': 'June',
@@ -39,7 +37,6 @@ export class MangaWorldParser {
             'ottobre': 'October', 'novembre': 'November', 'dicembre': 'December'
         }
 
-        // Sostituisci il mese italiano con quello inglese
         for (const [it, en] of Object.entries(months)) {
             if (dateStr.includes(it)) {
                 dateStr = dateStr.replace(it, en)
@@ -71,9 +68,8 @@ export class MangaWorldParser {
         let hentai = false
         let author = ''
         let artist = ''
-        let status = 'Ongoing' // Default
+        let status = 'Ongoing'
 
-        // Parsing metadati precisi dalla colonna laterale
         $('.meta-data.row.px-1 .col-12').each((_: any, col: any) => {
             const text = $(col).text().trim()
             
@@ -92,13 +88,13 @@ export class MangaWorldParser {
         })
 
         const arrayTags: Tag[] = []
-        // Parsing generi
         $('.meta-data.row.px-1 a[href*="genre="]').each((_: any, a: any) => {
             const id = $(a).attr('href')?.split('genre=')[1]
             const label = $(a).text().trim()
             if (id && label) {
                 if (['ADULTI', 'SMUT', 'MATURO', 'HENTAI'].includes(id.toUpperCase())) hentai = true
-                arrayTags.push({ id: id, label: label })
+                // FIX TAGS: Usiamo App.createTag qui
+                arrayTags.push(App.createTag({ id: id, label: label }))
             }
         })
 
@@ -123,65 +119,11 @@ export class MangaWorldParser {
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
         
-        // Selettore per i volumi (che contengono i capitoli)
         const volumes = $('.volume-element').toArray()
         
-        // Se non ci sono volumi espliciti, prova a cercare direttamente i capitoli
         if (volumes.length === 0) {
+            // Fallback lista semplice
             const simpleChapters = $('.chapter').toArray()
-            // Logica di fallback semplice...
-        }
-
-        for (const vol of volumes) {
-            // Estrai numero volume
-            const volName = $(vol).find('.volume-name').text().trim() // Es: "Volume 113"
-            const volNumMatch = volName.match(/Volume\s+(\d+)/i)
-            const volNum = volNumMatch ? parseFloat(volNumMatch[1]) : 0
-
-            // Itera sui capitoli dentro questo volume
-            const chapterNodes = $(vol).find('.chapter').toArray()
-            
-            for (const node of chapterNodes) {
-                const link = $(node).find('a.chap')
-                const href = link.attr('href')
-                if (!href) continue
-
-                // ID Capitolo
-                const chapterId = href.split('/read/')[1]?.split('/')[0] ?? ''
-                if (!chapterId) continue
-
-                // Titolo e Numero
-                // Es: <span class="d-inline-block">Capitolo 1168</span>
-                const rawTitle = link.find('span.d-inline-block').text().trim() // "Capitolo 1168"
-                const chapNumMatch = rawTitle.match(/(\d+(\.\d+)?)/)
-                const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0
-
-                // Data
-                // Es: <i class="text-right text-muted chap-date">07 Dicembre 2025</i>
-                const dateText = link.find('.chap-date').text().trim()
-                const time = this.parseDate(dateText)
-
-                // Costruzione Titolo Formattato
-                // Richiesto: "Vol. 1 Ch. 1 - Capitolo 01"
-                let formattedTitle = ''
-                if (volNum > 0) formattedTitle += `Vol. ${volNum} `
-                formattedTitle += `Ch. ${chapNum}`
-                if (rawTitle) formattedTitle += ` - ${rawTitle}`
-
-                chapters.push(App.createChapter({
-                    id: chapterId,
-                    name: formattedTitle,
-                    chapNum: chapNum,
-                    volume: volNum,
-                    time: time,
-                    langCode: 'it'
-                }))
-            }
-        }
-
-        // Fallback: se la struttura a volumi non ha prodotto risultati (magari lista piatta)
-        if (chapters.length === 0) {
-             const simpleChapters = $('.chapter').toArray()
              for (const node of simpleChapters) {
                  const link = $('a.chap', node)
                  const href = link.attr('href')
@@ -197,12 +139,56 @@ export class MangaWorldParser {
 
                  chapters.push(App.createChapter({
                     id: chapterId,
-                    name: `Ch. ${chapNum} - ${rawTitle}`,
+                    name: rawTitle, // Solo il titolo grezzo, l'app aggiungerà Ch. X
                     chapNum: chapNum,
                     time: time,
                     langCode: 'it'
                 }))
              }
+        } else {
+            // Logica Volumi
+            for (const vol of volumes) {
+                const volName = $(vol).find('.volume-name').text().trim()
+                const volNumMatch = volName.match(/Volume\s+(\d+)/i)
+                const volNum = volNumMatch ? parseFloat(volNumMatch[1]) : 0
+
+                const chapterNodes = $(vol).find('.chapter').toArray()
+                
+                for (const node of chapterNodes) {
+                    const link = $(node).find('a.chap')
+                    const href = link.attr('href')
+                    if (!href) continue
+
+                    const chapterId = href.split('/read/')[1]?.split('/')[0] ?? ''
+                    if (!chapterId) continue
+
+                    const rawTitle = link.find('span.d-inline-block').text().trim()
+                    const chapNumMatch = rawTitle.match(/(\d+(\.\d+)?)/)
+                    const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0
+
+                    const dateText = link.find('.chap-date').text().trim()
+                    const time = this.parseDate(dateText)
+
+                    // FIX TITOLI: Non aggiungiamo manualmente "Vol. X Ch. Y"
+                    // Passiamo volNum e chapNum nei metadati, e lasciamo solo il titolo specifico in 'name'
+                    // Se rawTitle è solo "Capitolo 123", Paperback mostrerà "Vol. 1 Ch. 123 - Capitolo 123"
+                    // che è un po' ridondante ma corretto strutturalmente.
+                    // Se vogliamo pulirlo ulteriormente, potremmo rimuovere "Capitolo X" da rawTitle se è uguale a chapNum.
+                    
+                    let cleanName = rawTitle;
+                    // Opzionale: Rimuovi "Capitolo X" se coincide col numero, per avere un titolo più pulito
+                    // if (cleanName.match(/^Capitolo\s+\d+$/i)) cleanName = "Capitolo " + chapNum; 
+
+                    chapters.push(App.createChapter({
+                        id: chapterId,
+                        name: cleanName, 
+                        chapNum: chapNum,
+                        volume: volNum,
+                        time: time,
+                        langCode: 'it'
+                    }))
+                }
+            }
         }
 
         return chapters
