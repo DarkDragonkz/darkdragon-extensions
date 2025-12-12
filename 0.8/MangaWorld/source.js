@@ -957,21 +957,22 @@ var _Sources = (() => {
         containsMoreItems: true,
         type: import_types.HomeSectionType.singleRowNormal
       });
+      const chapterSelector = ".d-flex.flex-wrap.flex-row a, .chapter a, .latest-chapter";
       const monthItems = [];
       $(".col-12 .top-wrapper .entry").each((i, item) => {
-        if (i < 10) monthItems.push(this.parseCommonManga($, item));
+        if (i < 10) monthItems.push(this.parseCommonManga($, item, chapterSelector));
       });
       sectionMonth.items = monthItems;
       sectionCallback(sectionMonth);
       const latestItems = [];
       $(".col-sm-12.col-md-8.col-xl-9 .comics-grid .entry").each((_, item) => {
-        latestItems.push(this.parseCommonManga($, item, ".d-flex.flex-wrap.flex-row a"));
+        latestItems.push(this.parseCommonManga($, item, chapterSelector));
       });
       sectionLatest.items = latestItems;
       sectionCallback(sectionLatest);
       const trendingItems = [];
       $(".entry.vertical").each((_, item) => {
-        trendingItems.push(this.parseCommonManga($, item));
+        trendingItems.push(this.parseCommonManga($, item, chapterSelector));
       });
       sectionTrending.items = trendingItems;
       sectionCallback(sectionTrending);
