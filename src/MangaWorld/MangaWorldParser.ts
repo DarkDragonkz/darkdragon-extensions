@@ -286,23 +286,33 @@ export class MangaWorldParser {
             type: HomeSectionType.singleRowNormal,
         })
 
+        // Selettore comune per trovare l'ultimo capitolo nelle card
+        // Questo cerca un link dentro un div che di solito contiene il capitolo
+        const chapterSelector = '.d-flex.flex-wrap.flex-row a, .chapter a, .latest-chapter'
+
+        // 1. Popolamento MANGA DEL MESE (Vetrina)
         const monthItems: PartialSourceManga[] = []
         $('.col-12 .top-wrapper .entry').each((i: number, item: any) => {
-            if (i < 10) monthItems.push(this.parseCommonManga($, item))
+            // ORA passiamo il selettore del capitolo anche qui!
+            // Prima era: this.parseCommonManga($, item)
+            if (i < 10) monthItems.push(this.parseCommonManga($, item, chapterSelector))
         })
         sectionMonth.items = monthItems
         sectionCallback(sectionMonth)
 
+        // 2. Popolamento ULTIMI CAPITOLI (Colonna centrale)
         const latestItems: PartialSourceManga[] = []
         $('.col-sm-12.col-md-8.col-xl-9 .comics-grid .entry').each((_: any, item: any) => {
-            latestItems.push(this.parseCommonManga($, item, '.d-flex.flex-wrap.flex-row a'))
+            latestItems.push(this.parseCommonManga($, item, chapterSelector))
         })
         sectionLatest.items = latestItems
         sectionCallback(sectionLatest)
 
+        // 3. Popolamento IN TENDENZA (Sidebar)
+        // La sidebar spesso non ha il capitolo visibile, ma proviamo comunque
         const trendingItems: PartialSourceManga[] = []
         $('.entry.vertical').each((_: any, item: any) => {
-            trendingItems.push(this.parseCommonManga($, item))
+            trendingItems.push(this.parseCommonManga($, item, chapterSelector))
         })
         sectionTrending.items = trendingItems
         sectionCallback(sectionTrending)
