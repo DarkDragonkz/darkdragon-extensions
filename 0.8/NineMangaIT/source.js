@@ -921,8 +921,8 @@ var _Sources = (() => {
   // src/NineMangaIT/NineMangaIT.ts
   var IT_DOMAIN = "https://it.ninemanga.com";
   var NineMangaITInfo = {
-    version: "2.0.0",
-    // Major Update: UI & Core Refactor
+    version: "2.0.1",
+    // Bump versione per fix crash
     name: "NineMangaIT",
     description: "Estensione per NineManga (IT) con interfaccia aggiornata.",
     author: "DarkDragonkz",
@@ -939,12 +939,14 @@ var _Sources = (() => {
     intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
   };
   var NineMangaIT = class {
-    constructor() {
+    // --- FIX IMPORTANTE: Costruttore per Cheerio ---
+    constructor(cheerio) {
+      this.cheerio = cheerio;
       this.baseUrl = IT_DOMAIN;
       this.parser = new NineMangaITParser();
+      // ----------------------------------------------
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 3,
-        // NineManga è un po' lento, meglio non esagerare
         requestTimeout: 2e4,
         interceptor: {
           interceptRequest: async (request) => {
@@ -977,7 +979,6 @@ var _Sources = (() => {
     async getChapters(mangaId) {
       const request = App.createRequest({
         url: `${this.baseUrl}/manga/${mangaId}.html?warning=1`,
-        // Bypass warning contenuti adulti
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
@@ -993,7 +994,6 @@ var _Sources = (() => {
       const $ = this.cheerio.load(response.data);
       return this.fetchChapterPages($, mangaId, chapterId);
     }
-    // Funzione Helper per scaricare tutte le pagine del capitolo
     async fetchChapterPages($, mangaId, chapterId) {
       const pages = [];
       const pageOptions = $("select#page option").length;
@@ -1004,7 +1004,8 @@ var _Sources = (() => {
         if (match) totalPages = parseInt(match[1]);
       }
       const promises = [];
-      pages.push(this.parser.extractImage($));
+      const img1 = this.parser.extractImage($);
+      if (img1) pages.push(img1);
       for (let i = 2; i <= totalPages; i++) {
         const req = App.createRequest({
           url: `${this.baseUrl}/chapter/${chapterId}-${i}.html`,
@@ -1022,7 +1023,6 @@ var _Sources = (() => {
         id: chapterId,
         mangaId,
         pages: pages.filter((p) => p && !p.includes("logo"))
-        // Filtra immagini rotte
       });
     }
     async getSearchResults(query, metadata) {
