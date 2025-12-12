@@ -858,8 +858,8 @@ var _Sources = (() => {
   // src/BatCave/BatCave.ts
   var DOMAIN = "https://batcave.biz";
   var BatCaveInfo = {
-    version: "2.0.1",
-    // Bump per fix crash
+    version: "2.0.2",
+    // Bump versione per UI fix
     name: "BatCave",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -876,12 +876,11 @@ var _Sources = (() => {
     intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
   };
   var BatCave = class {
-    // --- FIX: COSTRUTTORE AGGIUNTO ---
+    // Costruttore essenziale per Cheerio
     constructor(cheerio) {
       this.cheerio = cheerio;
       this.baseUrl = DOMAIN;
       this.parser = new BatCaveParser();
-      // ---------------------------------
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 3,
         requestTimeout: 2e4,
@@ -958,7 +957,7 @@ var _Sources = (() => {
         id: "newest",
         title: "The Newest \u{1F4DA}",
         containsMoreItems: true,
-        type: import_types.HomeSectionType.continuous
+        type: import_types.HomeSectionType.singleRowNormal
       });
       sectionCallback(featured);
       sectionCallback(topRated);
