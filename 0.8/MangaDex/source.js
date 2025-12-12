@@ -637,13 +637,13 @@ var _Sources = (() => {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.HomeSectionType = void 0;
-      var HomeSectionType;
-      (function(HomeSectionType2) {
-        HomeSectionType2["singleRowNormal"] = "singleRowNormal";
-        HomeSectionType2["singleRowLarge"] = "singleRowLarge";
-        HomeSectionType2["doubleRow"] = "doubleRow";
-        HomeSectionType2["featured"] = "featured";
-      })(HomeSectionType = exports.HomeSectionType || (exports.HomeSectionType = {}));
+      var HomeSectionType2;
+      (function(HomeSectionType3) {
+        HomeSectionType3["singleRowNormal"] = "singleRowNormal";
+        HomeSectionType3["singleRowLarge"] = "singleRowLarge";
+        HomeSectionType3["doubleRow"] = "doubleRow";
+        HomeSectionType3["featured"] = "featured";
+      })(HomeSectionType2 = exports.HomeSectionType || (exports.HomeSectionType = {}));
     }
   });
 
@@ -805,7 +805,7 @@ var _Sources = (() => {
         const fileName = coverRel?.attributes?.fileName;
         let image = "https://paperback.moe/icons/logo-alt.svg";
         if (fileName) {
-          image = `${MD_UPLOADS}/covers/${manga.id}/${fileName}.256.jpg`;
+          image = `${MD_UPLOADS}/covers/${manga.id}/${fileName}.512.jpg`;
         }
         const subtitle = attr.status === "ongoing" ? "Ongoing" : "Completed";
         results.push(App.createPartialSourceManga({
@@ -819,78 +819,30 @@ var _Sources = (() => {
     }
   };
 
-  // src/MangaDex/MangaDexSettings.ts
-  var LANGUAGES = [
-    { id: "en", label: "English \u{1F1EC}\u{1F1E7}", default: true },
-    { id: "it", label: "Italiano \u{1F1EE}\u{1F1F9}", default: false },
-    { id: "es", label: "Espa\xF1ol \u{1F1EA}\u{1F1F8}", default: false },
-    { id: "es-la", label: "Espa\xF1ol (LatAm) \u{1F1F2}\u{1F1FD}", default: false },
-    { id: "fr", label: "Fran\xE7ais \u{1F1EB}\u{1F1F7}", default: false },
-    { id: "pt-br", label: "Portugu\xEAs (BR) \u{1F1E7}\u{1F1F7}", default: false },
-    { id: "de", label: "Deutsch \u{1F1E9}\u{1F1EA}", default: false },
-    { id: "ja", label: "\u65E5\u672C\u8A9E \u{1F1EF}\u{1F1F5}", default: false }
-  ];
-  var getSelectedLanguages = async (stateManager) => {
-    const selected = [];
-    for (const lang of LANGUAGES) {
-      const isEnabled = await stateManager.retrieve(lang.id) ?? lang.default;
-      if (isEnabled) selected.push(lang.id);
-    }
-    return selected.length > 0 ? selected : ["en"];
-  };
-  var getMangaDexSettingsMenu = (stateManager) => {
-    return App.createDUIForm({
-      sections: async () => {
-        return [
-          App.createDUISection({
-            id: "languages_section",
-            header: "Lingue Contenuti",
-            footer: "Scegli quali lingue visualizzare nei capitoli.",
-            isHidden: false,
-            rows: async () => {
-              return LANGUAGES.map((lang) => {
-                return App.createDUISwitch({
-                  id: lang.id,
-                  label: lang.label,
-                  value: App.createDUIBinding({
-                    get: async () => await stateManager.retrieve(lang.id) ?? lang.default,
-                    set: async (newValue) => await stateManager.store(lang.id, newValue)
-                  })
-                });
-              });
-            }
-          })
-        ];
-      }
-    });
-  };
-
   // src/MangaDex/MangaDex.ts
   var MD_API = "https://api.mangadex.org";
   var MangaDexInfo = {
-    version: "2.5.0",
-    // Versione Bumped per forzare l'aggiornamento
-    name: "MangaDex (Multi)",
+    version: "3.0.0",
+    // Reset versione pulita
+    name: "MangaDex (EN)",
     icon: "icon.png",
     author: "DarkDragonkz",
     authorWebsite: "https://github.com/DarkDragonkz",
-    description: "MangaDex source with configurable languages.",
+    description: "MangaDex English source. High quality covers.",
     contentRating: import_types.ContentRating.MATURE,
     websiteBaseURL: "https://mangadex.org",
     sourceTags: [
       {
-        text: "Multilingual \u{1F30D}",
+        text: "English \u{1F1EC}\u{1F1E7}",
         type: import_types.BadgeColor.BLUE
       }
     ],
-    // SETTINGS_UI è fondamentale per vedere l'ingranaggio
-    intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.SETTINGS_UI
+    intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS
   };
   var MangaDex = class {
     constructor(cheerio) {
       this.cheerio = cheerio;
       this.parser = new MangaDexParser();
-      this.stateManager = App.createSourceStateManager();
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 5,
         requestTimeout: 2e4,
@@ -909,11 +861,6 @@ var _Sources = (() => {
         }
       });
     }
-    // Funzione richiesta da ConfigurableSource
-    // Restituisce il menu creato in MangaDexSettings.ts
-    async getSourceMenu() {
-      return getMangaDexSettingsMenu(this.stateManager);
-    }
     getMangaShareUrl(mangaId) {
       return `https://mangadex.org/title/${mangaId}`;
     }
@@ -927,11 +874,9 @@ var _Sources = (() => {
       return this.parser.parseMangaDetails(data, mangaId);
     }
     async getChapters(mangaId) {
-      const langs = await getSelectedLanguages(this.stateManager);
-      const langQuery = langs.map((l) => `translatedLanguage[]=${l}`).join("&");
       const limit = 500;
       const request = App.createRequest({
-        url: `${MD_API}/manga/${mangaId}/feed?limit=${limit}&${langQuery}&order[chapter]=desc&includeFutureUpdates=0&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
+        url: `${MD_API}/manga/${mangaId}/feed?limit=${limit}&translatedLanguage[]=en&order[chapter]=desc&includeFutureUpdates=0&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
@@ -950,9 +895,7 @@ var _Sources = (() => {
     async getSearchResults(query, metadata) {
       const limit = 20;
       const offset = metadata?.offset ?? 0;
-      const langs = await getSelectedLanguages(this.stateManager);
-      const langQuery = langs.map((l) => `availableTranslatedLanguage[]=${l}`).join("&");
-      let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&${langQuery}`;
+      let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&availableTranslatedLanguage[]=en`;
       if (query.title) {
         url += `&title=${encodeURIComponent(query.title)}&order[relevance]=desc`;
       } else {
@@ -968,50 +911,56 @@ var _Sources = (() => {
       });
     }
     async getHomePageSections(sectionCallback) {
-      const sectionPopular = App.createHomeSection({ id: "popular", title: "Popular Manga \u{1F525}", containsMoreItems: true, type: "singleRowNormal" });
-      const sectionLatest = App.createHomeSection({ id: "latest", title: "Latest Updates \u{1F195}", containsMoreItems: true, type: "continuous" });
-      const sectionNew = App.createHomeSection({ id: "recently_added", title: "Recently Added \u2728", containsMoreItems: true, type: "singleRowNormal" });
-      sectionCallback(sectionPopular);
-      sectionCallback(sectionLatest);
-      sectionCallback(sectionNew);
-      const langs = await getSelectedLanguages(this.stateManager);
-      const langQuery = langs.map((l) => `availableTranslatedLanguage[]=${l}`).join("&");
-      const limit = 20;
-      const baseParams = `limit=${limit}&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&${langQuery}`;
-      const requestPopular = App.createRequest({ url: `${MD_API}/manga?${baseParams}&order[followedCount]=desc`, method: "GET" });
-      const requestLatest = App.createRequest({ url: `${MD_API}/manga?${baseParams}&order[latestUploadedChapter]=desc`, method: "GET" });
-      const requestNew = App.createRequest({ url: `${MD_API}/manga?${baseParams}&order[createdAt]=desc`, method: "GET" });
-      const [dataPopular, dataLatest, dataNew] = await Promise.all([
-        this.requestManager.schedule(requestPopular, 1),
-        this.requestManager.schedule(requestLatest, 1),
-        this.requestManager.schedule(requestNew, 1)
+      const s1 = App.createHomeSection({ id: "popular_new", title: "Popular New Titles \u{1F525}", containsMoreItems: false, type: import_types.HomeSectionType.singleRowLarge });
+      const s2 = App.createHomeSection({ id: "latest", title: "Latest Updates \u{1F195}", containsMoreItems: true, type: import_types.HomeSectionType.continuous });
+      const s3 = App.createHomeSection({ id: "recommended", title: "Recommended \u2B50", containsMoreItems: false, type: import_types.HomeSectionType.singleRowLarge });
+      const s4 = App.createHomeSection({ id: "self_published", title: "Self-Published \u{1F58A}\uFE0F", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
+      const s5 = App.createHomeSection({ id: "featured", title: "Featured \u26A1", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
+      const s6 = App.createHomeSection({ id: "recently_added", title: "Recently Added \u2728", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
+      sectionCallback(s1);
+      sectionCallback(s2);
+      sectionCallback(s3);
+      sectionCallback(s4);
+      sectionCallback(s5);
+      sectionCallback(s6);
+      const base = `limit=15&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&availableTranslatedLanguage[]=en`;
+      const oneMonthAgo = new Date(Date.now() - 2592e6).toISOString().slice(0, 19);
+      const req1 = App.createRequest({ url: `${MD_API}/manga?${base}&order[followedCount]=desc&createdAtSince=${oneMonthAgo}`, method: "GET" });
+      const req2 = App.createRequest({ url: `${MD_API}/manga?${base}&order[latestUploadedChapter]=desc`, method: "GET" });
+      const req3 = App.createRequest({ url: `${MD_API}/manga?${base}&order[rating]=desc`, method: "GET" });
+      const req4 = App.createRequest({ url: `${MD_API}/manga?${base}&originalLanguage[]=en&order[followedCount]=desc`, method: "GET" });
+      const req5 = App.createRequest({ url: `${MD_API}/manga?${base}&order[relevance]=desc`, method: "GET" });
+      const req6 = App.createRequest({ url: `${MD_API}/manga?${base}&order[createdAt]=desc`, method: "GET" });
+      const [d1, d2, d3, d4, d5, d6] = await Promise.all([
+        this.requestManager.schedule(req1, 1),
+        this.requestManager.schedule(req2, 1),
+        this.requestManager.schedule(req3, 1),
+        this.requestManager.schedule(req4, 1),
+        this.requestManager.schedule(req5, 1),
+        this.requestManager.schedule(req6, 1)
       ]);
-      sectionPopular.items = this.parser.parseSearchResults(JSON.parse(dataPopular.data ?? "{}"));
-      sectionCallback(sectionPopular);
-      sectionLatest.items = this.parser.parseSearchResults(JSON.parse(dataLatest.data ?? "{}"));
-      sectionCallback(sectionLatest);
-      sectionNew.items = this.parser.parseSearchResults(JSON.parse(dataNew.data ?? "{}"));
-      sectionCallback(sectionNew);
+      s1.items = this.parser.parseSearchResults(JSON.parse(d1.data ?? "{}"));
+      s2.items = this.parser.parseSearchResults(JSON.parse(d2.data ?? "{}"));
+      s3.items = this.parser.parseSearchResults(JSON.parse(d3.data ?? "{}"));
+      s4.items = this.parser.parseSearchResults(JSON.parse(d4.data ?? "{}"));
+      s5.items = this.parser.parseSearchResults(JSON.parse(d5.data ?? "{}"));
+      s6.items = this.parser.parseSearchResults(JSON.parse(d6.data ?? "{}"));
+      sectionCallback(s1);
+      sectionCallback(s2);
+      sectionCallback(s3);
+      sectionCallback(s4);
+      sectionCallback(s5);
+      sectionCallback(s6);
     }
     async getViewMoreItems(homepageSectionId, metadata) {
       const limit = 20;
       const offset = metadata?.offset ?? 0;
-      const langs = await getSelectedLanguages(this.stateManager);
-      const langQuery = langs.map((l) => `availableTranslatedLanguage[]=${l}`).join("&");
-      const baseParams = `limit=${limit}&offset=${offset}&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&${langQuery}`;
+      const base = `limit=${limit}&offset=${offset}&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&availableTranslatedLanguage[]=en`;
       let url = "";
-      switch (homepageSectionId) {
-        case "popular":
-          url = `${MD_API}/manga?${baseParams}&order[followedCount]=desc`;
-          break;
-        case "latest":
-          url = `${MD_API}/manga?${baseParams}&order[latestUploadedChapter]=desc`;
-          break;
-        case "recently_added":
-          url = `${MD_API}/manga?${baseParams}&order[createdAt]=desc`;
-          break;
-        default:
-          return App.createPagedResults({ results: [] });
+      if (homepageSectionId === "latest") {
+        url = `${MD_API}/manga?${base}&order[latestUploadedChapter]=desc`;
+      } else {
+        return App.createPagedResults({ results: [] });
       }
       const request = App.createRequest({ url, method: "GET" });
       const response = await this.requestManager.schedule(request, 1);
