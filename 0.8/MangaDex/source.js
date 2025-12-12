@@ -780,7 +780,6 @@ var _Sources = (() => {
           volume: parseFloat(attr.volume) || void 0,
           time,
           langCode: attr.translatedLanguage,
-          // La bandierina sarà gestita da Paperback in base al codice ISO
           group: scanGroup
         }));
       }
@@ -846,7 +845,7 @@ var _Sources = (() => {
           App.createDUISection({
             id: "languages_section",
             header: "Lingue Contenuti",
-            footer: "Seleziona le lingue che vuoi visualizzare.",
+            footer: "Scegli quali lingue visualizzare nei capitoli.",
             isHidden: false,
             rows: async () => {
               return LANGUAGES.map((lang) => {
@@ -869,13 +868,13 @@ var _Sources = (() => {
   // src/MangaDex/MangaDex.ts
   var MD_API = "https://api.mangadex.org";
   var MangaDexInfo = {
-    version: "2.2.5",
-    // Bump versione DUI
+    version: "2.5.0",
+    // Versione Bumped per forzare l'aggiornamento
     name: "MangaDex (Multi)",
     icon: "icon.png",
     author: "DarkDragonkz",
     authorWebsite: "https://github.com/DarkDragonkz",
-    description: "MangaDex source with configurable languages (DUI).",
+    description: "MangaDex source with configurable languages.",
     contentRating: import_types.ContentRating.MATURE,
     websiteBaseURL: "https://mangadex.org",
     sourceTags: [
@@ -884,6 +883,7 @@ var _Sources = (() => {
         type: import_types.BadgeColor.BLUE
       }
     ],
+    // SETTINGS_UI è fondamentale per vedere l'ingranaggio
     intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.SETTINGS_UI
   };
   var MangaDex = class {
@@ -891,7 +891,6 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.parser = new MangaDexParser();
       this.stateManager = App.createSourceStateManager();
-      // ---------------
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 5,
         requestTimeout: 2e4,
@@ -910,11 +909,10 @@ var _Sources = (() => {
         }
       });
     }
-    // --- FIX DUI ---
-    // Non serve più async/await qui, la funzione DUI ritorna l'oggetto form immediatamente
-    // e le promise sono gestite internamente dai Binding.
-    getSourceMenu() {
-      return Promise.resolve(getMangaDexSettingsMenu(this.stateManager));
+    // Funzione richiesta da ConfigurableSource
+    // Restituisce il menu creato in MangaDexSettings.ts
+    async getSourceMenu() {
+      return getMangaDexSettingsMenu(this.stateManager);
     }
     getMangaShareUrl(mangaId) {
       return `https://mangadex.org/title/${mangaId}`;
