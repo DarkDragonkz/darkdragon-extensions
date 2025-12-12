@@ -2,7 +2,6 @@ import {
     Chapter,
     ChapterDetails,
     HomeSection,
-    HomeSectionType,
     SourceManga,
     PartialSourceManga,
     Tag,
@@ -13,97 +12,89 @@ const BASE_URL = 'https://batcave.biz'
 
 export class BatCaveParser {
 
-    /**
-     * Tenta di trasformare l'URL di una miniatura (thumb) nell'URL dell'immagine originale HD.
-     * Rimuove segmenti tipici come '/thumbs/' o suffissi di ridimensionamento.
-     */
     private getHighResImage(url: string | undefined): string {
-        if (!url) return ''
-
-        // Gestione path relativi
-        if (url.startsWith('/')) {
-            url = BASE_URL + url
-        }
-
-        // FIX QUALITÀ:
-        // I siti DLE mettono le miniature in cartelle "/thumbs/". 
-        // L'immagine originale è solitamente allo stesso percorso ma senza "/thumbs/".
-        // Es: .../uploads/posts/2023-12/thumbs/cover.jpg -> .../uploads/posts/2023-12/cover.jpg
+        if (!url) return 'https://paperback.moe/icons/logo-alt.svg'
+        if (url.startsWith('/')) url = BASE_URL + url
+        
+        // Fix DLE thumbs: .../thumbs/image.jpg -> .../image.jpg
         if (url.includes('/thumbs/')) {
             return url.replace('/thumbs/', '/')
         }
-
         return url
     }
 
-    /**
-     * Helper per parsare le liste di manga (Grid/List items).
-     */
+    parseHomeSections($: any, featured: HomeSection, topRated: HomeSection, justAdded: HomeSection, hotReleases: HomeSection, newest: HomeSection): void {
+        
+        // 1. Featured (Lo slider in alto)
+        featured.items = this.parseGridItems($, '.slider__item, .slider .owl-item')
+
+        // 2. Top-rated (Sidebar)
+        // Cerca il blocco sidebar che contiene "Top-rated"
+        topRated.items = this.parseGridItems($, 'div.side-block:has(h2:contains("Top-rated")) a.popular')
+
+        // 3. Just Added (Sidebar)
+        justAdded.items = this.parseGridItems($, 'div.side-block:has(h2:contains("Just added")) a.popular')
+
+        // 4. Hot New Releases (Sezione specifica .sect--hot)
+        hotReleases.items = this.parseGridItems($, '.sect--hot .poster')
+
+        // 5. The Newest (Sezione principale .sect--latest)
+        // Passiamo un selettore extra per il sottotitolo (ultimo capitolo)
+        newest.items = this.parseGridItems($, '.sect--latest .latest', '.latest__chapter')
+    }
+
     parseGridItems($: any, selector: string, subtitleSelector?: string): PartialSourceManga[] {
-        const items: PartialSourceManga[] = []
+        const manga: PartialSourceManga[] = []
         
         $(selector).each((_: any, item: any) => {
-            const link = $(item).is('a') ? $(item) : $('a', item).first()
-            const href = link.attr('href')
-            const id = href?.split('/').pop()
+            const el = $(item)
             
-            const title = $('.poster__title, .latest__title a, .readed__title a, .popular__title', item).first().text().trim() || link.text().trim()
+            // Gestione layout diversi (Grid vs Sidebar List)
+            let link = el.find('a').first()
+            if (el.is('a')) link = el
 
-            // Recupera l'URL grezzo (data-src o src)
-            const rawImage = $('img', item).attr('data-src') ?? $('img', item).attr('src')
+            const href = link.attr('href')
+            // L'ID è tutto ciò che viene dopo il dominio
+            const id = href?.replace(BASE_URL, '').replace(/^\//, '')
 
-            // Usa la funzione helper per ottenere la versione HD
-            const image = this.getHighResImage(rawImage)
+            if (!id) return
 
-            let subtitle: string | undefined = undefined
+            const title = link.attr('title') ?? el.find('.poster__title, .title').text().trim()
+            const image = this.getHighResImage(el.find('img').attr('src') ?? el.find('img').attr('data-src'))
+            
+            let subtitle = undefined
             if (subtitleSelector) {
-                const subText = $(subtitleSelector, item).text().trim()
-                subtitle = subText.replace(/chapter\s*/i, '').trim()
+                subtitle = el.find(subtitleSelector).text().trim()
             }
 
-            if (id && title) {
-                items.push(App.createPartialSourceManga({
-                    mangaId: id,
-                    image: image,
-                    title: title,
-                    subtitle: subtitle
-                }))
-            }
+            manga.push(App.createPartialSourceManga({
+                mangaId: id,
+                image: image,
+                title: title,
+                subtitle: subtitle
+            }))
         })
 
-        return items
+        return manga
     }
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
-        const title = $('h1.main-page-title').text().trim() || $('h1').first().text().trim() || 'Unknown'
+        const info = $('.full-story')
         
-        // Anche nei dettagli usiamo la logica HD per sicurezza
-        const rawImage = $('.page__poster img').attr('src')
-        const image = this.getHighResImage(rawImage)
+        const title = $('h1.title__name', info).text().trim()
+        const image = this.getHighResImage($('.poster img', info).attr('src'))
+        const desc = $('.full-story__text', info).text().trim()
 
-        const desc = $('.page__text').text().trim()
-        
-        let author = 'Unknown'
-        let artist = 'Unknown'
         let status = 'Ongoing'
+        // BatCave spesso non ha status esplicito, default Ongoing
 
-        $('.page__list li').each((_: any, li: any) => {
-            const text = $(li).text().trim()
-            if (text.includes('Writer:')) author = text.replace('Writer:', '').trim()
-            if (text.includes('Artist:')) artist = text.replace('Artist:', '').trim()
-            if (text.includes('Release type:')) {
-                const type = text.replace('Release type:', '').trim().toLowerCase()
-                if (type.includes('completed')) status = 'Completed'
-            }
-        })
-
-        const arrayTags: Tag[] = []
-        $('.page__tags a').each((_: any, a: any) => {
+        const tags: Tag[] = []
+        // Generi solitamente in .poster__label o .full-story__info
+        $('.full-story__info a[href*="/xfsearch/genre/"]').each((_: any, a: any) => {
             const label = $(a).text().trim()
-            const id = $(a).attr('href')?.split('/').filter(Boolean).pop() ?? label
-            if (label) arrayTags.push(App.createTag({ id, label }))
+            const id = label // ID e Label uguali per semplicità
+            tags.push(App.createTag({ id, label }))
         })
-        const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
 
         return App.createSourceManga({
             id: mangaId,
@@ -111,76 +102,61 @@ export class BatCaveParser {
                 titles: [title],
                 image: image,
                 status: status,
-                author: author,
-                artist: artist,
-                tags: tagSections,
+                tags: [App.createTagSection({ id: '0', label: 'Genres', tags: tags })],
                 desc: desc
             })
         })
     }
 
-    parseChapters(html: string): Chapter[] {
+    parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
-        const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s)
-        if (!scriptData) return []
+        
+        // BatCave lista capitoli: .chapters-list li a
+        // O a volte dentro .full-story__chapters
+        $('.chapters-list li').each((_: any, li: any) => {
+            const link = $(li).find('a')
+            const href = link.attr('href')
+            if (!href) return
 
-        try {
-            const data = JSON.parse(scriptData[1])
-            if (data.chapters && Array.isArray(data.chapters)) {
-                for (const chap of data.chapters) {
-                    const id = String(chap.id)
-                    const titleRaw = (chap.title || `Chapter ${chap.id}`).replace(/_/g, ' ').replace(/\s+/g, ' ').trim()
-                    
-                    let time = new Date()
-                    if (chap.date) {
-                        const parts = chap.date.split('.')
-                        if (parts.length === 3) time = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
-                    }
+            const chapterId = href.replace(BASE_URL, '').replace(/^\//, '')
+            const name = link.text().trim()
+            
+            // Cerca numero nel titolo
+            const numMatch = name.match(/#(\d+(\.\d+)?)/) || name.match(/Chapter\s*(\d+)/i) || name.match(/(\d+)$/)
+            const chapNum = numMatch ? parseFloat(numMatch[1]) : 0
 
-                    let chapNum = 0
-                    if (chap.posi) {
-                        chapNum = parseFloat(chap.posi)
-                    } else {
-                        const numMatch = titleRaw.match(/(\d+(\.\d+)?)/g)
-                        if (numMatch) chapNum = parseFloat(numMatch[numMatch.length - 1] ?? '0')
-                    }
+            chapters.push(App.createChapter({
+                id: chapterId,
+                name: name,
+                chapNum: chapNum,
+                volume: undefined,
+                time: new Date(), // Date non presenti in lista
+                langCode: 'en',
+                sortingIndex: chapters.length
+            }))
+        })
 
-                    chapters.push(App.createChapter({
-                        id: id,
-                        name: titleRaw,
-                        chapNum: chapNum,
-                        time: time,
-                        langCode: 'en'
-                    }))
-                }
-            }
-        } catch (e) {
-            console.error(`Error parsing chapters JSON: ${e}`)
-        }
-
-        return chapters
+        // Invertiamo l'ordine se necessario (dal più vecchio al più nuovo di solito su BatCave, ma PB vuole il contrario per l'indice)
+        return chapters.reverse()
     }
 
     parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
-        const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s)
         
-        if (scriptData) {
-            try {
-                const data = JSON.parse(scriptData[1])
-                if (data.images && Array.isArray(data.images)) {
-                    for (const img of data.images) {
-                         if (img && !img.includes('logo') && !img.includes('icon')) {
-                             let cleanImg = img
-                             if (cleanImg.startsWith('//')) cleanImg = 'https:' + cleanImg
-                             else if (cleanImg.startsWith('/')) cleanImg = BASE_URL + cleanImg
-                             pages.push(cleanImg)
-                         }
-                    }
-                }
-            } catch (e) {
-                console.error(`Error parsing images JSON: ${e}`)
-            }
+        // Regex per trovare le immagini nel reader script o html
+        // BatCave spesso usa <img class="chapter-img"> o script
+        const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]+class=["'].*?chapter-img/g
+        let match
+        while ((match = imgRegex.exec(html)) !== null) {
+            pages.push(this.getHighResImage(match[1]))
+        }
+
+        // Fallback: cerca tutte le immagini nel content
+        if (pages.length === 0) {
+             const genericRegex = /<img[^>]+src=["']([^"']+)["'][^>]+data-src/g // Lazy load pattern
+             while ((match = genericRegex.exec(html)) !== null) {
+                 pages.push(this.getHighResImage(match[1]))
+             }
         }
 
         return App.createChapterDetails({
@@ -190,54 +166,26 @@ export class BatCaveParser {
         })
     }
 
-    parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
-        const featuredSection = App.createHomeSection({ 
-            id: 'featured', 
-            title: 'Featured Comics 🔥', 
-            containsMoreItems: false, 
-            type: HomeSectionType.singleRowLarge 
-        })
-        featuredSection.items = this.parseGridItems($, '.sect--popular .poster')
-        sectionCallback(featuredSection)
-
-        const hotSection = App.createHomeSection({ 
-            id: 'hot', 
-            title: 'Hot New Releases ⚡', 
-            containsMoreItems: false, 
-            type: HomeSectionType.singleRowNormal 
-        })
-        hotSection.items = this.parseGridItems($, '.sect--hot .poster')
-        sectionCallback(hotSection)
-        
-        const topRatedSection = App.createHomeSection({ 
-            id: 'top_rated', 
-            title: 'Top Rated ⭐', 
-            containsMoreItems: false, 
-            type: HomeSectionType.singleRowNormal 
-        })
-        topRatedSection.items = this.parseGridItems($, 'div.side-block:has(h2:contains("Top-rated")) a.popular')
-        sectionCallback(topRatedSection)
-
-        const justAddedSection = App.createHomeSection({ 
-            id: 'just_added', 
-            title: 'Just Added 🆕', 
-            containsMoreItems: false, 
-            type: HomeSectionType.singleRowNormal 
-        })
-        justAddedSection.items = this.parseGridItems($, 'div.side-block:has(h2:contains("Just added")) a.popular')
-        sectionCallback(justAddedSection)
-
-        const latestSection = App.createHomeSection({ 
-            id: 'latest', 
-            title: 'Latest Updates 🆙', 
-            containsMoreItems: true, 
-            type: HomeSectionType.continuous 
-        })
-        latestSection.items = this.parseGridItems($, '.sect--latest .latest', '.latest__chapter')
-        sectionCallback(latestSection)
-    }
-
     parseSearchResults($: any): PartialSourceManga[] {
-        return this.parseGridItems($, '.readed')
+        const results: PartialSourceManga[] = []
+        
+        // Risultati ricerca DLE standard
+        $('.search-result .short, .content .short').each((_: any, item: any) => {
+            const link = $(item).find('a.short-title, a.poster__link').first()
+            const href = link.attr('href')
+            const id = href?.replace(BASE_URL, '').replace(/^\//, '')
+            
+            if (id) {
+                const title = link.text().trim() || $(item).find('.poster__title').text().trim()
+                const image = this.getHighResImage($(item).find('img').attr('src') ?? $(item).find('img').attr('data-src'))
+                
+                results.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image,
+                    title: title
+                }))
+            }
+        })
+        return results
     }
 }

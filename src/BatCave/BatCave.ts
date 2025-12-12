@@ -13,6 +13,7 @@ import {
     MangaProviding,
     ChapterProviding,
     HomePageSectionsProviding,
+    HomeSectionType
 } from '@paperback/types'
 
 import { BatCaveParser } from './BatCaveParser'
@@ -20,7 +21,7 @@ import { BatCaveParser } from './BatCaveParser'
 const DOMAIN = 'https://batcave.biz'
 
 export const BatCaveInfo: SourceInfo = {
-    version: '1.0.9',
+    version: '2.0.0', // Major Update: Nuova Homepage
     name: 'BatCave',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -41,39 +42,30 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
     baseUrl = DOMAIN
     parser = new BatCaveParser()
     
-    // RETRIES abbassato a 2. 10 è eccessivo e danneggia la UX in caso di down.
-    RETRIES = 2 
-
-    constructor(private cheerio: any) {}
-
     requestManager = App.createRequestManager({
-        requestsPerSecond: 4,
-        requestTimeout: 20000, // Timeout leggermente ridotto
+        requestsPerSecond: 3,
+        requestTimeout: 20000,
         interceptor: {
             interceptRequest: async (request: any) => {
                 request.headers = {
                     ...(request.headers ?? {}),
-                    'Referer': `${DOMAIN}/`,
-                    'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                    'Referer': `${this.baseUrl}/`,
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 }
                 return request
             },
-            interceptResponse: async (response: any) => {
-                return response
-            }
+            interceptResponse: async (response: any) => { return response }
         }
     })
 
-    getMangaShareUrl(mangaId: string): string {
-        return `${this.baseUrl}/${mangaId}`
-    }
+    getMangaShareUrl(mangaId: string): string { return `${this.baseUrl}/${mangaId}` }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
         const request = App.createRequest({
             url: `${this.baseUrl}/${mangaId}`,
             method: 'GET'
         })
-        const response = await this.requestManager.schedule(request, this.RETRIES)
+        const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         return this.parser.parseMangaDetails($, mangaId)
     }
@@ -83,67 +75,92 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             url: `${this.baseUrl}/${mangaId}`,
             method: 'GET'
         })
-        const response = await this.requestManager.schedule(request, this.RETRIES)
-        return this.parser.parseChapters(response.data ?? '')
+        const response = await this.requestManager.schedule(request, 1)
+        const $ = this.cheerio.load(response.data)
+        return this.parser.parseChapters($, mangaId)
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        const mangaNumericId = mangaId.split('-')[0]
         const request = App.createRequest({
-            url: `${this.baseUrl}/reader/${mangaNumericId}/${chapterId}`,
+            url: `${this.baseUrl}/${chapterId}`, // BatCave chapter ID è l'URL completo relativo
             method: 'GET'
         })
-        const response = await this.requestManager.schedule(request, this.RETRIES)
+        const response = await this.requestManager.schedule(request, 1)
         return this.parser.parseChapterDetails(response.data ?? '', mangaId, chapterId)
     }
 
-    async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        const page = metadata?.page ?? 1
-        
-        // Logica di ricerca DataLife Engine (DLE)
-        // Spesso usa: do=search&subaction=search&story=QUERY&search_start=PAGE
-        const request = App.createRequest({
-            url: `${this.baseUrl}/index.php?do=search&subaction=search&story=${encodeURIComponent(query.title ?? '')}&search_start=${page}`,
-            method: 'GET'
-        })
-
-        const response = await this.requestManager.schedule(request, this.RETRIES)
-        const $ = this.cheerio.load(response.data)
-        const manga = this.parser.parseSearchResults($)
-        
-        // Se non troviamo manga, non c'è una pagina successiva
-        const nextPage = manga.length > 0 ? page + 1 : undefined
-
-        return App.createPagedResults({
-            results: manga,
-            metadata: nextPage ? { page: nextPage } : undefined
-        })
-    }
-
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
+        
+        // 1. Featured - Copertine GRANDI, No View More
+        const featured = App.createHomeSection({ 
+            id: 'featured', 
+            title: 'Featured 🔥', 
+            containsMoreItems: false, 
+            type: HomeSectionType.singleRowLarge 
+        })
+
+        // 2. Top-rated - Copertine Normali/Piccole, No View More
+        const topRated = App.createHomeSection({ 
+            id: 'top_rated', 
+            title: 'Top-rated ⭐', 
+            containsMoreItems: false, 
+            type: HomeSectionType.singleRowNormal 
+        })
+
+        // 3. Just added - Copertine Normali/Piccole, No View More
+        const justAdded = App.createHomeSection({ 
+            id: 'just_added', 
+            title: 'Just Added 🆕', 
+            containsMoreItems: false, 
+            type: HomeSectionType.singleRowNormal 
+        })
+
+        // 4. Hot new releases - Copertine Normali, No View More
+        const hotReleases = App.createHomeSection({ 
+            id: 'hot_releases', 
+            title: 'Hot New Releases ⚡', 
+            containsMoreItems: false, 
+            type: HomeSectionType.singleRowNormal 
+        })
+
+        // 5. The newest - Copertine Normali, SI View More
+        const newest = App.createHomeSection({ 
+            id: 'newest', 
+            title: 'The Newest 📚', 
+            containsMoreItems: true, 
+            type: HomeSectionType.continuous // Abilita scroll infinito/view more
+        })
+
+        sectionCallback(featured)
+        sectionCallback(topRated)
+        sectionCallback(justAdded)
+        sectionCallback(hotReleases)
+        sectionCallback(newest)
+
         const request = App.createRequest({
             url: this.baseUrl,
             method: 'GET'
         })
-
-        const response = await this.requestManager.schedule(request, this.RETRIES)
+        const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
-        this.parser.parseHomeSections($, sectionCallback)
+        
+        this.parser.parseHomeSections($, featured, topRated, justAdded, hotReleases, newest)
+        
+        sectionCallback(featured)
+        sectionCallback(topRated)
+        sectionCallback(justAdded)
+        sectionCallback(hotReleases)
+        sectionCallback(newest)
     }
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
         let url = ''
 
-        // Gestione paginazione per sezione "Latest"
-        // I siti DLE solitamente paginano la home/latest con /page/N/
-        if (homepageSectionId === 'latest') {
-            // Pagina 1 è la home, pagina 2+ è /page/N/
-            if (page === 1) url = this.baseUrl
-            else url = `${this.baseUrl}/page/${page}/`
+        // Solo "The Newest" ha view more
+        if (homepageSectionId === 'newest') {
+            url = `${this.baseUrl}/page/${page}/`
         } else {
-            // Se in futuro vuoi supportare ViewMore per 'featured' o 'hot', 
-            // dovrai trovare l'URL specifico (es. https://batcave.biz/hot/page/2/)
             return App.createPagedResults({ results: [] })
         }
 
@@ -151,28 +168,44 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             url: url,
             method: 'GET'
         })
-
-        const response = await this.requestManager.schedule(request, this.RETRIES)
+        const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         
-        // Usiamo un selettore specifico per la griglia principale delle pagine
-        // Nella home è .sect--latest, ma nelle pagine /page/2/ spesso gli elementi sono diretti nel content
-        // Facciamo fallback sul parser generico di search results che targetta .readed o simile, 
-        // oppure riusiamo il parser per latest.
-        // Ispezionando batcave, nelle pagine successive la struttura è simile a 'latest' o 'readed' items.
-        
-        let manga = this.parser.parseGridItems($, '.sect--latest .latest, .content .short', '.latest__chapter')
-
-        // Se non trova nulla con i selettori home, prova quelli generici
-        if (manga.length === 0) {
-             manga = this.parser.parseSearchResults($)
-        }
-
+        const manga = this.parser.parseGridItems($, '.sect--latest .latest, .content .short', '.latest__chapter')
         const nextPage = manga.length > 0 ? page + 1 : undefined
 
         return App.createPagedResults({
             results: manga,
             metadata: nextPage ? { page: nextPage } : undefined
+        })
+    }
+
+    async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
+        const page = metadata?.page ?? 1
+        
+        // BatCave search è POST standard DLE
+        const request = App.createRequest({
+            url: `${this.baseUrl}/index.php?do=search`,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            data: {
+                'do': 'search',
+                'subaction': 'search',
+                'story': query.title ?? '',
+                'search_start': page
+            }
+        })
+
+        const response = await this.requestManager.schedule(request, 1)
+        const $ = this.cheerio.load(response.data)
+        const manga = this.parser.parseSearchResults($)
+
+        return App.createPagedResults({
+            results: manga,
+            // Search DLE di solito non ha paginazione facile via API, ritorniamo undefined per ora o gestiamo offset
+            metadata: undefined 
         })
     }
     
@@ -182,7 +215,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             method: 'GET',
             headers: {
                 'Referer': `${this.baseUrl}/`,
-                'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
         })
     }
