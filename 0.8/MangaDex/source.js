@@ -767,6 +767,9 @@ var _Sources = (() => {
       const chapters = [];
       for (const chapter of data.data) {
         const attr = chapter.attributes;
+        if (attr.externalUrl) {
+          continue;
+        }
         const rels = chapter.relationships;
         const scanGroup = rels.find((r) => r.type === "scanlation_group")?.attributes?.name;
         let title = attr.title || "";
@@ -822,13 +825,13 @@ var _Sources = (() => {
   // src/MangaDex/MangaDex.ts
   var MD_API = "https://api.mangadex.org";
   var MangaDexInfo = {
-    version: "3.0.0",
-    // Reset versione pulita
+    version: "3.0.1",
+    // Bump per il filtro capitoli esterni
     name: "MangaDex (EN)",
     icon: "icon.png",
     author: "DarkDragonkz",
     authorWebsite: "https://github.com/DarkDragonkz",
-    description: "MangaDex English source. High quality covers.",
+    description: "MangaDex English source. Filters out external links.",
     contentRating: import_types.ContentRating.MATURE,
     websiteBaseURL: "https://mangadex.org",
     sourceTags: [
