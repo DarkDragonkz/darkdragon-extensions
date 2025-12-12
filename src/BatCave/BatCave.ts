@@ -21,7 +21,7 @@ import { BatCaveParser } from './BatCaveParser'
 const DOMAIN = 'https://batcave.biz'
 
 export const BatCaveInfo: SourceInfo = {
-    version: '2.0.0', // Major Update: Nuova Homepage
+    version: '2.0.1', // Bump per fix crash
     name: 'BatCave',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -42,6 +42,10 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
     baseUrl = DOMAIN
     parser = new BatCaveParser()
     
+    // --- FIX: COSTRUTTORE AGGIUNTO ---
+    constructor(private cheerio: any) {}
+    // ---------------------------------
+
     requestManager = App.createRequestManager({
         requestsPerSecond: 3,
         requestTimeout: 20000,
@@ -82,7 +86,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
         const request = App.createRequest({
-            url: `${this.baseUrl}/${chapterId}`, // BatCave chapter ID è l'URL completo relativo
+            url: `${this.baseUrl}/${chapterId}`,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
@@ -99,7 +103,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             type: HomeSectionType.singleRowLarge 
         })
 
-        // 2. Top-rated - Copertine Normali/Piccole, No View More
+        // 2. Top-rated - Copertine Piccole/Normali, No View More
         const topRated = App.createHomeSection({ 
             id: 'top_rated', 
             title: 'Top-rated ⭐', 
@@ -107,7 +111,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             type: HomeSectionType.singleRowNormal 
         })
 
-        // 3. Just added - Copertine Normali/Piccole, No View More
+        // 3. Just added - Copertine Piccole/Normali, No View More
         const justAdded = App.createHomeSection({ 
             id: 'just_added', 
             title: 'Just Added 🆕', 
@@ -128,7 +132,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             id: 'newest', 
             title: 'The Newest 📚', 
             containsMoreItems: true, 
-            type: HomeSectionType.continuous // Abilita scroll infinito/view more
+            type: HomeSectionType.continuous 
         })
 
         sectionCallback(featured)
@@ -157,7 +161,6 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
         const page = metadata?.page ?? 1
         let url = ''
 
-        // Solo "The Newest" ha view more
         if (homepageSectionId === 'newest') {
             url = `${this.baseUrl}/page/${page}/`
         } else {
@@ -183,7 +186,6 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
         
-        // BatCave search è POST standard DLE
         const request = App.createRequest({
             url: `${this.baseUrl}/index.php?do=search`,
             method: 'POST',
@@ -204,7 +206,6 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
 
         return App.createPagedResults({
             results: manga,
-            // Search DLE di solito non ha paginazione facile via API, ritorniamo undefined per ora o gestiamo offset
             metadata: undefined 
         })
     }

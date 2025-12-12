@@ -15,8 +15,6 @@ export class BatCaveParser {
     private getHighResImage(url: string | undefined): string {
         if (!url) return 'https://paperback.moe/icons/logo-alt.svg'
         if (url.startsWith('/')) url = BASE_URL + url
-        
-        // Fix DLE thumbs: .../thumbs/image.jpg -> .../image.jpg
         if (url.includes('/thumbs/')) {
             return url.replace('/thumbs/', '/')
         }
@@ -25,21 +23,19 @@ export class BatCaveParser {
 
     parseHomeSections($: any, featured: HomeSection, topRated: HomeSection, justAdded: HomeSection, hotReleases: HomeSection, newest: HomeSection): void {
         
-        // 1. Featured (Lo slider in alto)
+        // 1. Featured
         featured.items = this.parseGridItems($, '.slider__item, .slider .owl-item')
 
-        // 2. Top-rated (Sidebar)
-        // Cerca il blocco sidebar che contiene "Top-rated"
+        // 2. Top-rated
         topRated.items = this.parseGridItems($, 'div.side-block:has(h2:contains("Top-rated")) a.popular')
 
-        // 3. Just Added (Sidebar)
+        // 3. Just Added
         justAdded.items = this.parseGridItems($, 'div.side-block:has(h2:contains("Just added")) a.popular')
 
-        // 4. Hot New Releases (Sezione specifica .sect--hot)
+        // 4. Hot New Releases
         hotReleases.items = this.parseGridItems($, '.sect--hot .poster')
 
-        // 5. The Newest (Sezione principale .sect--latest)
-        // Passiamo un selettore extra per il sottotitolo (ultimo capitolo)
+        // 5. The Newest
         newest.items = this.parseGridItems($, '.sect--latest .latest', '.latest__chapter')
     }
 
@@ -48,13 +44,10 @@ export class BatCaveParser {
         
         $(selector).each((_: any, item: any) => {
             const el = $(item)
-            
-            // Gestione layout diversi (Grid vs Sidebar List)
             let link = el.find('a').first()
             if (el.is('a')) link = el
 
             const href = link.attr('href')
-            // L'ID è tutto ciò che viene dopo il dominio
             const id = href?.replace(BASE_URL, '').replace(/^\//, '')
 
             if (!id) return
@@ -86,13 +79,11 @@ export class BatCaveParser {
         const desc = $('.full-story__text', info).text().trim()
 
         let status = 'Ongoing'
-        // BatCave spesso non ha status esplicito, default Ongoing
 
         const tags: Tag[] = []
-        // Generi solitamente in .poster__label o .full-story__info
         $('.full-story__info a[href*="/xfsearch/genre/"]').each((_: any, a: any) => {
             const label = $(a).text().trim()
-            const id = label // ID e Label uguali per semplicità
+            const id = label
             tags.push(App.createTag({ id, label }))
         })
 
@@ -111,8 +102,6 @@ export class BatCaveParser {
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
         
-        // BatCave lista capitoli: .chapters-list li a
-        // O a volte dentro .full-story__chapters
         $('.chapters-list li').each((_: any, li: any) => {
             const link = $(li).find('a')
             const href = link.attr('href')
@@ -121,7 +110,6 @@ export class BatCaveParser {
             const chapterId = href.replace(BASE_URL, '').replace(/^\//, '')
             const name = link.text().trim()
             
-            // Cerca numero nel titolo
             const numMatch = name.match(/#(\d+(\.\d+)?)/) || name.match(/Chapter\s*(\d+)/i) || name.match(/(\d+)$/)
             const chapNum = numMatch ? parseFloat(numMatch[1]) : 0
 
@@ -130,30 +118,26 @@ export class BatCaveParser {
                 name: name,
                 chapNum: chapNum,
                 volume: undefined,
-                time: new Date(), // Date non presenti in lista
+                time: new Date(),
                 langCode: 'en',
                 sortingIndex: chapters.length
             }))
         })
 
-        // Invertiamo l'ordine se necessario (dal più vecchio al più nuovo di solito su BatCave, ma PB vuole il contrario per l'indice)
         return chapters.reverse()
     }
 
     parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
         
-        // Regex per trovare le immagini nel reader script o html
-        // BatCave spesso usa <img class="chapter-img"> o script
         const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]+class=["'].*?chapter-img/g
         let match
         while ((match = imgRegex.exec(html)) !== null) {
             pages.push(this.getHighResImage(match[1]))
         }
 
-        // Fallback: cerca tutte le immagini nel content
         if (pages.length === 0) {
-             const genericRegex = /<img[^>]+src=["']([^"']+)["'][^>]+data-src/g // Lazy load pattern
+             const genericRegex = /<img[^>]+src=["']([^"']+)["'][^>]+data-src/g
              while ((match = genericRegex.exec(html)) !== null) {
                  pages.push(this.getHighResImage(match[1]))
              }
@@ -169,7 +153,6 @@ export class BatCaveParser {
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         
-        // Risultati ricerca DLE standard
         $('.search-result .short, .content .short').each((_: any, item: any) => {
             const link = $(item).find('a.short-title, a.poster__link').first()
             const href = link.attr('href')
