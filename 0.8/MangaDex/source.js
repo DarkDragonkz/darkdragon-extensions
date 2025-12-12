@@ -736,7 +736,7 @@ var _Sources = (() => {
       const attributes = data.data.attributes;
       const relationships = data.data.relationships;
       const title = attributes.title.en ?? Object.values(attributes.title)[0] ?? "Unknown Title";
-      let desc = attributes.description.en ?? Object.values(attributes.description)[0] ?? "";
+      const desc = attributes.description.en ?? Object.values(attributes.description)[0] ?? "";
       const authors = relationships.filter((r) => r.type === "author").map((r) => r.attributes?.name).filter((n) => n);
       const artists = relationships.filter((r) => r.type === "artist").map((r) => r.attributes?.name).filter((n) => n);
       const coverRel = relationships.find((r) => r.type === "cover_art");
@@ -769,8 +769,7 @@ var _Sources = (() => {
         const attr = chapter.attributes;
         const rels = chapter.relationships;
         const scanGroup = rels.find((r) => r.type === "scanlation_group")?.attributes?.name;
-        let title = "";
-        if (attr.title) title = attr.title;
+        let title = attr.title || "";
         if (!title && attr.chapter) title = `Chapter ${attr.chapter}`;
         if (!title) title = "Oneshot";
         const time = new Date(attr.publishAt);
@@ -781,7 +780,7 @@ var _Sources = (() => {
           volume: parseFloat(attr.volume) || void 0,
           time,
           langCode: attr.translatedLanguage,
-          // 'it', 'en', etc.
+          // La bandierina sarà gestita da Paperback in base al codice ISO
           group: scanGroup
         }));
       }
@@ -830,7 +829,6 @@ var _Sources = (() => {
     { id: "fr", label: "Fran\xE7ais \u{1F1EB}\u{1F1F7}", default: false },
     { id: "pt-br", label: "Portugu\xEAs (BR) \u{1F1E7}\u{1F1F7}", default: false },
     { id: "de", label: "Deutsch \u{1F1E9}\u{1F1EA}", default: false },
-    { id: "ru", label: "\u0420\u0443\u0441\u0441\u043A\u0438\u0439 \u{1F1F7}\u{1F1FA}", default: false },
     { id: "ja", label: "\u65E5\u672C\u8A9E \u{1F1EF}\u{1F1F5}", default: false }
   ];
   var getSelectedLanguages = async (stateManager) => {
@@ -841,9 +839,7 @@ var _Sources = (() => {
         selected.push(lang.id);
       }
     }
-    if (selected.length === 0) {
-      return ["en"];
-    }
+    if (selected.length === 0) return ["en"];
     return selected;
   };
   var getMangaDexSettingsMenu = async (stateManager) => {
@@ -852,15 +848,15 @@ var _Sources = (() => {
       values[lang.id] = await stateManager.retrieve(lang.id) ?? lang.default;
     }
     return App.createNavigationSection({
-      id: "language_settings",
+      id: "lang_settings",
       header: "Lingue Contenuti",
-      footer: "Seleziona le lingue dei capitoli che vuoi visualizzare.",
+      footer: "Seleziona le lingue che vuoi visualizzare nell'app.",
       items: LANGUAGES.map(
         (lang) => App.createSwitch({
           id: lang.id,
           label: lang.label,
           value: values[lang.id],
-          // Ora questo è true/false, non una Promise!
+          // Valore booleano reale (no promise)
           onChange: async (newValue) => {
             await stateManager.store(lang.id, newValue);
           }
@@ -872,8 +868,7 @@ var _Sources = (() => {
   // src/MangaDex/MangaDex.ts
   var MD_API = "https://api.mangadex.org";
   var MangaDexInfo = {
-    version: "2.2.1",
-    // Bump fix settings crash
+    version: "2.2.0",
     name: "MangaDex (Multi)",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -887,14 +882,16 @@ var _Sources = (() => {
         type: import_types.BadgeColor.BLUE
       }
     ],
+    // Aggiunto SETTINGS_UI per abilitare il tasto ingranaggio
     intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.SETTINGS_UI
   };
   var MangaDex = class {
+    // Inizializza lo storage
     constructor(cheerio) {
       this.cheerio = cheerio;
       this.parser = new MangaDexParser();
       this.stateManager = App.createSourceStateManager();
-      // ---------------
+      // -------------------------
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 5,
         requestTimeout: 2e4,
@@ -913,8 +910,7 @@ var _Sources = (() => {
         }
       });
     }
-    // --- FIX QUI ---
-    // Aggiunto 'await' perché getMangaDexSettingsMenu ora è asincrona per evitare il crash
+    // --- MENU IMPOSTAZIONI ---
     async getSourceMenu() {
       return await getMangaDexSettingsMenu(this.stateManager);
     }
@@ -931,8 +927,8 @@ var _Sources = (() => {
       return this.parser.parseMangaDetails(data, mangaId);
     }
     async getChapters(mangaId) {
-      const languages = await getSelectedLanguages(this.stateManager);
-      const langQuery = languages.map((l) => `translatedLanguage[]=${l}`).join("&");
+      const langs = await getSelectedLanguages(this.stateManager);
+      const langQuery = langs.map((l) => `translatedLanguage[]=${l}`).join("&");
       const limit = 500;
       const request = App.createRequest({
         url: `${MD_API}/manga/${mangaId}/feed?limit=${limit}&${langQuery}&order[chapter]=desc&includeFutureUpdates=0&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
@@ -954,8 +950,8 @@ var _Sources = (() => {
     async getSearchResults(query, metadata) {
       const limit = 20;
       const offset = metadata?.offset ?? 0;
-      const languages = await getSelectedLanguages(this.stateManager);
-      const langQuery = languages.map((l) => `availableTranslatedLanguage[]=${l}`).join("&");
+      const langs = await getSelectedLanguages(this.stateManager);
+      const langQuery = langs.map((l) => `availableTranslatedLanguage[]=${l}`).join("&");
       let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&${langQuery}`;
       if (query.title) {
         url += `&title=${encodeURIComponent(query.title)}&order[relevance]=desc`;
@@ -978,8 +974,8 @@ var _Sources = (() => {
       sectionCallback(sectionPopular);
       sectionCallback(sectionLatest);
       sectionCallback(sectionNew);
-      const languages = await getSelectedLanguages(this.stateManager);
-      const langQuery = languages.map((l) => `availableTranslatedLanguage[]=${l}`).join("&");
+      const langs = await getSelectedLanguages(this.stateManager);
+      const langQuery = langs.map((l) => `availableTranslatedLanguage[]=${l}`).join("&");
       const limit = 20;
       const baseParams = `limit=${limit}&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&${langQuery}`;
       const requestPopular = App.createRequest({ url: `${MD_API}/manga?${baseParams}&order[followedCount]=desc`, method: "GET" });
@@ -1000,8 +996,8 @@ var _Sources = (() => {
     async getViewMoreItems(homepageSectionId, metadata) {
       const limit = 20;
       const offset = metadata?.offset ?? 0;
-      const languages = await getSelectedLanguages(this.stateManager);
-      const langQuery = languages.map((l) => `availableTranslatedLanguage[]=${l}`).join("&");
+      const langs = await getSelectedLanguages(this.stateManager);
+      const langQuery = langs.map((l) => `availableTranslatedLanguage[]=${l}`).join("&");
       const baseParams = `limit=${limit}&offset=${offset}&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&${langQuery}`;
       let url = "";
       switch (homepageSectionId) {
