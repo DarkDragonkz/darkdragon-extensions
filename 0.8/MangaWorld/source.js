@@ -744,7 +744,6 @@ var _Sources = (() => {
       }
       return title;
     }
-    // Funzione helper per convertire le date italiane
     parseDate(dateStr) {
       if (!dateStr) return /* @__PURE__ */ new Date();
       dateStr = dateStr.trim().toLowerCase();
@@ -809,7 +808,7 @@ var _Sources = (() => {
         const label = $(a).text().trim();
         if (id && label) {
           if (["ADULTI", "SMUT", "MATURO", "HENTAI"].includes(id.toUpperCase())) hentai = true;
-          arrayTags.push({ id, label });
+          arrayTags.push(App.createTag({ id, label }));
         }
       });
       const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })];
@@ -833,39 +832,6 @@ var _Sources = (() => {
       const volumes = $(".volume-element").toArray();
       if (volumes.length === 0) {
         const simpleChapters = $(".chapter").toArray();
-      }
-      for (const vol of volumes) {
-        const volName = $(vol).find(".volume-name").text().trim();
-        const volNumMatch = volName.match(/Volume\s+(\d+)/i);
-        const volNum = volNumMatch ? parseFloat(volNumMatch[1]) : 0;
-        const chapterNodes = $(vol).find(".chapter").toArray();
-        for (const node of chapterNodes) {
-          const link = $(node).find("a.chap");
-          const href = link.attr("href");
-          if (!href) continue;
-          const chapterId = href.split("/read/")[1]?.split("/")[0] ?? "";
-          if (!chapterId) continue;
-          const rawTitle = link.find("span.d-inline-block").text().trim();
-          const chapNumMatch = rawTitle.match(/(\d+(\.\d+)?)/);
-          const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0;
-          const dateText = link.find(".chap-date").text().trim();
-          const time = this.parseDate(dateText);
-          let formattedTitle = "";
-          if (volNum > 0) formattedTitle += `Vol. ${volNum} `;
-          formattedTitle += `Ch. ${chapNum}`;
-          if (rawTitle) formattedTitle += ` - ${rawTitle}`;
-          chapters.push(App.createChapter({
-            id: chapterId,
-            name: formattedTitle,
-            chapNum,
-            volume: volNum,
-            time,
-            langCode: "it"
-          }));
-        }
-      }
-      if (chapters.length === 0) {
-        const simpleChapters = $(".chapter").toArray();
         for (const node of simpleChapters) {
           const link = $("a.chap", node);
           const href = link.attr("href");
@@ -878,11 +844,40 @@ var _Sources = (() => {
           const time = this.parseDate(dateText);
           chapters.push(App.createChapter({
             id: chapterId,
-            name: `Ch. ${chapNum} - ${rawTitle}`,
+            name: rawTitle,
+            // Solo il titolo grezzo, l'app aggiungerà Ch. X
             chapNum,
             time,
             langCode: "it"
           }));
+        }
+      } else {
+        for (const vol of volumes) {
+          const volName = $(vol).find(".volume-name").text().trim();
+          const volNumMatch = volName.match(/Volume\s+(\d+)/i);
+          const volNum = volNumMatch ? parseFloat(volNumMatch[1]) : 0;
+          const chapterNodes = $(vol).find(".chapter").toArray();
+          for (const node of chapterNodes) {
+            const link = $(node).find("a.chap");
+            const href = link.attr("href");
+            if (!href) continue;
+            const chapterId = href.split("/read/")[1]?.split("/")[0] ?? "";
+            if (!chapterId) continue;
+            const rawTitle = link.find("span.d-inline-block").text().trim();
+            const chapNumMatch = rawTitle.match(/(\d+(\.\d+)?)/);
+            const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0;
+            const dateText = link.find(".chap-date").text().trim();
+            const time = this.parseDate(dateText);
+            let cleanName = rawTitle;
+            chapters.push(App.createChapter({
+              id: chapterId,
+              name: cleanName,
+              chapNum,
+              volume: volNum,
+              time,
+              langCode: "it"
+            }));
+          }
         }
       }
       return chapters;
