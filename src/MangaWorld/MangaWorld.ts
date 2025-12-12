@@ -23,10 +23,10 @@ import { URLBuilder } from '../helper'
 const MW_DOMAIN = 'https://www.mangaworld.mx'
 
 export const MangaWorldInfo: SourceInfo = {
-    version: '3.5.0', // Bump version per fix date e status
+    version: '3.4.0', // Bump version
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld.',
-    author: 'NmN & DarkDragonkz',
+    author: 'NmN',
     authorWebsite: 'http://github.com/pandeynmm',
     icon: 'icon.png',
     contentRating: ContentRating.EVERYONE,
@@ -46,28 +46,24 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
     
     constructor(private cheerio: any) {}
     
-    RETRIES = 2
+    RETRIES = 10
     parser = new MangaWorldParser()
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 4, // 4-5 è safe per MangaWorld
+        requestsPerSecond: 8,
         requestTimeout: 20000,
         interceptor: {
             interceptRequest: async (request: any) => {
                 request.headers = {
                     ...(request.headers ?? {}),
-                    'referer': `${this.baseUrl}/`,
-                    // Usa UserAgent dinamico se possibile, altrimenti un fallback recente
-                    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    ...{
+                        'referer': `${this.baseUrl}/`,
+                        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    }
                 }
                 return request
             },
             interceptResponse: async (response: any) => {
-                const data = response.data
-                // Check per Cloudflare Challenge
-                if (typeof data === 'string' && (data.includes('Just a moment...') || data.includes('Cloudflare'))) {
-                    throw new Error('Cloudflare check required')
-                }
                 return response
             }
         }
@@ -119,19 +115,18 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         let page = metadata?.page ?? 1
-        if (page === -1) return App.createPagedResults({ results: [], metadata: undefined })
+        if (page == -1) return App.createPagedResults({ results: [], metadata: { page: -1 } })
         
         const request = this.constructSearchRequest(page, query)
         
-        const response = await this.requestManager.schedule(request, this.RETRIES)
-        const $ = this.cheerio.load(response.data)
+        const data = await this.requestManager.schedule(request, this.RETRIES)
+        const $ = this.cheerio.load(data.data)
         const manga = this.parser.parseSearchResults($)
-        
-        const nextPage = manga.length > 0 ? page + 1 : undefined
-
+        page++
+        if (manga.length < 16) page = -1
         return App.createPagedResults({
             results: manga,
-            metadata: nextPage ? { page: nextPage } : undefined,
+            metadata: { page: page },
         })
     }
 
@@ -150,15 +145,14 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
         let url = ''
 
         switch (homepageSectionId) {
-            case '1': 
+            case 'ultimi_capitoli': // Ultimi capitoli
                 url = `${this.baseUrl}/?page=${page}`
                 break
-            case '2': 
-            case '3': 
+            case 'manga_mese': // Manga del mese
                 url = `${this.baseUrl}/archive?sort=most_read&page=${page}`
                 break
             default:
-                return App.createPagedResults({ results: [] })
+                return App.createPagedResults({ results: [], metadata: { page: -1 } })
         }
 
         const request = App.createRequest({
@@ -169,11 +163,11 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
         const $ = this.cheerio.load(response.data)
         const manga: PartialSourceManga[] = this.parser.parseViewMore($)
         
-        const nextPage = manga.length > 0 ? page + 1 : undefined
+        const hasMore = manga.length > 0
         
         return App.createPagedResults({
             results: manga,
-            metadata: nextPage ? { page: nextPage } : undefined,
+            metadata: hasMore ? { page: page + 1 } : undefined,
         })
     }
 
@@ -184,29 +178,25 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
             headers: {
                 'referer': `${this.baseUrl}/`,
                 'origin': `${this.baseUrl}/`,
-                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                'user-agent': await this.requestManager.getDefaultUserAgent()
             }
         })
     }
 
     constructSearchRequest(page: number, query: SearchRequest): any {
-        const builder = new URLBuilder(this.baseUrl)
-            .addPathComponent('archive')
-            .addQueryParameter('page', page.toString())
-
-        if (query.title) {
-            builder.addQueryParameter('keyword', encodeURIComponent(query.title))
-        }
-
-        if (query.includedTags && query.includedTags.length > 0) {
-            builder.addQueryParameter('genre', query.includedTags[0]?.id)
-        }
-
-        builder.addQueryParameter('sort', 'most_read')
-
-        return App.createRequest({
-            url: builder.buildUrl({ addTrailingSlash: true, includeUndefinedParameters: false }),
+        const request = App.createRequest({
+            url: new URLBuilder(this.baseUrl)
+                .addPathComponent('archive')
+                .addQueryParameter('keyword', encodeURIComponent(query?.title ?? ''))
+                .addQueryParameter(
+                    'genre',
+                    query?.includedTags?.map((x: any) => x.id)
+                )
+                .addQueryParameter('sort', 'most_read')
+                .addQueryParameter('page', page.toString())
+                .buildUrl({ addTrailingSlash: true, includeUndefinedParameters: false }),
             method: 'GET',
         })
+        return request
     }
 }
