@@ -744,6 +744,33 @@ var _Sources = (() => {
       }
       return title;
     }
+    // Funzione helper per convertire le date italiane
+    parseDate(dateStr) {
+      if (!dateStr) return /* @__PURE__ */ new Date();
+      dateStr = dateStr.trim().toLowerCase();
+      const months = {
+        "gennaio": "January",
+        "febbraio": "February",
+        "marzo": "March",
+        "aprile": "April",
+        "maggio": "May",
+        "giugno": "June",
+        "luglio": "July",
+        "agosto": "August",
+        "settembre": "September",
+        "ottobre": "October",
+        "novembre": "November",
+        "dicembre": "December"
+      };
+      for (const [it, en] of Object.entries(months)) {
+        if (dateStr.includes(it)) {
+          dateStr = dateStr.replace(it, en);
+          break;
+        }
+      }
+      const date = new Date(dateStr);
+      return isNaN(date.getTime()) ? /* @__PURE__ */ new Date() : date;
+    }
     parseMangaDetails($, mangaId) {
       let title = $(".name.bigger").text().trim() ?? "";
       title = this.cleanTitle(title);
@@ -760,34 +787,32 @@ var _Sources = (() => {
       let hentai = false;
       let author = "";
       let artist = "";
-      const id_arr = [];
-      const label_arr = [];
-      $(".meta-data.row.px-1 .col-12").each((i, obj) => {
-        switch (i) {
-          case 1:
-            $(obj).find("a").each((_, e) => {
-              label_arr.push($(e).text());
-              id_arr.push($(e).attr("href")?.replace("https://www.mangaworld.mx/archive?genre=", "") ?? "");
-            });
-            break;
-          case 2:
-            author = $(obj).text().trim().replace("Autore: ", "");
-            break;
-          case 3:
-            artist = $(obj).text().trim().replace("Artista: ", "");
-            break;
+      let status = "Ongoing";
+      $(".meta-data.row.px-1 .col-12").each((_, col) => {
+        const text = $(col).text().trim();
+        if (text.includes("Autore:")) {
+          author = text.replace("Autore:", "").trim();
+        } else if (text.includes("Artista:")) {
+          artist = text.replace("Artista:", "").trim();
+        } else if (text.includes("Stato:")) {
+          const statusText = text.replace("Stato:", "").trim().toLowerCase();
+          if (statusText.includes("finito") || statusText.includes("completato")) {
+            status = "Completed";
+          } else if (statusText.includes("corso")) {
+            status = "Ongoing";
+          }
         }
       });
-      const status = "Ongoing";
       const arrayTags = [];
-      for (const j in label_arr) {
-        const id = id_arr[j] ?? "";
-        const label = label_arr[j] ?? "";
-        if (["ADULTI", "SMUT", "MATURO", "HENTAI"].includes(id.toUpperCase())) hentai = true;
-        if (!id || !label) continue;
-        arrayTags.push({ id, label });
-      }
-      const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags.map((x) => App.createTag(x)) })];
+      $('.meta-data.row.px-1 a[href*="genre="]').each((_, a) => {
+        const id = $(a).attr("href")?.split("genre=")[1];
+        const label = $(a).text().trim();
+        if (id && label) {
+          if (["ADULTI", "SMUT", "MATURO", "HENTAI"].includes(id.toUpperCase())) hentai = true;
+          arrayTags.push({ id, label });
+        }
+      });
+      const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })];
       return App.createSourceManga({
         id: mangaId,
         mangaInfo: App.createMangaInfo({
@@ -805,20 +830,60 @@ var _Sources = (() => {
     }
     parseChapters($, mangaId) {
       const chapters = [];
-      const arrChapters = $(".chapter").toArray().reverse();
-      for (const item of arrChapters) {
-        const id = $("a", item).attr("href")?.replace(`${BASE_URL}/manga/${mangaId}/read/`, "") ?? "";
-        const name = $("a", item).attr("title") ?? "";
-        const chapNum = Number($(".d-inline-block", item).text().split(" ")[1]) ?? -1;
-        chapters.push(
-          App.createChapter({
-            id,
-            name,
-            chapNum: chapNum >= 0 ? chapNum : 0,
-            time: /* @__PURE__ */ new Date(),
+      const volumes = $(".volume-element").toArray();
+      if (volumes.length === 0) {
+        const simpleChapters = $(".chapter").toArray();
+      }
+      for (const vol of volumes) {
+        const volName = $(vol).find(".volume-name").text().trim();
+        const volNumMatch = volName.match(/Volume\s+(\d+)/i);
+        const volNum = volNumMatch ? parseFloat(volNumMatch[1]) : 0;
+        const chapterNodes = $(vol).find(".chapter").toArray();
+        for (const node of chapterNodes) {
+          const link = $(node).find("a.chap");
+          const href = link.attr("href");
+          if (!href) continue;
+          const chapterId = href.split("/read/")[1]?.split("/")[0] ?? "";
+          if (!chapterId) continue;
+          const rawTitle = link.find("span.d-inline-block").text().trim();
+          const chapNumMatch = rawTitle.match(/(\d+(\.\d+)?)/);
+          const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0;
+          const dateText = link.find(".chap-date").text().trim();
+          const time = this.parseDate(dateText);
+          let formattedTitle = "";
+          if (volNum > 0) formattedTitle += `Vol. ${volNum} `;
+          formattedTitle += `Ch. ${chapNum}`;
+          if (rawTitle) formattedTitle += ` - ${rawTitle}`;
+          chapters.push(App.createChapter({
+            id: chapterId,
+            name: formattedTitle,
+            chapNum,
+            volume: volNum,
+            time,
             langCode: "it"
-          })
-        );
+          }));
+        }
+      }
+      if (chapters.length === 0) {
+        const simpleChapters = $(".chapter").toArray();
+        for (const node of simpleChapters) {
+          const link = $("a.chap", node);
+          const href = link.attr("href");
+          const chapterId = href?.split("/read/")[1]?.split("/")[0] ?? "";
+          if (!chapterId) continue;
+          const rawTitle = link.find("span").first().text().trim();
+          const chapNumMatch = rawTitle.match(/(\d+(\.\d+)?)/);
+          const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0;
+          const dateText = link.find(".chap-date").text().trim();
+          const time = this.parseDate(dateText);
+          chapters.push(App.createChapter({
+            id: chapterId,
+            name: `Ch. ${chapNum} - ${rawTitle}`,
+            chapNum,
+            time,
+            langCode: "it"
+          }));
+        }
       }
       return chapters;
     }
@@ -1059,8 +1124,8 @@ var _Sources = (() => {
   // src/MangaWorld/MangaWorld.ts
   var MW_DOMAIN = "https://www.mangaworld.mx";
   var MangaWorldInfo = {
-    version: "3.4.0",
-    // Bump version
+    version: "3.5.0",
+    // Bump version per fix stato e capitoli
     name: "MangaWorld",
     description: "Extension that pulls manga from MangaWorld.",
     author: "NmN",
