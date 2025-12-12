@@ -21,7 +21,7 @@ import { BatCaveParser } from './BatCaveParser'
 const DOMAIN = 'https://batcave.biz'
 
 export const BatCaveInfo: SourceInfo = {
-    version: '2.0.1', // Bump per fix crash
+    version: '2.0.2', // Bump versione per UI fix
     name: 'BatCave',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -42,9 +42,8 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
     baseUrl = DOMAIN
     parser = new BatCaveParser()
     
-    // --- FIX: COSTRUTTORE AGGIUNTO ---
+    // Costruttore essenziale per Cheerio
     constructor(private cheerio: any) {}
-    // ---------------------------------
 
     requestManager = App.createRequestManager({
         requestsPerSecond: 3,
@@ -103,7 +102,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             type: HomeSectionType.singleRowLarge 
         })
 
-        // 2. Top-rated - Copertine Piccole/Normali, No View More
+        // 2. Top-rated - Copertine Piccole (Normal), No View More
         const topRated = App.createHomeSection({ 
             id: 'top_rated', 
             title: 'Top-rated ⭐', 
@@ -111,7 +110,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             type: HomeSectionType.singleRowNormal 
         })
 
-        // 3. Just added - Copertine Piccole/Normali, No View More
+        // 3. Just added - Copertine Piccole (Normal), No View More
         const justAdded = App.createHomeSection({ 
             id: 'just_added', 
             title: 'Just Added 🆕', 
@@ -127,12 +126,12 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             type: HomeSectionType.singleRowNormal 
         })
 
-        // 5. The newest - Copertine Normali, SI View More
+        // 5. The newest - Copertine Piccole (Normal), SI View More
         const newest = App.createHomeSection({ 
             id: 'newest', 
             title: 'The Newest 📚', 
             containsMoreItems: true, 
-            type: HomeSectionType.continuous 
+            type: HomeSectionType.singleRowNormal
         })
 
         sectionCallback(featured)
@@ -161,6 +160,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
         const page = metadata?.page ?? 1
         let url = ''
 
+        // Solo "The Newest" ha view more abilitato
         if (homepageSectionId === 'newest') {
             url = `${this.baseUrl}/page/${page}/`
         } else {
