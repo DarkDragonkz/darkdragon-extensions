@@ -740,12 +740,12 @@ var _Sources = (() => {
       }
       return url;
     }
-    parseHomeSections($, featured, topRated, justAdded, hotReleases, newest) {
-      featured.items = this.parseGridItems($, ".slider__item, .slider .owl-item");
-      topRated.items = this.parseGridItems($, 'div.side-block:has(h2:contains("Top-rated")) a.popular');
-      justAdded.items = this.parseGridItems($, 'div.side-block:has(h2:contains("Just added")) a.popular');
-      hotReleases.items = this.parseGridItems($, ".sect--hot .poster");
-      newest.items = this.parseGridItems($, ".sect--latest .latest", ".latest__chapter");
+    parseHomeSections($, s1, s2, s3, s4, s5) {
+      s1.items = this.parseGridItems($, ".slider__item, .slider .owl-item");
+      s2.items = this.parseGridItems($, 'div.side-block:has(h2:contains("Top-rated")) a.popular');
+      s3.items = this.parseGridItems($, 'div.side-block:has(h2:contains("Just added")) a.popular');
+      s4.items = this.parseGridItems($, ".sect--hot .poster");
+      s5.items = this.parseGridItems($, ".sect--latest .latest", ".latest__chapter");
     }
     parseGridItems($, selector, subtitleSelector) {
       const manga = [];
@@ -858,8 +858,7 @@ var _Sources = (() => {
   // src/BatCave/BatCave.ts
   var DOMAIN = "https://batcave.biz";
   var BatCaveInfo = {
-    version: "2.0.2",
-    // Bump versione per UI fix
+    version: "2.0.5",
     name: "BatCave",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -876,7 +875,7 @@ var _Sources = (() => {
     intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
   };
   var BatCave = class {
-    // Costruttore essenziale per Cheerio
+    // Costruttore essenziale per non far crashare Cheerio
     constructor(cheerio) {
       this.cheerio = cheerio;
       this.baseUrl = DOMAIN;
@@ -929,53 +928,53 @@ var _Sources = (() => {
       return this.parser.parseChapterDetails(response.data ?? "", mangaId, chapterId);
     }
     async getHomePageSections(sectionCallback) {
-      const featured = App.createHomeSection({
+      const s1 = App.createHomeSection({
         id: "featured",
         title: "Featured \u{1F525}",
         containsMoreItems: false,
         type: import_types.HomeSectionType.singleRowLarge
       });
-      const topRated = App.createHomeSection({
+      const s2 = App.createHomeSection({
         id: "top_rated",
-        title: "Top-rated \u2B50",
+        title: "Top Rated \u2B50",
         containsMoreItems: false,
         type: import_types.HomeSectionType.singleRowNormal
       });
-      const justAdded = App.createHomeSection({
+      const s3 = App.createHomeSection({
         id: "just_added",
         title: "Just Added \u{1F195}",
         containsMoreItems: false,
         type: import_types.HomeSectionType.singleRowNormal
       });
-      const hotReleases = App.createHomeSection({
+      const s4 = App.createHomeSection({
         id: "hot_releases",
         title: "Hot New Releases \u26A1",
         containsMoreItems: false,
         type: import_types.HomeSectionType.singleRowNormal
       });
-      const newest = App.createHomeSection({
+      const s5 = App.createHomeSection({
         id: "newest",
         title: "The Newest \u{1F4DA}",
         containsMoreItems: true,
-        type: import_types.HomeSectionType.singleRowNormal
+        type: import_types.HomeSectionType.continuous
       });
-      sectionCallback(featured);
-      sectionCallback(topRated);
-      sectionCallback(justAdded);
-      sectionCallback(hotReleases);
-      sectionCallback(newest);
+      sectionCallback(s1);
+      sectionCallback(s2);
+      sectionCallback(s3);
+      sectionCallback(s4);
+      sectionCallback(s5);
       const request = App.createRequest({
         url: this.baseUrl,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
       const $ = this.cheerio.load(response.data);
-      this.parser.parseHomeSections($, featured, topRated, justAdded, hotReleases, newest);
-      sectionCallback(featured);
-      sectionCallback(topRated);
-      sectionCallback(justAdded);
-      sectionCallback(hotReleases);
-      sectionCallback(newest);
+      this.parser.parseHomeSections($, s1, s2, s3, s4, s5);
+      sectionCallback(s1);
+      sectionCallback(s2);
+      sectionCallback(s3);
+      sectionCallback(s4);
+      sectionCallback(s5);
     }
     async getViewMoreItems(homepageSectionId, metadata) {
       const page = metadata?.page ?? 1;
