@@ -13,8 +13,8 @@ import {
     MangaProviding,
     ChapterProviding,
     HomePageSectionsProviding,
-    ConfigurableSource,
-    SourceStateManager
+    ConfigurableSource, // Necessario per le impostazioni
+    SourceStateManager  // Necessario per salvare i dati
 } from '@paperback/types'
 
 import { MangaDexParser } from './MangaDexParser'
@@ -23,7 +23,7 @@ import { getMangaDexSettingsMenu, getSelectedLanguages } from './MangaDexSetting
 const MD_API = 'https://api.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '2.2.1', // Bump fix settings crash
+    version: '2.2.0',
     name: 'MangaDex (Multi)',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -37,22 +37,22 @@ export const MangaDexInfo: SourceInfo = {
             type: BadgeColor.BLUE,
         },
     ],
+    // Aggiunto SETTINGS_UI per abilitare il tasto ingranaggio
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.SETTINGS_UI,
 }
 
 export class MangaDex implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding, ConfigurableSource {
     
     parser = new MangaDexParser()
-    stateManager = App.createSourceStateManager()
+    stateManager = App.createSourceStateManager() // Inizializza lo storage
 
     constructor(private cheerio: any) {}
 
-    // --- FIX QUI ---
-    // Aggiunto 'await' perché getMangaDexSettingsMenu ora è asincrona per evitare il crash
+    // --- MENU IMPOSTAZIONI ---
     async getSourceMenu(): Promise<any> {
         return await getMangaDexSettingsMenu(this.stateManager)
     }
-    // ---------------
+    // -------------------------
 
     requestManager = App.createRequestManager({
         requestsPerSecond: 5,
@@ -85,10 +85,12 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        const languages = await getSelectedLanguages(this.stateManager)
-        const langQuery = languages.map(l => `translatedLanguage[]=${l}`).join('&')
+        // Recupera lingue attive
+        const langs = await getSelectedLanguages(this.stateManager)
+        const langQuery = langs.map(l => `translatedLanguage[]=${l}`).join('&')
 
         const limit = 500
+        // Usa translatedLanguage[] dinamico
         const request = App.createRequest({
             url: `${MD_API}/manga/${mangaId}/feed?limit=${limit}&${langQuery}&order[chapter]=desc&includeFutureUpdates=0&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
             method: 'GET'
@@ -114,8 +116,9 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const limit = 20
         const offset = metadata?.offset ?? 0
         
-        const languages = await getSelectedLanguages(this.stateManager)
-        const langQuery = languages.map(l => `availableTranslatedLanguage[]=${l}`).join('&')
+        // Cerca manga che hanno ALMENO una delle lingue selezionate
+        const langs = await getSelectedLanguages(this.stateManager)
+        const langQuery = langs.map(l => `availableTranslatedLanguage[]=${l}`).join('&')
 
         let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&${langQuery}`
 
@@ -146,8 +149,9 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         sectionCallback(sectionLatest)
         sectionCallback(sectionNew)
 
-        const languages = await getSelectedLanguages(this.stateManager)
-        const langQuery = languages.map(l => `availableTranslatedLanguage[]=${l}`).join('&')
+        // Filtra la home in base alle lingue
+        const langs = await getSelectedLanguages(this.stateManager)
+        const langQuery = langs.map(l => `availableTranslatedLanguage[]=${l}`).join('&')
         const limit = 20
 
         const baseParams = `limit=${limit}&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&${langQuery}`
@@ -176,8 +180,8 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const limit = 20
         const offset = metadata?.offset ?? 0
         
-        const languages = await getSelectedLanguages(this.stateManager)
-        const langQuery = languages.map(l => `availableTranslatedLanguage[]=${l}`).join('&')
+        const langs = await getSelectedLanguages(this.stateManager)
+        const langQuery = langs.map(l => `availableTranslatedLanguage[]=${l}`).join('&')
 
         const baseParams = `limit=${limit}&offset=${offset}&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&${langQuery}`
         

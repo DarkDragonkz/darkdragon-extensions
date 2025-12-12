@@ -1,9 +1,9 @@
 import {
-    SourceStateManager,
-    NavigationSection
+    NavigationSection,
+    SourceStateManager
 } from '@paperback/types'
 
-// ID = Codice ISO 2 lettere usato da MangaDex
+// Lista delle lingue disponibili (aggiungine altre se vuoi)
 export const LANGUAGES = [
     { id: 'en', label: 'English 🇬🇧', default: true },
     { id: 'it', label: 'Italiano 🇮🇹', default: false },
@@ -12,48 +12,46 @@ export const LANGUAGES = [
     { id: 'fr', label: 'Français 🇫🇷', default: false },
     { id: 'pt-br', label: 'Português (BR) 🇧🇷', default: false },
     { id: 'de', label: 'Deutsch 🇩🇪', default: false },
-    { id: 'ru', label: 'Русский 🇷🇺', default: false },
     { id: 'ja', label: '日本語 🇯🇵', default: false },
 ]
 
+// Recupera le lingue attive (usato per le richieste API)
 export const getSelectedLanguages = async (stateManager: SourceStateManager): Promise<string[]> => {
     const selected: string[] = []
     
     for (const lang of LANGUAGES) {
+        // Recupera il valore, se null usa il default
         const isEnabled = (await stateManager.retrieve(lang.id)) ?? lang.default
         if (isEnabled) {
             selected.push(lang.id)
         }
     }
 
-    if (selected.length === 0) {
-        return ['en']
-    }
+    // Se l'utente disattiva tutto, per sicurezza torniamo almeno l'inglese
+    if (selected.length === 0) return ['en']
 
     return selected
 }
 
-// FIX CRASH: Questa funzione ora è ASYNC e restituisce una Promise<NavigationSection>
+// Costruisce il menu delle impostazioni (Async per evitare crash)
 export const getMangaDexSettingsMenu = async (stateManager: SourceStateManager): Promise<NavigationSection> => {
     
-    // 1. Carica prima tutti i valori salvati
+    // 1. Pre-carichiamo i valori salvati
     const values: Record<string, boolean> = {}
-    
     for (const lang of LANGUAGES) {
-        // Qui aspettiamo (await) che il dato venga letto dalla memoria
         values[lang.id] = (await stateManager.retrieve(lang.id)) ?? lang.default
     }
 
-    // 2. Ora costruiamo il menu con i valori REALI (booleani), non le Promise
+    // 2. Costruiamo il menu
     return App.createNavigationSection({
-        id: 'language_settings',
+        id: 'lang_settings',
         header: 'Lingue Contenuti',
-        footer: 'Seleziona le lingue dei capitoli che vuoi visualizzare.',
+        footer: 'Seleziona le lingue che vuoi visualizzare nell\'app.',
         items: LANGUAGES.map(lang => 
             App.createSwitch({
                 id: lang.id,
                 label: lang.label,
-                value: values[lang.id], // Ora questo è true/false, non una Promise!
+                value: values[lang.id], // Valore booleano reale (no promise)
                 onChange: async (newValue) => {
                     await stateManager.store(lang.id, newValue)
                 }
