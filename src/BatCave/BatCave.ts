@@ -21,7 +21,7 @@ import { BatCaveParser } from './BatCaveParser'
 const DOMAIN = 'https://batcave.biz'
 
 export const BatCaveInfo: SourceInfo = {
-    version: '2.0.2', // Bump versione per UI fix
+    version: '2.0.5',
     name: 'BatCave',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -42,7 +42,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
     baseUrl = DOMAIN
     parser = new BatCaveParser()
     
-    // Costruttore essenziale per Cheerio
+    // Costruttore essenziale per non far crashare Cheerio
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
@@ -94,51 +94,51 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
         
-        // 1. Featured - Copertine GRANDI, No View More
-        const featured = App.createHomeSection({ 
+        // 1. Featured - Grandi, No View More
+        const s1 = App.createHomeSection({ 
             id: 'featured', 
             title: 'Featured 🔥', 
             containsMoreItems: false, 
             type: HomeSectionType.singleRowLarge 
         })
 
-        // 2. Top-rated - Copertine Piccole (Normal), No View More
-        const topRated = App.createHomeSection({ 
+        // 2. Top-rated - Piccole, No View More
+        const s2 = App.createHomeSection({ 
             id: 'top_rated', 
-            title: 'Top-rated ⭐', 
+            title: 'Top Rated ⭐', 
             containsMoreItems: false, 
             type: HomeSectionType.singleRowNormal 
         })
 
-        // 3. Just added - Copertine Piccole (Normal), No View More
-        const justAdded = App.createHomeSection({ 
+        // 3. Just added - Piccole, No View More
+        const s3 = App.createHomeSection({ 
             id: 'just_added', 
             title: 'Just Added 🆕', 
             containsMoreItems: false, 
             type: HomeSectionType.singleRowNormal 
         })
 
-        // 4. Hot new releases - Copertine Normali, No View More
-        const hotReleases = App.createHomeSection({ 
+        // 4. Hot new releases - Normali, No View More
+        const s4 = App.createHomeSection({ 
             id: 'hot_releases', 
             title: 'Hot New Releases ⚡', 
             containsMoreItems: false, 
             type: HomeSectionType.singleRowNormal 
         })
 
-        // 5. The newest - Copertine Piccole (Normal), SI View More
-        const newest = App.createHomeSection({ 
+        // 5. The newest - Piccole (in griglia), SI View More
+        const s5 = App.createHomeSection({ 
             id: 'newest', 
             title: 'The Newest 📚', 
             containsMoreItems: true, 
-            type: HomeSectionType.singleRowNormal
+            type: HomeSectionType.continuous 
         })
 
-        sectionCallback(featured)
-        sectionCallback(topRated)
-        sectionCallback(justAdded)
-        sectionCallback(hotReleases)
-        sectionCallback(newest)
+        sectionCallback(s1)
+        sectionCallback(s2)
+        sectionCallback(s3)
+        sectionCallback(s4)
+        sectionCallback(s5)
 
         const request = App.createRequest({
             url: this.baseUrl,
@@ -147,20 +147,20 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         
-        this.parser.parseHomeSections($, featured, topRated, justAdded, hotReleases, newest)
+        this.parser.parseHomeSections($, s1, s2, s3, s4, s5)
         
-        sectionCallback(featured)
-        sectionCallback(topRated)
-        sectionCallback(justAdded)
-        sectionCallback(hotReleases)
-        sectionCallback(newest)
+        sectionCallback(s1)
+        sectionCallback(s2)
+        sectionCallback(s3)
+        sectionCallback(s4)
+        sectionCallback(s5)
     }
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
         let url = ''
 
-        // Solo "The Newest" ha view more abilitato
+        // Solo 'newest' ha il view more
         if (homepageSectionId === 'newest') {
             url = `${this.baseUrl}/page/${page}/`
         } else {
@@ -174,6 +174,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         
+        // Usa lo stesso parser della home per la griglia principale
         const manga = this.parser.parseGridItems($, '.sect--latest .latest, .content .short', '.latest__chapter')
         const nextPage = manga.length > 0 ? page + 1 : undefined
 

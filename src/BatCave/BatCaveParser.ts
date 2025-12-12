@@ -21,22 +21,22 @@ export class BatCaveParser {
         return url
     }
 
-    parseHomeSections($: any, featured: HomeSection, topRated: HomeSection, justAdded: HomeSection, hotReleases: HomeSection, newest: HomeSection): void {
+    parseHomeSections($: any, s1: HomeSection, s2: HomeSection, s3: HomeSection, s4: HomeSection, s5: HomeSection): void {
         
-        // 1. Featured
-        featured.items = this.parseGridItems($, '.slider__item, .slider .owl-item')
+        // 1. Featured (Slider in alto)
+        s1.items = this.parseGridItems($, '.slider__item, .slider .owl-item')
 
-        // 2. Top-rated
-        topRated.items = this.parseGridItems($, 'div.side-block:has(h2:contains("Top-rated")) a.popular')
+        // 2. Top-rated (Sidebar)
+        s2.items = this.parseGridItems($, 'div.side-block:has(h2:contains("Top-rated")) a.popular')
 
-        // 3. Just Added
-        justAdded.items = this.parseGridItems($, 'div.side-block:has(h2:contains("Just added")) a.popular')
+        // 3. Just Added (Sidebar)
+        s3.items = this.parseGridItems($, 'div.side-block:has(h2:contains("Just added")) a.popular')
 
-        // 4. Hot New Releases
-        hotReleases.items = this.parseGridItems($, '.sect--hot .poster')
+        // 4. Hot New Releases (Sezione specifica)
+        s4.items = this.parseGridItems($, '.sect--hot .poster')
 
-        // 5. The Newest
-        newest.items = this.parseGridItems($, '.sect--latest .latest', '.latest__chapter')
+        // 5. The Newest (Sezione principale aggiornamenti)
+        s5.items = this.parseGridItems($, '.sect--latest .latest', '.latest__chapter')
     }
 
     parseGridItems($: any, selector: string, subtitleSelector?: string): PartialSourceManga[] {
