@@ -1,9 +1,9 @@
 import {
-    NavigationSection,
+    DUIForm,
     SourceStateManager
 } from '@paperback/types'
 
-// Lista delle lingue disponibili (aggiungine altre se vuoi)
+// Lista Lingue
 export const LANGUAGES = [
     { id: 'en', label: 'English 🇬🇧', default: true },
     { id: 'it', label: 'Italiano 🇮🇹', default: false },
@@ -15,47 +15,42 @@ export const LANGUAGES = [
     { id: 'ja', label: '日本語 🇯🇵', default: false },
 ]
 
-// Recupera le lingue attive (usato per le richieste API)
+// Recupera le lingue attive (Per l'uso interno dell'estensione)
 export const getSelectedLanguages = async (stateManager: SourceStateManager): Promise<string[]> => {
     const selected: string[] = []
-    
     for (const lang of LANGUAGES) {
-        // Recupera il valore, se null usa il default
         const isEnabled = (await stateManager.retrieve(lang.id)) ?? lang.default
-        if (isEnabled) {
-            selected.push(lang.id)
-        }
+        if (isEnabled) selected.push(lang.id)
     }
-
-    // Se l'utente disattiva tutto, per sicurezza torniamo almeno l'inglese
-    if (selected.length === 0) return ['en']
-
-    return selected
+    return selected.length > 0 ? selected : ['en']
 }
 
-// Costruisce il menu delle impostazioni (Async per evitare crash)
-export const getMangaDexSettingsMenu = async (stateManager: SourceStateManager): Promise<NavigationSection> => {
-    
-    // 1. Pre-carichiamo i valori salvati
-    const values: Record<string, boolean> = {}
-    for (const lang of LANGUAGES) {
-        values[lang.id] = (await stateManager.retrieve(lang.id)) ?? lang.default
-    }
-
-    // 2. Costruiamo il menu
-    return App.createNavigationSection({
-        id: 'lang_settings',
-        header: 'Lingue Contenuti',
-        footer: 'Seleziona le lingue che vuoi visualizzare nell\'app.',
-        items: LANGUAGES.map(lang => 
-            App.createSwitch({
-                id: lang.id,
-                label: lang.label,
-                value: values[lang.id], // Valore booleano reale (no promise)
-                onChange: async (newValue) => {
-                    await stateManager.store(lang.id, newValue)
-                }
-            })
-        )
+// COSTRUZIONE MENU (Stile DUI come Anilist)
+// Nota come usiamo "createDUIBinding": gestisce lui get e set senza crashare
+export const getMangaDexSettingsMenu = (stateManager: SourceStateManager): DUIForm => {
+    return App.createDUIForm({
+        sections: async () => {
+            return [
+                App.createDUISection({
+                    id: 'languages_section',
+                    header: 'Lingue Contenuti',
+                    footer: 'Seleziona le lingue che vuoi visualizzare.',
+                    isHidden: false,
+                    rows: async () => {
+                        // Mappa le lingue in interruttori DUI
+                        return LANGUAGES.map(lang => {
+                            return App.createDUISwitch({
+                                id: lang.id,
+                                label: lang.label,
+                                value: App.createDUIBinding({
+                                    get: async () => (await stateManager.retrieve(lang.id)) ?? lang.default,
+                                    set: async (newValue) => await stateManager.store(lang.id, newValue)
+                                })
+                            })
+                        })
+                    }
+                })
+            ]
+        }
     })
 }

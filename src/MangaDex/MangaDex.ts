@@ -13,8 +13,9 @@ import {
     MangaProviding,
     ChapterProviding,
     HomePageSectionsProviding,
-    ConfigurableSource, // Necessario per le impostazioni
-    SourceStateManager  // Necessario per salvare i dati
+    ConfigurableSource,
+    SourceStateManager,
+    DUIForm // <--- Importante
 } from '@paperback/types'
 
 import { MangaDexParser } from './MangaDexParser'
@@ -23,12 +24,12 @@ import { getMangaDexSettingsMenu, getSelectedLanguages } from './MangaDexSetting
 const MD_API = 'https://api.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '2.2.0',
+    version: '2.2.5', // Bump versione DUI
     name: 'MangaDex (Multi)',
     icon: 'icon.png',
     author: 'DarkDragonkz',
     authorWebsite: 'https://github.com/DarkDragonkz',
-    description: 'MangaDex source with configurable languages.',
+    description: 'MangaDex source with configurable languages (DUI).',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: 'https://mangadex.org',
     sourceTags: [
@@ -37,22 +38,23 @@ export const MangaDexInfo: SourceInfo = {
             type: BadgeColor.BLUE,
         },
     ],
-    // Aggiunto SETTINGS_UI per abilitare il tasto ingranaggio
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.SETTINGS_UI,
 }
 
 export class MangaDex implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding, ConfigurableSource {
     
     parser = new MangaDexParser()
-    stateManager = App.createSourceStateManager() // Inizializza lo storage
+    stateManager = App.createSourceStateManager()
 
     constructor(private cheerio: any) {}
 
-    // --- MENU IMPOSTAZIONI ---
-    async getSourceMenu(): Promise<any> {
-        return await getMangaDexSettingsMenu(this.stateManager)
+    // --- FIX DUI ---
+    // Non serve più async/await qui, la funzione DUI ritorna l'oggetto form immediatamente
+    // e le promise sono gestite internamente dai Binding.
+    getSourceMenu(): Promise<DUIForm> {
+        return Promise.resolve(getMangaDexSettingsMenu(this.stateManager))
     }
-    // -------------------------
+    // ---------------
 
     requestManager = App.createRequestManager({
         requestsPerSecond: 5,
@@ -85,12 +87,10 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        // Recupera lingue attive
         const langs = await getSelectedLanguages(this.stateManager)
         const langQuery = langs.map(l => `translatedLanguage[]=${l}`).join('&')
 
         const limit = 500
-        // Usa translatedLanguage[] dinamico
         const request = App.createRequest({
             url: `${MD_API}/manga/${mangaId}/feed?limit=${limit}&${langQuery}&order[chapter]=desc&includeFutureUpdates=0&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
             method: 'GET'
@@ -116,7 +116,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const limit = 20
         const offset = metadata?.offset ?? 0
         
-        // Cerca manga che hanno ALMENO una delle lingue selezionate
         const langs = await getSelectedLanguages(this.stateManager)
         const langQuery = langs.map(l => `availableTranslatedLanguage[]=${l}`).join('&')
 
@@ -149,7 +148,6 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         sectionCallback(sectionLatest)
         sectionCallback(sectionNew)
 
-        // Filtra la home in base alle lingue
         const langs = await getSelectedLanguages(this.stateManager)
         const langQuery = langs.map(l => `availableTranslatedLanguage[]=${l}`).join('&')
         const limit = 20
