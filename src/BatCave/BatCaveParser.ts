@@ -98,8 +98,7 @@ export class BatCaveParser {
         const chapters: Chapter[] = []
         const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s)
         
-        // Tentiamo di estrarre il nome della serie dall'HTML grezzo per pulire i titoli dei capitoli
-        // Usiamo una regex leggera per evitare di dover caricare Cheerio solo per questo
+        // Estraiamo il titolo della serie per pulizia di fallback
         const seriesTitleMatch = html.match(/<h1[^>]*>(.*?)<\/h1>/i)
         const seriesTitle = seriesTitleMatch ? seriesTitleMatch[1].replace(/<[^>]+>/g, '').trim() : ''
 
@@ -110,7 +109,8 @@ export class BatCaveParser {
             if (data.chapters && Array.isArray(data.chapters)) {
                 for (const chap of data.chapters) {
                     const id = String(chap.id)
-                    let rawTitle = (chap.title || '').trim()
+                    let rawTitle = (chap.title || '').trim() 
+                    // Es: "DC-Marvel (2025-) #The Flash - Fantastic Four"
                     
                     // --- 1. CALCOLO NUMERO CAPITOLO ---
                     let chapNum = 0
@@ -121,37 +121,57 @@ export class BatCaveParser {
                         if (numMatch) chapNum = parseFloat(numMatch[numMatch.length - 1] ?? '0')
                     }
 
-                    // --- 2. PIPELINE DI PULIZIA PROFONDA ---
+                    // --- 2. LOGICA SPECIALIZZATA (SPLIT BY HASHTAG) ---
                     
-                    // A. Rimuovi il nome della serie se appare all'inizio del titolo
-                    // Es: "The Flash - Chapter 1" -> " - Chapter 1"
-                    if (seriesTitle && rawTitle.toLowerCase().startsWith(seriesTitle.toLowerCase())) {
-                        rawTitle = rawTitle.substring(seriesTitle.length).trim()
+                    // A. Estrazione Anno (es. (2025-)) prima di tagliare tutto
+                    let yearSuffix = ''
+                    const yearMatch = rawTitle.match(/(\(\d{4}[-–—]?\))/);
+                    if (yearMatch) {
+                        yearSuffix = ` ${yearMatch[1]}`; // " (2025-)"
                     }
 
-                    // B. Rimuovi varianti di "Chapter X", "Ch.X", "No.X" dal titolo residuo
-                    // Questo risolve il problema "Ch. 1 - Ch.1"
-                    const chapterNumRegex = new RegExp(`(chapter|ch\\.?|no\\.?)\\s*${chapNum}`, 'gi')
-                    rawTitle = rawTitle.replace(chapterNumRegex, '').trim()
+                    // B. Identificazione del vero titolo
+                    let cleanTitle = rawTitle;
 
-                    // C. Pulizia punteggiatura residua (trattini all'inizio o alla fine, doppi spazi)
-                    // Es: "- The Battle" -> "The Battle"
-                    let cleanTitle = rawTitle
-                        .replace(/^[-–—:\s]+/, '') // Toglie simboli all'inizio
+                    if (rawTitle.includes('#')) {
+                        // CASO SCREENSHOT: "Serie (Anno) #Titolo"
+                        // Prendiamo tutto ciò che c'è DOPO il primo #
+                        const parts = rawTitle.split('#');
+                        if (parts.length > 1) {
+                            // Ricostruiamo la parte destra nel caso ci siano altri # nel titolo
+                            cleanTitle = parts.slice(1).join('#').trim();
+                        }
+                    } else {
+                        // CASO FALLBACK (Niente hashtag)
+                        // Rimuoviamo il nome della serie se è all'inizio
+                        if (seriesTitle && cleanTitle.toLowerCase().startsWith(seriesTitle.toLowerCase())) {
+                            cleanTitle = cleanTitle.substring(seriesTitle.length).trim();
+                        }
+                    }
+
+                    // C. Pulizia Finale del Titolo Estratto
+                    cleanTitle = cleanTitle
+                        .replace(yearSuffix.trim(), '') // Rimuove l'anno se è rimasto incollato
+                        .replace(/^(chapter|ch\.?|no\.?)\s*\d+(\.\d+)?\s*[-–—]?/i, '') // Rimuove "Ch. 1 -" se presente nel sottotitolo
+                        .replace(/^[-–—:\s]+/, '') // Toglie simboli all'inizio (es. "- Deadpool")
                         .replace(/[-–—:\s]+$/, '') // Toglie simboli alla fine
-                        .replace(/\s+/g, ' ')      // Normalizza spazi
-                        .trim()
+                        .replace(/_/g, ' ')        // Underscore in spazi
+                        .replace(/\s+/g, ' ')      // Normalizza spazi doppi
+                        .trim();
 
                     // D. Costruzione Nome Finale
-                    // Formato: "Ch. 1 - Titolo Pulito" oppure solo "Ch. 1"
-                    let finalName = `Ch. ${chapNum}`
+                    // Formato: "Ch. 1 - Titolo Pulito (2025-)"
+                    let finalName = `Ch. ${chapNum}`;
+                    
                     if (cleanTitle.length > 0) {
-                        finalName += ` - ${cleanTitle}`
+                        finalName += ` - ${cleanTitle}`;
                     }
                     
-                    // E. (Opzionale) Se vuoi mantenere l'anno come nell'esempio "Fantastic Four (2025 -)"
-                    // Il codice sopra non rimuove l'anno se è parte del titolo, quindi "(2025 -)" rimane.
+                    if (yearSuffix) {
+                        finalName += yearSuffix;
+                    }
 
+                    // --- DATA ---
                     let time = new Date()
                     if (chap.date) {
                         const parts = chap.date.split('.')
