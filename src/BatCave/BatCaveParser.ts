@@ -13,49 +13,28 @@ const BASE_URL = 'https://batcave.biz'
 
 export class BatCaveParser {
 
-    /**
-     * Tenta di trasformare l'URL di una miniatura (thumb) nell'URL dell'immagine originale HD.
-     * Gestisce path relativi, assoluti e la struttura tipica DLE /thumbs/.
-     */
     private getHighResImage(url: string | undefined): string {
         if (!url) return ''
-
-        // Normalizzazione path
-        if (url.startsWith('/')) {
-            url = BASE_URL + url
-        }
-
-        // FIX QUALITÀ: Rimuove '/thumbs/' dai path DLE per ottenere l'HD.
-        // Es: .../uploads/posts/2023-12/thumbs/cover.jpg -> .../uploads/posts/2023-12/cover.jpg
-        if (url.includes('/thumbs/')) {
-            url = url.replace('/thumbs/', '/')
-        }
-
+        if (url.startsWith('/')) url = BASE_URL + url
+        if (url.includes('/thumbs/')) url = url.replace('/thumbs/', '/')
         return url
     }
 
-    /**
-     * Helper per parsare le liste di manga (Grid/List items).
-     */
     parseGridItems($: any, selector: string, subtitleSelector?: string): PartialSourceManga[] {
         const items: PartialSourceManga[] = []
         
         $(selector).each((_: any, item: any) => {
             const link = $(item).is('a') ? $(item) : $('a', item).first()
             const href = link.attr('href')
-            const id = href?.split('/').pop() // Prende l'ultimo segmento come ID (es. slug-manga.html)
+            const id = href?.split('/').pop()
             
-            // Fallback multipli per il titolo
             const title = $('.poster__title, .latest__title a, .readed__title a, .popular__title', item).first().text().trim() || link.text().trim()
-
-            // Recupera l'URL grezzo (data-src o src)
             const rawImage = $('img', item).attr('data-src') ?? $('img', item).attr('src')
             const image = this.getHighResImage(rawImage)
 
             let subtitle: string | undefined = undefined
             if (subtitleSelector) {
                 const subText = $(subtitleSelector, item).text().trim()
-                // Pulisce "Chapter 123" in "123" per risparmiare spazio, o lascia il testo se breve
                 subtitle = subText.replace(/chapter\s*/i, 'Ch. ').trim()
             }
 
@@ -74,10 +53,8 @@ export class BatCaveParser {
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
         const title = $('h1.main-page-title').text().trim() || $('h1').first().text().trim() || 'Unknown'
-        
         const rawImage = $('.page__poster img').attr('src')
         const image = this.getHighResImage(rawImage)
-
         const desc = $('.page__text').text().trim()
         
         let author = 'Unknown'
@@ -97,9 +74,8 @@ export class BatCaveParser {
         const arrayTags: Tag[] = []
         $('.page__tags a').each((_: any, a: any) => {
             const label = $(a).text().trim()
-            // Estrazione ID tag più robusta
             const hrefParts = $(a).attr('href')?.split('/')
-            const id = hrefParts ? hrefParts[hrefParts.length - 2] : label // DLE tags url structure usually .../tags/ACTION/
+            const id = hrefParts ? hrefParts[hrefParts.length - 2] : label
             if (label) arrayTags.push(App.createTag({ id: id ?? label, label }))
         })
         const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
@@ -120,7 +96,6 @@ export class BatCaveParser {
 
     parseChapters(html: string): Chapter[] {
         const chapters: Chapter[] = []
-        // Regex per catturare l'oggetto JSON idratato
         const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s)
         if (!scriptData) return []
 
@@ -129,42 +104,65 @@ export class BatCaveParser {
             if (data.chapters && Array.isArray(data.chapters)) {
                 for (const chap of data.chapters) {
                     const id = String(chap.id)
+                    let rawTitle = (chap.title || '').trim()
                     
-                    // --- LOGICA DI NOMENCLATURA MIGLIORATA ---
-                    // Dati grezzi
-                    const rawTitle = (chap.title || '').replace(/_/g, ' ').trim()
+                    // --- CALCOLO NUMERO CAPITOLO ---
                     let chapNum = 0
-                    
                     if (chap.posi) {
                         chapNum = parseFloat(chap.posi)
                     } else {
-                        // Fallback regex sul titolo se posi manca
                         const numMatch = rawTitle.match(/(\d+(\.\d+)?)/g)
                         if (numMatch) chapNum = parseFloat(numMatch[numMatch.length - 1] ?? '0')
                     }
 
-                    // Costruzione nome formattato: "Chapter 5 - The Battle"
-                    let name = ''
-                    if (rawTitle) {
-                        // Se il titolo contiene già "Chapter X", non lo duplichiamo
-                        if (rawTitle.toLowerCase().startsWith('chapter') || rawTitle.includes(String(chapNum))) {
-                            name = rawTitle
-                        } else {
-                            name = `Chapter ${chapNum} - ${rawTitle}`
-                        }
-                    } else {
-                        name = `Chapter ${chapNum}`
+                    // --- PIPELINE DI PULIZIA DEL TITOLO ---
+                    // 1. Estrazione e rimozione dell'anno (es. (2025-))
+                    let yearSuffix = ''
+                    const yearMatch = rawTitle.match(/\(\d{4}-?\)/)
+                    if (yearMatch) {
+                        yearSuffix = ` ${yearMatch[0]}` // Conserviamo lo spazio prima
+                        rawTitle = rawTitle.replace(yearMatch[0], '')
+                    }
+
+                    // 2. Rimozione "Chapter X" o "Ch. X" ridondante all'inizio
+                    // Rimuove "Chapter 1 -", "Ch. 1 -", "Chapter 1"
+                    const redundantPrefixRegex = new RegExp(`^(chapter|ch\\.?)\\s*${chapNum}\\s*[-–—]?\\s*`, 'i')
+                    rawTitle = rawTitle.replace(redundantPrefixRegex, '')
+
+                    // 3. Gestione Hashtag (#TheFlash -> The Flash)
+                    // Rimuove il cancelletto e opzionalmente aggiunge spazio tra CamelCase (es. TheFlash -> The Flash)
+                    // Qui facciamo una rimozione semplice del # e pulizia
+                    rawTitle = rawTitle.replace(/#/g, '')
+                    
+                    // 4. Pulizia generale (doppi spazi, trattini inizio/fine)
+                    // Rimuove anche "DC-Marvel" se vuoi pulire editori noti, ma per ora puliamo la sintassi
+                    let cleanTitle = rawTitle
+                        .replace(/\s+/g, ' ')          // Normalizza spazi
+                        .replace(/^[-–—]\s*/, '')      // Rimuove trattini iniziali
+                        .replace(/\s*[-–—]$/, '')      // Rimuove trattini finali
+                        .trim()
+
+                    // Se dopo la pulizia il titolo è vuoto o è solo simboli, fallback
+                    if (!cleanTitle || cleanTitle.length < 2) {
+                        cleanTitle = ''
+                    }
+
+                    // 5. Costruzione Finale: Ch. 1 - Titolo (2025-)
+                    let finalName = `Ch. ${chapNum}`
+                    if (cleanTitle) {
+                        finalName += ` - ${cleanTitle}`
+                    }
+                    if (yearSuffix) {
+                        finalName += yearSuffix
                     }
                     // ----------------------------------------
 
                     let time = new Date()
                     if (chap.date) {
-                        // Formato atteso: DD.MM.YYYY
                         const parts = chap.date.split('.')
                         if (parts.length === 3) {
                             time = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
                         } else {
-                            // Fallback se il formato cambia
                             const tryDate = new Date(chap.date)
                             if (!isNaN(tryDate.getTime())) time = tryDate
                         }
@@ -172,7 +170,7 @@ export class BatCaveParser {
 
                     chapters.push(App.createChapter({
                         id: id,
-                        name: name,
+                        name: finalName,
                         chapNum: chapNum,
                         time: time,
                         langCode: 'en'
@@ -183,7 +181,6 @@ export class BatCaveParser {
             console.error(`BatCave: Error parsing chapters JSON: ${e}`)
         }
 
-        // Importante: Ordinare i capitoli dal più recente al più vecchio
         return chapters.sort((a, b) => b.chapNum - a.chapNum)
     }
 
@@ -198,10 +195,8 @@ export class BatCaveParser {
                     for (const img of data.images) {
                          if (img && !img.includes('logo') && !img.includes('icon')) {
                              let cleanImg = img
-                             // Normalizzazione URL protocollo
                              if (cleanImg.startsWith('//')) cleanImg = 'https:' + cleanImg
                              else if (cleanImg.startsWith('/')) cleanImg = BASE_URL + cleanImg
-                             
                              pages.push(cleanImg)
                          }
                     }
@@ -261,14 +256,11 @@ export class BatCaveParser {
             containsMoreItems: true, 
             type: HomeSectionType.continuous 
         })
-        // Nota: A volte .latest__chapter non esiste, il parseGridItems gestirà undefined nel sottotitolo
         latestSection.items = this.parseGridItems($, '.sect--latest .latest', '.latest__chapter')
         sectionCallback(latestSection)
     }
 
     parseSearchResults($: any): PartialSourceManga[] {
-        // I risultati di ricerca DLE standard spesso appaiono simili alla sezione Latest o con classe .search-result
-        // Proviamo selettori multipli per sicurezza
         let results = this.parseGridItems($, '.readed') 
         if (results.length === 0) {
             results = this.parseGridItems($, '.sect--latest .latest')
