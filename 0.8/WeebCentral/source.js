@@ -817,16 +817,22 @@ var _Sources = (() => {
         pages
       });
     }
-    // Helper per estrarre sottotitolo (Ultimo capitolo)
+    // HELPER POTENZIATO: Estrae sottotitoli anche da link o strutture complesse
     extractSubtitle($el) {
-      let sub = $el.find('span:contains("Chapter"), span:contains("Ch."), time').first().text().trim();
+      let sub = $el.find('span:contains("Chapter"), span:contains("Ch."), time').last().text().trim();
       if (!sub) {
-        const time = $el.find("time").text().trim();
-        if (time) sub = time;
+        const chapterLink = $el.find('a[href*="/chapters/"]').first();
+        if (chapterLink.length > 0) {
+          sub = chapterLink.text().trim();
+        }
+      }
+      if (!sub) {
+        const text = $el.text();
+        const match = text.match(/Chapter\s*\d+/i);
+        if (match) sub = match[0];
       }
       return sub || void 0;
     }
-    // Helper per pulire titoli sporchi (es "One Piece Cover")
     cleanTitle(title) {
       return title.replace(/\s+Cover$/i, "").replace(/\s+Poster$/i, "").replace(/\s+Scan$/i, "").trim();
     }
@@ -872,7 +878,8 @@ var _Sources = (() => {
         let title = img.attr("alt") || "Unknown";
         title = this.cleanTitle(title);
         const image = img.attr("src") || "";
-        const subtitle = this.extractSubtitle($el.parent());
+        const card = $el.closest("div.relative, div.flex-col, article");
+        const subtitle = this.extractSubtitle(card.length ? card : $el.parent());
         hotItems.push(App.createPartialSourceManga({
           mangaId: id,
           image,
@@ -881,9 +888,7 @@ var _Sources = (() => {
         }));
       });
       let recentContainer = $('section:contains("Recent"), section:contains("Latest")').first();
-      if (recentContainer.length === 0) {
-        recentContainer = $("body");
-      }
+      if (recentContainer.length === 0) recentContainer = $("body");
       recentContainer.find('a[href*="/series/"]').each((_, el) => {
         const $el = $(el);
         const href = $el.attr("href");
@@ -893,10 +898,9 @@ var _Sources = (() => {
         let image = $el.find("img").attr("src");
         let title = $el.find("img").attr("alt");
         if (!image) {
-          image = $el.closest("div").find("img").first().attr("src");
-        }
-        if (!title) {
-          title = $el.closest("div").find("a.font-bold, a.text-white").first().text().trim();
+          const card = $el.closest("div, tr");
+          image = card.find("img").first().attr("src");
+          title = card.find("a.font-bold, a.text-white").first().text().trim();
         }
         if (!image) return;
         title = this.cleanTitle(title || "Unknown");
