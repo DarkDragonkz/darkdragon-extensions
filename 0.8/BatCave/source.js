@@ -751,7 +751,7 @@ var _Sources = (() => {
         let subtitle = void 0;
         if (subtitleSelector) {
           const subText = $(subtitleSelector, item).text().trim();
-          subtitle = subText.replace(/chapter\s*/i, "Ch. ").trim();
+          subtitle = subText ? subText.replace(/chapter\s*/i, "Ch. ").trim() : "Comic";
         }
         if (id && title) {
           items.push(App.createPartialSourceManga({
@@ -774,11 +774,19 @@ var _Sources = (() => {
       let status = "Ongoing";
       $(".page__list li").each((_, li) => {
         const text = $(li).text().trim();
-        if (text.includes("Writer:")) author = text.replace("Writer:", "").trim();
-        if (text.includes("Artist:")) artist = text.replace("Artist:", "").trim();
+        const lowerText = text.toLowerCase();
+        if (text.includes("Writer:")) {
+          author = text.replace("Writer:", "").trim();
+        }
+        if (text.includes("Artist:")) {
+          artist = text.replace("Artist:", "").trim();
+        }
         if (text.includes("Release type:")) {
-          const type = text.replace("Release type:", "").trim().toLowerCase();
-          if (type.includes("completed")) status = "Completed";
+          if (lowerText.includes("completed") || lowerText.includes("finished")) {
+            status = "Completed";
+          } else if (lowerText.includes("ongoing") || lowerText.includes("publishing")) {
+            status = "Ongoing";
+          }
         }
       });
       const arrayTags = [];
@@ -874,7 +882,7 @@ var _Sources = (() => {
               volume: volNum ? parseFloat(volNum) : void 0,
               time,
               langCode: "en"
-              // RIPRISTINATO STANDARD PER SICUREZZA
+              // SICUREZZA: Sempre 'en' per evitare 403 o errori app
             }));
           }
         }
@@ -963,8 +971,7 @@ var _Sources = (() => {
   // src/BatCave/BatCave.ts
   var DOMAIN = "https://batcave.biz";
   var BatCaveInfo = {
-    version: "1.1.0",
-    // Bump version per le modifiche
+    version: "1.2.0",
     name: "BatCave",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -1022,7 +1029,7 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, this.RETRIES);
-      return this.parser.parseChapters(response.data ?? "");
+      return this.parser.parseChapters(response.data);
     }
     async getChapterDetails(mangaId, chapterId) {
       const mangaNumericId = mangaId.split("-")[0];
@@ -1031,7 +1038,7 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, this.RETRIES);
-      return this.parser.parseChapterDetails(response.data ?? "", mangaId, chapterId);
+      return this.parser.parseChapterDetails(response.data, mangaId, chapterId);
     }
     async getSearchResults(query, metadata) {
       const page = metadata?.page ?? 1;
