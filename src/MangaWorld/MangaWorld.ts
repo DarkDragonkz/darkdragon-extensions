@@ -23,13 +23,13 @@ import { URLBuilder } from '../helper'
 const MW_DOMAIN = 'https://www.mangaworld.mx'
 
 export const MangaWorldInfo: SourceInfo = {
-    version: '3.5.0', // Bump version per fix stato e capitoli
+    version: '3.6.0', // Bump version: Safety & Logic Fixes
     name: 'MangaWorld',
-    description: 'Extension that pulls manga from MangaWorld.',
-    author: 'NmN',
-    authorWebsite: 'http://github.com/pandeynmm',
+    description: 'Extension that pulls manga from MangaWorld. Optimized for speed and safety.',
+    author: 'DarkDragonkzz',
+    authorWebsite: 'https://github.com/DarkDragonkzz',
     icon: 'icon.png',
-    contentRating: ContentRating.EVERYONE,
+    contentRating: ContentRating.MATURE,
     language: 'it',
     websiteBaseURL: MW_DOMAIN,
     sourceTags: [
@@ -43,23 +43,23 @@ export const MangaWorldInfo: SourceInfo = {
 
 export class MangaWorld implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding { 
     baseUrl = MW_DOMAIN
-    
-    constructor(private cheerio: any) {}
-    
-    RETRIES = 10
     parser = new MangaWorldParser()
+    
+    // SAFETY: Abbassato da 10 a 2. 10 è un attacco DDoS involontario.
+    RETRIES = 2
+
+    constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 8,
+        // SAFETY: 8 rps è aggressivo per un sito WP. 4 è il sweet spot.
+        requestsPerSecond: 4,
         requestTimeout: 20000,
         interceptor: {
             interceptRequest: async (request: any) => {
                 request.headers = {
                     ...(request.headers ?? {}),
-                    ...{
-                        'referer': `${this.baseUrl}/`,
-                        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    }
+                    'referer': `${this.baseUrl}/`,
+                    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 }
                 return request
             },
@@ -94,6 +94,7 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
+        // Nota: MangaWorld a volte ha layout "single page" (style=list)
         const request = App.createRequest({
             url: `${this.baseUrl}/manga/${mangaId}/read/${chapterId}/?style=list`,
             method: 'GET',
@@ -105,7 +106,7 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
 
     async getTags(): Promise<TagSection[]> {
         const request = App.createRequest({
-            url: this.baseUrl,
+            url: `${this.baseUrl}/archive`, // Carichiamo archive che è più leggero della home per i tag
             method: 'GET',
         })
         const response = await this.requestManager.schedule(request, this.RETRIES)
@@ -122,8 +123,11 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
         const data = await this.requestManager.schedule(request, this.RETRIES)
         const $ = this.cheerio.load(data.data)
         const manga = this.parser.parseSearchResults($)
+        
+        // Paginazione MangaWorld
         page++
-        if (manga.length < 16) page = -1
+        if (manga.length < 16) page = -1 // Se troviamo meno item del limite, siamo alla fine
+        
         return App.createPagedResults({
             results: manga,
             metadata: { page: page },
@@ -178,25 +182,32 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
             headers: {
                 'referer': `${this.baseUrl}/`,
                 'origin': `${this.baseUrl}/`,
-                'user-agent': await this.requestManager.getDefaultUserAgent()
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
         })
     }
 
     constructSearchRequest(page: number, query: SearchRequest): any {
-        const request = App.createRequest({
-            url: new URLBuilder(this.baseUrl)
+        const builder = new URLBuilder(this.baseUrl)
                 .addPathComponent('archive')
-                .addQueryParameter('keyword', encodeURIComponent(query?.title ?? ''))
-                .addQueryParameter(
-                    'genre',
-                    query?.includedTags?.map((x: any) => x.id)
-                )
-                .addQueryParameter('sort', 'most_read')
                 .addQueryParameter('page', page.toString())
-                .buildUrl({ addTrailingSlash: true, includeUndefinedParameters: false }),
+
+        if (query?.title) {
+            builder.addQueryParameter('keyword', encodeURIComponent(query.title))
+        }
+
+        if (query?.includedTags && query.includedTags.length > 0) {
+             builder.addQueryParameter('genre', query.includedTags.map((x: any) => x.id))
+        }
+
+        // Se non c'è ricerca specifica, ordiniamo per più letti (UX migliore)
+        if (!query?.title && (!query?.includedTags || query.includedTags.length === 0)) {
+            builder.addQueryParameter('sort', 'most_read')
+        }
+
+        return App.createRequest({
+            url: builder.buildUrl({ addTrailingSlash: true, includeUndefinedParameters: false }),
             method: 'GET',
         })
-        return request
     }
 }
