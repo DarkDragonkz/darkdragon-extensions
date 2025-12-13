@@ -849,11 +849,10 @@ var _Sources = (() => {
             if (cleanTitle.length > 0 && cleanTitle !== String(chapNum)) {
               finalName = cleanTitle;
             }
-            let customLangCode = "en";
-            if (chap.pages) {
-              customLangCode = `${chap.pages}p`;
-            } else if (chap.count) {
-              customLangCode = `${chap.count}p`;
+            let customLangCode = "\u{1F1FA}\u{1F1F8}";
+            const pagesCount = chap.pages || chap.count;
+            if (pagesCount) {
+              customLangCode = `\u{1F1FA}\u{1F1F8} - ${pagesCount}p`;
             }
             let time = /* @__PURE__ */ new Date();
             if (chap.date) {
@@ -872,7 +871,7 @@ var _Sources = (() => {
               volume: volNum ? parseFloat(volNum) : void 0,
               time,
               langCode: customLangCode
-              // <--- Qui iniettiamo le pagine
+              // <--- Output: "🇺🇸 - 56p"
             }));
           }
         }
