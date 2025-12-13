@@ -15,22 +15,20 @@ export class BatCaveParser {
 
     /**
      * Tenta di trasformare l'URL di una miniatura (thumb) nell'URL dell'immagine originale HD.
-     * Rimuove segmenti tipici come '/thumbs/' o suffissi di ridimensionamento.
+     * Gestisce path relativi, assoluti e la struttura tipica DLE /thumbs/.
      */
     private getHighResImage(url: string | undefined): string {
         if (!url) return ''
 
-        // Gestione path relativi
+        // Normalizzazione path
         if (url.startsWith('/')) {
             url = BASE_URL + url
         }
 
-        // FIX QUALITÀ:
-        // I siti DLE mettono le miniature in cartelle "/thumbs/". 
-        // L'immagine originale è solitamente allo stesso percorso ma senza "/thumbs/".
+        // FIX QUALITÀ: Rimuove '/thumbs/' dai path DLE per ottenere l'HD.
         // Es: .../uploads/posts/2023-12/thumbs/cover.jpg -> .../uploads/posts/2023-12/cover.jpg
         if (url.includes('/thumbs/')) {
-            return url.replace('/thumbs/', '/')
+            url = url.replace('/thumbs/', '/')
         }
 
         return url
@@ -45,20 +43,20 @@ export class BatCaveParser {
         $(selector).each((_: any, item: any) => {
             const link = $(item).is('a') ? $(item) : $('a', item).first()
             const href = link.attr('href')
-            const id = href?.split('/').pop()
+            const id = href?.split('/').pop() // Prende l'ultimo segmento come ID (es. slug-manga.html)
             
+            // Fallback multipli per il titolo
             const title = $('.poster__title, .latest__title a, .readed__title a, .popular__title', item).first().text().trim() || link.text().trim()
 
             // Recupera l'URL grezzo (data-src o src)
             const rawImage = $('img', item).attr('data-src') ?? $('img', item).attr('src')
-
-            // Usa la funzione helper per ottenere la versione HD
             const image = this.getHighResImage(rawImage)
 
             let subtitle: string | undefined = undefined
             if (subtitleSelector) {
                 const subText = $(subtitleSelector, item).text().trim()
-                subtitle = subText.replace(/chapter\s*/i, '').trim()
+                // Pulisce "Chapter 123" in "123" per risparmiare spazio, o lascia il testo se breve
+                subtitle = subText.replace(/chapter\s*/i, 'Ch. ').trim()
             }
 
             if (id && title) {
@@ -77,7 +75,6 @@ export class BatCaveParser {
     parseMangaDetails($: any, mangaId: string): SourceManga {
         const title = $('h1.main-page-title').text().trim() || $('h1').first().text().trim() || 'Unknown'
         
-        // Anche nei dettagli usiamo la logica HD per sicurezza
         const rawImage = $('.page__poster img').attr('src')
         const image = this.getHighResImage(rawImage)
 
@@ -100,8 +97,10 @@ export class BatCaveParser {
         const arrayTags: Tag[] = []
         $('.page__tags a').each((_: any, a: any) => {
             const label = $(a).text().trim()
-            const id = $(a).attr('href')?.split('/').filter(Boolean).pop() ?? label
-            if (label) arrayTags.push(App.createTag({ id, label }))
+            // Estrazione ID tag più robusta
+            const hrefParts = $(a).attr('href')?.split('/')
+            const id = hrefParts ? hrefParts[hrefParts.length - 2] : label // DLE tags url structure usually .../tags/ACTION/
+            if (label) arrayTags.push(App.createTag({ id: id ?? label, label }))
         })
         const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
 
@@ -121,6 +120,7 @@ export class BatCaveParser {
 
     parseChapters(html: string): Chapter[] {
         const chapters: Chapter[] = []
+        // Regex per catturare l'oggetto JSON idratato
         const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s)
         if (!scriptData) return []
 
@@ -129,25 +129,50 @@ export class BatCaveParser {
             if (data.chapters && Array.isArray(data.chapters)) {
                 for (const chap of data.chapters) {
                     const id = String(chap.id)
-                    const titleRaw = (chap.title || `Chapter ${chap.id}`).replace(/_/g, ' ').replace(/\s+/g, ' ').trim()
                     
-                    let time = new Date()
-                    if (chap.date) {
-                        const parts = chap.date.split('.')
-                        if (parts.length === 3) time = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
-                    }
-
+                    // --- LOGICA DI NOMENCLATURA MIGLIORATA ---
+                    // Dati grezzi
+                    const rawTitle = (chap.title || '').replace(/_/g, ' ').trim()
                     let chapNum = 0
+                    
                     if (chap.posi) {
                         chapNum = parseFloat(chap.posi)
                     } else {
-                        const numMatch = titleRaw.match(/(\d+(\.\d+)?)/g)
+                        // Fallback regex sul titolo se posi manca
+                        const numMatch = rawTitle.match(/(\d+(\.\d+)?)/g)
                         if (numMatch) chapNum = parseFloat(numMatch[numMatch.length - 1] ?? '0')
+                    }
+
+                    // Costruzione nome formattato: "Chapter 5 - The Battle"
+                    let name = ''
+                    if (rawTitle) {
+                        // Se il titolo contiene già "Chapter X", non lo duplichiamo
+                        if (rawTitle.toLowerCase().startsWith('chapter') || rawTitle.includes(String(chapNum))) {
+                            name = rawTitle
+                        } else {
+                            name = `Chapter ${chapNum} - ${rawTitle}`
+                        }
+                    } else {
+                        name = `Chapter ${chapNum}`
+                    }
+                    // ----------------------------------------
+
+                    let time = new Date()
+                    if (chap.date) {
+                        // Formato atteso: DD.MM.YYYY
+                        const parts = chap.date.split('.')
+                        if (parts.length === 3) {
+                            time = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
+                        } else {
+                            // Fallback se il formato cambia
+                            const tryDate = new Date(chap.date)
+                            if (!isNaN(tryDate.getTime())) time = tryDate
+                        }
                     }
 
                     chapters.push(App.createChapter({
                         id: id,
-                        name: titleRaw,
+                        name: name,
                         chapNum: chapNum,
                         time: time,
                         langCode: 'en'
@@ -155,10 +180,11 @@ export class BatCaveParser {
                 }
             }
         } catch (e) {
-            console.error(`Error parsing chapters JSON: ${e}`)
+            console.error(`BatCave: Error parsing chapters JSON: ${e}`)
         }
 
-        return chapters
+        // Importante: Ordinare i capitoli dal più recente al più vecchio
+        return chapters.sort((a, b) => b.chapNum - a.chapNum)
     }
 
     parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
@@ -172,14 +198,16 @@ export class BatCaveParser {
                     for (const img of data.images) {
                          if (img && !img.includes('logo') && !img.includes('icon')) {
                              let cleanImg = img
+                             // Normalizzazione URL protocollo
                              if (cleanImg.startsWith('//')) cleanImg = 'https:' + cleanImg
                              else if (cleanImg.startsWith('/')) cleanImg = BASE_URL + cleanImg
+                             
                              pages.push(cleanImg)
                          }
                     }
                 }
             } catch (e) {
-                console.error(`Error parsing images JSON: ${e}`)
+                console.error(`BatCave: Error parsing images JSON: ${e}`)
             }
         }
 
@@ -233,11 +261,18 @@ export class BatCaveParser {
             containsMoreItems: true, 
             type: HomeSectionType.continuous 
         })
+        // Nota: A volte .latest__chapter non esiste, il parseGridItems gestirà undefined nel sottotitolo
         latestSection.items = this.parseGridItems($, '.sect--latest .latest', '.latest__chapter')
         sectionCallback(latestSection)
     }
 
     parseSearchResults($: any): PartialSourceManga[] {
-        return this.parseGridItems($, '.readed')
+        // I risultati di ricerca DLE standard spesso appaiono simili alla sezione Latest o con classe .search-result
+        // Proviamo selettori multipli per sicurezza
+        let results = this.parseGridItems($, '.readed') 
+        if (results.length === 0) {
+            results = this.parseGridItems($, '.sect--latest .latest')
+        }
+        return results
     }
 }

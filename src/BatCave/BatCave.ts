@@ -20,7 +20,7 @@ import { BatCaveParser } from './BatCaveParser'
 const DOMAIN = 'https://batcave.biz'
 
 export const BatCaveInfo: SourceInfo = {
-    version: '1.0.9',
+    version: '1.1.0', // Bump version per le modifiche
     name: 'BatCave',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -41,14 +41,13 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
     baseUrl = DOMAIN
     parser = new BatCaveParser()
     
-    // RETRIES abbassato a 2. 10 è eccessivo e danneggia la UX in caso di down.
     RETRIES = 2 
 
     constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
         requestsPerSecond: 4,
-        requestTimeout: 20000, // Timeout leggermente ridotto
+        requestTimeout: 20000,
         interceptor: {
             interceptRequest: async (request: any) => {
                 request.headers = {
@@ -88,6 +87,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
+        // Gestione ID composto (es: 1234-comic-name) -> prende solo 1234
         const mangaNumericId = mangaId.split('-')[0]
         const request = App.createRequest({
             url: `${this.baseUrl}/reader/${mangaNumericId}/${chapterId}`,
@@ -100,8 +100,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
         
-        // Logica di ricerca DataLife Engine (DLE)
-        // Spesso usa: do=search&subaction=search&story=QUERY&search_start=PAGE
+        // DLE Standard Search
         const request = App.createRequest({
             url: `${this.baseUrl}/index.php?do=search&subaction=search&story=${encodeURIComponent(query.title ?? '')}&search_start=${page}`,
             method: 'GET'
@@ -111,7 +110,6 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($)
         
-        // Se non troviamo manga, non c'è una pagina successiva
         const nextPage = manga.length > 0 ? page + 1 : undefined
 
         return App.createPagedResults({
@@ -135,15 +133,10 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
         const page = metadata?.page ?? 1
         let url = ''
 
-        // Gestione paginazione per sezione "Latest"
-        // I siti DLE solitamente paginano la home/latest con /page/N/
         if (homepageSectionId === 'latest') {
-            // Pagina 1 è la home, pagina 2+ è /page/N/
             if (page === 1) url = this.baseUrl
             else url = `${this.baseUrl}/page/${page}/`
         } else {
-            // Se in futuro vuoi supportare ViewMore per 'featured' o 'hot', 
-            // dovrai trovare l'URL specifico (es. https://batcave.biz/hot/page/2/)
             return App.createPagedResults({ results: [] })
         }
 
@@ -155,15 +148,9 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
         const response = await this.requestManager.schedule(request, this.RETRIES)
         const $ = this.cheerio.load(response.data)
         
-        // Usiamo un selettore specifico per la griglia principale delle pagine
-        // Nella home è .sect--latest, ma nelle pagine /page/2/ spesso gli elementi sono diretti nel content
-        // Facciamo fallback sul parser generico di search results che targetta .readed o simile, 
-        // oppure riusiamo il parser per latest.
-        // Ispezionando batcave, nelle pagine successive la struttura è simile a 'latest' o 'readed' items.
-        
+        // Fallback robusto per i selettori nelle pagine successive
         let manga = this.parser.parseGridItems($, '.sect--latest .latest, .content .short', '.latest__chapter')
 
-        // Se non trova nulla con i selettori home, prova quelli generici
         if (manga.length === 0) {
              manga = this.parser.parseSearchResults($)
         }
