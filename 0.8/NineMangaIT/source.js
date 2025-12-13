@@ -999,10 +999,10 @@ var _Sources = (() => {
   // src/NineMangaIT/NineMangaIT.ts
   var IT_DOMAIN = "https://it.ninemanga.com";
   var NineMangaITInfo = {
-    version: "4.0.0",
-    // Rewrite totale basata su HTML Desktop
+    version: "4.0.1",
+    // Patch Cookie Fix
     name: "NineMangaIT",
-    description: "Estensione per NineManga IT. Include bypass +18 e caricamento parallelo.",
+    description: "Estensione per NineManga IT. Richiede bypass Cloudflare manuale (Icona Nuvola).",
     author: "DarkDragonkzz",
     icon: "icon.png",
     contentRating: import_types2.ContentRating.MATURE,
@@ -1021,7 +1021,7 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.baseUrl = IT_DOMAIN;
       this.parser = new NineMangaITParser();
-      // Usiamo User-Agent Desktop poiché l'HTML analizzato è Desktop
+      // User-Agent Desktop
       this.userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 3,
@@ -1033,9 +1033,9 @@ var _Sources = (() => {
               ...{
                 "Referer": `${this.baseUrl}/`,
                 "User-Agent": this.userAgent,
-                "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
-                // Cookie FONDAMENTALI per evitare i redirect +18
-                "Cookie": "is_warning=1; my_limit=1; waring=1"
+                "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7"
+                // FIX: Rimossa la forzatura 'Cookie' qui.
+                // Ora l'app userà automaticamente i cookie Cloudflare salvati.
               }
             };
             return request;
