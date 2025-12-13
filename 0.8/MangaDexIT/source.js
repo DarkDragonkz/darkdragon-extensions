@@ -736,11 +736,11 @@ var _Sources = (() => {
      * Parsa i dettagli del manga dando priorità assoluta ai metadati Italiani.
      */
     parseMangaDetails(data, mangaId) {
-      const attr = data.data.attributes;
-      const relationships = data.data.relationships;
-      const altTitleIT = attr.altTitles.find((t) => t.it)?.it;
-      const title = attr.title.it ?? altTitleIT ?? attr.title.en ?? Object.values(attr.title)[0] ?? "Titolo Sconosciuto";
-      const desc = attr.description.it ?? attr.description.en ?? Object.values(attr.description)[0] ?? "Nessuna descrizione disponibile.";
+      const attr = data.data?.attributes || {};
+      const relationships = data.data?.relationships || [];
+      const altTitleIT = attr.altTitles?.find((t) => t.it)?.it;
+      const title = attr.title?.it ?? altTitleIT ?? attr.title?.en ?? Object.values(attr.title || {})[0] ?? "Titolo Sconosciuto";
+      const desc = attr.description?.it ?? attr.description?.en ?? Object.values(attr.description || {})[0] ?? "Nessuna descrizione disponibile.";
       const authors = relationships.filter((r) => r.type === "author").map((r) => r.attributes?.name).filter((n) => n);
       const artists = relationships.filter((r) => r.type === "artist").map((r) => r.attributes?.name).filter((n) => n);
       const coverRel = relationships.find((r) => r.type === "cover_art");
@@ -762,7 +762,6 @@ var _Sources = (() => {
       if (attr.tags && Array.isArray(attr.tags)) {
         const mappedTags = attr.tags.map(
           (tag) => App.createTag({ id: tag.id, label: tag.attributes.name.en })
-          // Mantengo EN per i tag (più standard)
         );
         tags.push(App.createTagSection({ id: "0", label: "Generi", tags: mappedTags }));
       }
@@ -780,34 +779,43 @@ var _Sources = (() => {
       });
     }
     /**
-     * Parsa i capitoli. Include il gruppo di scanlation nel titolo per chiarezza.
+     * Parsa i capitoli con deduplicazione (Latest Version Wins).
      */
     parseChapters(data) {
       const chapters = [];
-      if (!data.data) return [];
-      for (const chapter of data.data) {
+      if (!data) return [];
+      const seenChapters = /* @__PURE__ */ new Set();
+      data.sort((a, b) => {
+        const dateA = new Date(a.attributes.publishAt).getTime();
+        const dateB = new Date(b.attributes.publishAt).getTime();
+        return dateB - dateA;
+      });
+      for (const chapter of data) {
         const attr = chapter.attributes;
         if (attr.pages === 0 || attr.externalUrl !== null) continue;
+        const chapNum = parseFloat(attr.chapter);
+        const chapNumId = !isNaN(chapNum) ? String(chapNum) : `id:${chapter.id}`;
+        if (seenChapters.has(chapNumId) && !isNaN(chapNum)) {
+          continue;
+        }
+        seenChapters.add(chapNumId);
         const relationships = chapter.relationships || [];
         const group = relationships.find((r) => r.type === "scanlation_group")?.attributes?.name;
-        let name = "";
-        if (attr.volume) name += `Vol.${attr.volume} `;
-        name += `Ch.${attr.chapter ?? "?"}`;
-        if (attr.title) {
-          name += ` - ${attr.title}`;
-        }
+        let name = attr.title ? String(attr.title).trim() : "";
+        if (name === String(chapNum)) name = "";
         chapters.push(App.createChapter({
           id: chapter.id,
           name,
-          chapNum: parseFloat(attr.chapter) || 0,
-          volume: parseFloat(attr.volume) || 0,
+          // Solo il titolo reale o vuoto
+          chapNum: isNaN(chapNum) ? 0 : chapNum,
+          volume: parseFloat(attr.volume) || void 0,
           time: new Date(attr.publishAt),
           langCode: "it",
           group
-          // Paperback lo mostrerà sotto il titolo
+          // Paperback lo mostrerà sotto
         }));
       }
-      return chapters;
+      return chapters.sort((a, b) => b.chapNum - a.chapNum);
     }
     parseChapterDetails(data, mangaId, chapterId) {
       if (data.baseUrl && data.chapter?.data) {
@@ -823,31 +831,26 @@ var _Sources = (() => {
       }
       throw new Error("Dati capitolo non validi o mancanti");
     }
-    /**
-     * Parsa risultati di ricerca e home.
-     * @param useHighQualityCover Se true usa .512.jpg, altrimenti .256.jpg
-     */
     parseSearchResults(data, useHighQualityCover = false) {
       const results = [];
-      if (data.data) {
-        for (const manga of data.data) {
-          const attr = manga.attributes;
-          const altTitleIT = attr.altTitles?.find((t) => t.it)?.it;
-          const title = attr.title.it ?? altTitleIT ?? attr.title.en ?? Object.values(attr.title)[0] ?? "Sconosciuto";
-          const coverRel = manga.relationships.find((r) => r.type === "cover_art");
-          const fileName = coverRel?.attributes?.fileName;
-          let image = "https://paperback.moe/icons/logo-alt.svg";
-          if (fileName) {
-            const qualitySuffix = useHighQualityCover ? ".512.jpg" : ".256.jpg";
-            image = `${MD_UPLOADS}/covers/${manga.id}/${fileName}${qualitySuffix}`;
-          }
-          results.push(App.createPartialSourceManga({
-            mangaId: manga.id,
-            image,
-            title,
-            subtitle: attr.status === "ongoing" ? "In corso" : attr.status === "completed" ? "Completato" : void 0
-          }));
+      const mangaList = data.data || [];
+      for (const manga of mangaList) {
+        const attr = manga.attributes;
+        const altTitleIT = attr.altTitles?.find((t) => t.it)?.it;
+        const title = attr.title?.it ?? altTitleIT ?? attr.title?.en ?? Object.values(attr.title || {})[0] ?? "Sconosciuto";
+        const coverRel = manga.relationships.find((r) => r.type === "cover_art");
+        const fileName = coverRel?.attributes?.fileName;
+        let image = "https://paperback.moe/icons/logo-alt.svg";
+        if (fileName) {
+          const qualitySuffix = useHighQualityCover ? ".512.jpg" : ".256.jpg";
+          image = `${MD_UPLOADS}/covers/${manga.id}/${fileName}${qualitySuffix}`;
         }
+        results.push(App.createPartialSourceManga({
+          mangaId: manga.id,
+          image,
+          title,
+          subtitle: attr.status === "ongoing" ? "In corso" : attr.status === "completed" ? "Completato" : void 0
+        }));
       }
       return results;
     }
@@ -856,12 +859,12 @@ var _Sources = (() => {
   // src/MangaDexIT/MangaDexIT.ts
   var MD_API = "https://api.mangadex.org";
   var MangaDexITInfo = {
-    version: "1.1.0",
-    // Major bump per refactoring
+    version: "1.2.0",
+    // Bump version (Pagination & Deduplication)
     name: "MangaDex IT",
     icon: "icon.png",
     author: "DarkDragonkzz",
-    description: "Estensione Italiana per MangaDex. Include ricerca Smart ID e copertine HD.",
+    description: "Estensione Italiana per MangaDex. Include ricerca Smart ID e copertine HD. Filtra duplicati.",
     contentRating: import_types.ContentRating.MATURE,
     websiteBaseURL: "https://mangadex.org",
     sourceTags: [
@@ -906,19 +909,26 @@ var _Sources = (() => {
       return this.parser.parseMangaDetails(data, mangaId);
     }
     async getChapters(mangaId) {
-      const request = App.createRequest({
-        url: `${MD_API}/manga/${mangaId}/feed?limit=500&translatedLanguage[]=it&order[volume]=desc&order[chapter]=desc&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic&includeFutureUpdates=0`,
-        method: "GET"
-      });
-      const response = await this.requestManager.schedule(request, 1);
-      const data = JSON.parse(response.data ?? "{}");
-      const chapters = this.parser.parseChapters(data);
-      return chapters.sort((a, b) => {
-        if ((a.volume ?? 0) !== (b.volume ?? 0)) {
-          return (b.volume ?? 0) - (a.volume ?? 0);
+      const limit = 500;
+      let offset = 0;
+      let hasMore = true;
+      const allChaptersData = [];
+      while (hasMore) {
+        const request = App.createRequest({
+          url: `${MD_API}/manga/${mangaId}/feed?limit=${limit}&offset=${offset}&translatedLanguage[]=it&order[chapter]=desc&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic&includeFutureUpdates=0`,
+          method: "GET"
+        });
+        const response = await this.requestManager.schedule(request, 1);
+        const data = JSON.parse(response.data ?? "{}");
+        const results = data.data || [];
+        allChaptersData.push(...results);
+        if (results.length < limit) {
+          hasMore = false;
+        } else {
+          offset += limit;
         }
-        return (b.chapNum ?? 0) - (a.chapNum ?? 0);
-      });
+      }
+      return this.parser.parseChapters(allChaptersData);
     }
     async getChapterDetails(mangaId, chapterId) {
       try {
@@ -970,6 +980,9 @@ var _Sources = (() => {
         App.createHomeSection({ id: "latest", title: "Ultime Uscite (IT) \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.continuous }),
         App.createHomeSection({ id: "new", title: "Nuovi Arrivi (IT) \u{1F195}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal })
       ];
+      sectionCallback(sections[0]);
+      sectionCallback(sections[1]);
+      sectionCallback(sections[2]);
       const baseParams = "limit=15&includes[]=cover_art&availableTranslatedLanguage[]=it&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic";
       const urls = {
         popular: `${MD_API}/manga?${baseParams}&order[followedCount]=desc`,
