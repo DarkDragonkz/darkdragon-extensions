@@ -13,191 +13,64 @@ const BASE_URL = 'https://batcave.biz'
 
 export class BatCaveParser {
 
-    /**
-     * Tenta di trasformare l'URL di una miniatura (thumb) nell'URL dell'immagine originale HD.
-     * Rimuove segmenti tipici come '/thumbs/' o suffissi di ridimensionamento.
-     */
     private getHighResImage(url: string | undefined): string {
         if (!url) return ''
-
-        // Gestione path relativi
         if (url.startsWith('/')) {
             url = BASE_URL + url
         }
-
-        // FIX QUALITÀ:
-        // I siti DLE mettono le miniature in cartelle "/thumbs/". 
-        // L'immagine originale è solitamente allo stesso percorso ma senza "/thumbs/".
-        // Es: .../uploads/posts/2023-12/thumbs/cover.jpg -> .../uploads/posts/2023-12/cover.jpg
         if (url.includes('/thumbs/')) {
             return url.replace('/thumbs/', '/')
         }
-
         return url
     }
 
-    /**
-     * Helper per parsare le liste di manga (Grid/List items).
-     */
     parseGridItems($: any, selector: string, subtitleSelector?: string): PartialSourceManga[] {
-        const items: PartialSourceManga[] = []
+        const manga: PartialSourceManga[] = []
         
         $(selector).each((_: any, item: any) => {
-            const link = $(item).is('a') ? $(item) : $('a', item).first()
-            const href = link.attr('href')
-            const id = href?.split('/').pop()
+            const el = $(item)
             
-            const title = $('.poster__title, .latest__title a, .readed__title a, .popular__title', item).first().text().trim() || link.text().trim()
+            let link = el.find('a').first()
+            if (el.is('a')) link = el
 
-            // Recupera l'URL grezzo (data-src o src)
-            const rawImage = $('img', item).attr('data-src') ?? $('img', item).attr('src')
+            const href = link.attr('href')
+            const id = href?.replace(BASE_URL, '').replace(/^\//, '')
 
-            // Usa la funzione helper per ottenere la versione HD
-            const image = this.getHighResImage(rawImage)
+            if (!id) return
 
-            let subtitle: string | undefined = undefined
+            const title = link.attr('title') ?? el.find('.poster__title, .title').text().trim()
+            
+            const imgEl = el.find('img')
+            let image = imgEl.attr('src') ?? imgEl.attr('data-src')
+            image = this.getHighResImage(image)
+
+            if (!image) image = 'https://paperback.moe/icons/logo-alt.svg'
+
+            let subtitle = undefined
             if (subtitleSelector) {
-                const subText = $(subtitleSelector, item).text().trim()
-                subtitle = subText.replace(/chapter\s*/i, '').trim()
+                subtitle = el.find(subtitleSelector).text().trim()
             }
 
-            if (id && title) {
-                items.push(App.createPartialSourceManga({
-                    mangaId: id,
-                    image: image,
-                    title: title,
-                    subtitle: subtitle
-                }))
-            }
-        })
-
-        return items
-    }
-
-    parseMangaDetails($: any, mangaId: string): SourceManga {
-        const title = $('h1.main-page-title').text().trim() || $('h1').first().text().trim() || 'Unknown'
-        
-        // Anche nei dettagli usiamo la logica HD per sicurezza
-        const rawImage = $('.page__poster img').attr('src')
-        const image = this.getHighResImage(rawImage)
-
-        const desc = $('.page__text').text().trim()
-        
-        let author = 'Unknown'
-        let artist = 'Unknown'
-        let status = 'Ongoing'
-
-        $('.page__list li').each((_: any, li: any) => {
-            const text = $(li).text().trim()
-            if (text.includes('Writer:')) author = text.replace('Writer:', '').trim()
-            if (text.includes('Artist:')) artist = text.replace('Artist:', '').trim()
-            if (text.includes('Release type:')) {
-                const type = text.replace('Release type:', '').trim().toLowerCase()
-                if (type.includes('completed')) status = 'Completed'
-            }
-        })
-
-        const arrayTags: Tag[] = []
-        $('.page__tags a').each((_: any, a: any) => {
-            const label = $(a).text().trim()
-            const id = $(a).attr('href')?.split('/').filter(Boolean).pop() ?? label
-            if (label) arrayTags.push(App.createTag({ id, label }))
-        })
-        const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
-
-        return App.createSourceManga({
-            id: mangaId,
-            mangaInfo: App.createMangaInfo({
-                titles: [title],
+            manga.push(App.createPartialSourceManga({
+                mangaId: id,
                 image: image,
-                status: status,
-                author: author,
-                artist: artist,
-                tags: tagSections,
-                desc: desc
-            })
+                title: title,
+                subtitle: subtitle
+            }))
         })
-    }
 
-    parseChapters(html: string): Chapter[] {
-        const chapters: Chapter[] = []
-        const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s)
-        if (!scriptData) return []
-
-        try {
-            const data = JSON.parse(scriptData[1])
-            if (data.chapters && Array.isArray(data.chapters)) {
-                for (const chap of data.chapters) {
-                    const id = String(chap.id)
-                    const titleRaw = (chap.title || `Chapter ${chap.id}`).replace(/_/g, ' ').replace(/\s+/g, ' ').trim()
-                    
-                    let time = new Date()
-                    if (chap.date) {
-                        const parts = chap.date.split('.')
-                        if (parts.length === 3) time = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
-                    }
-
-                    let chapNum = 0
-                    if (chap.posi) {
-                        chapNum = parseFloat(chap.posi)
-                    } else {
-                        const numMatch = titleRaw.match(/(\d+(\.\d+)?)/g)
-                        if (numMatch) chapNum = parseFloat(numMatch[numMatch.length - 1] ?? '0')
-                    }
-
-                    chapters.push(App.createChapter({
-                        id: id,
-                        name: titleRaw,
-                        chapNum: chapNum,
-                        time: time,
-                        langCode: 'en'
-                    }))
-                }
-            }
-        } catch (e) {
-            console.error(`Error parsing chapters JSON: ${e}`)
-        }
-
-        return chapters
-    }
-
-    parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
-        const pages: string[] = []
-        const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s)
-        
-        if (scriptData) {
-            try {
-                const data = JSON.parse(scriptData[1])
-                if (data.images && Array.isArray(data.images)) {
-                    for (const img of data.images) {
-                         if (img && !img.includes('logo') && !img.includes('icon')) {
-                             let cleanImg = img
-                             if (cleanImg.startsWith('//')) cleanImg = 'https:' + cleanImg
-                             else if (cleanImg.startsWith('/')) cleanImg = BASE_URL + cleanImg
-                             pages.push(cleanImg)
-                         }
-                    }
-                }
-            } catch (e) {
-                console.error(`Error parsing images JSON: ${e}`)
-            }
-        }
-
-        return App.createChapterDetails({
-            id: chapterId,
-            mangaId: mangaId,
-            pages: pages
-        })
+        return manga
     }
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
+        
         const featuredSection = App.createHomeSection({ 
             id: 'featured', 
-            title: 'Featured Comics 🔥', 
+            title: 'Featured 🔥', 
             containsMoreItems: false, 
             type: HomeSectionType.singleRowLarge 
         })
-        featuredSection.items = this.parseGridItems($, '.sect--popular .poster')
+        featuredSection.items = this.parseGridItems($, '.slider__item, .slider .owl-item')
         sectionCallback(featuredSection)
 
         const hotSection = App.createHomeSection({ 
@@ -237,7 +110,132 @@ export class BatCaveParser {
         sectionCallback(latestSection)
     }
 
+    parseMangaDetails($: any, mangaId: string): SourceManga {
+        const info = $('.full-story')
+        
+        const title = $('h1.title__name', info).text().trim()
+        
+        const imgEl = $('.poster img', info)
+        let image = imgEl.attr('src') ?? imgEl.attr('data-src')
+        image = this.getHighResImage(image)
+
+        const desc = $('.full-story__text', info).text().trim()
+        let status = 'Ongoing'
+
+        const tags: Tag[] = []
+        $('.full-story__info a[href*="/xfsearch/genre/"]').each((_: any, a: any) => {
+            const label = $(a).text().trim()
+            const id = label
+            tags.push(App.createTag({ id, label }))
+        })
+
+        return App.createSourceManga({
+            id: mangaId,
+            mangaInfo: App.createMangaInfo({
+                titles: [title],
+                image: image || 'https://paperback.moe/icons/logo-alt.svg',
+                status: status,
+                tags: [App.createTagSection({ id: '0', label: 'Genres', tags: tags })],
+                desc: desc
+            })
+        })
+    }
+
+    parseChapters($: any, mangaId: string): Chapter[] {
+        const chapters: Chapter[] = []
+        
+        // Recuperiamo il titolo principale del fumetto per pulire i nomi dei capitoli
+        const mangaTitle = $('h1.title__name').text().trim()
+
+        // Iteriamo sui capitoli
+        $('.chapters-list li').each((i: number, li: any) => {
+            const link = $(li).find('a')
+            const href = link.attr('href')
+            if (!href) return
+
+            const chapterId = href.replace(BASE_URL, '').replace(/^\//, '')
+            let name = link.text().trim()
+            
+            // --- PULIZIA NOMENCLATURA ---
+            // 1. Rimuove il titolo del fumetto se presente nel nome del capitolo (case insensitive)
+            if (mangaTitle) {
+                const regexTitle = new RegExp(mangaTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+                name = name.replace(regexTitle, '').trim()
+            }
+            
+            // 2. Rimuove trattini o spazi iniziali residui
+            name = name.replace(/^(-|\s)+/, '')
+            
+            // 3. Se è rimasto solo un numero, aggiungi "#" per estetica
+            if (/^\d+(\.\d+)?$/.test(name)) {
+                name = `#${name}`
+            }
+            
+            // Parsing numero per il tracking
+            const numMatch = name.match(/#?(\d+(\.\d+)?)/)
+            const chapNum = numMatch ? parseFloat(numMatch[1]) : 0
+
+            chapters.push(App.createChapter({
+                id: chapterId,
+                name: name || `Issue #${chapNum}`, // Fallback se il nome diventa vuoto
+                chapNum: chapNum,
+                volume: undefined,
+                time: new Date(),
+                langCode: '🇺🇸', // Emoji bandiera USA
+                sortingIndex: i // Mantiene l'ordine ESATTO del sito (0, 1, 2...)
+            }))
+        })
+
+        // NON invertiamo l'array. BatCave li mostra dal più recente (in alto) al più vecchio.
+        // Assegnando sortingIndex = i, Paperback li mostrerà nell'ordine in cui li ha letti.
+        return chapters
+    }
+
+    parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
+        const pages: string[] = []
+        
+        const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]+class=["'].*?chapter-img/g
+        let match
+        while ((match = imgRegex.exec(html)) !== null) {
+            pages.push(this.getHighResImage(match[1]))
+        }
+
+        if (pages.length === 0) {
+             const genericRegex = /<img[^>]+src=["']([^"']+)["'][^>]+data-src/g
+             while ((match = genericRegex.exec(html)) !== null) {
+                 pages.push(this.getHighResImage(match[1]))
+             }
+        }
+
+        return App.createChapterDetails({
+            id: chapterId,
+            mangaId: mangaId,
+            pages: pages
+        })
+    }
+
     parseSearchResults($: any): PartialSourceManga[] {
-        return this.parseGridItems($, '.readed')
+        const results: PartialSourceManga[] = []
+        
+        $('.search-result .short, .content .short').each((_: any, item: any) => {
+            const link = $(item).find('a.short-title, a.poster__link').first()
+            const href = link.attr('href')
+            const id = href?.replace(BASE_URL, '').replace(/^\//, '')
+            
+            if (id) {
+                const title = link.text().trim() || $(item).find('.poster__title').text().trim()
+                
+                const imgEl = $(item).find('img')
+                let image = imgEl.attr('src') ?? imgEl.attr('data-src')
+                image = this.getHighResImage(image)
+
+                results.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image || 'https://paperback.moe/icons/logo-alt.svg',
+                    title: title
+                }))
+            }
+        })
+        return results
     }
 }
