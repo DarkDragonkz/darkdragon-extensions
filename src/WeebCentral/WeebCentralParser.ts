@@ -15,12 +15,10 @@ export class WeebCentralParser {
         let title = $('h1').first().text().trim()
         if (!title) title = 'Unknown Title'
 
-        // Cerca l'immagine usando alt, fallback alla prima immagine della section
         let image = $('img[alt="' + title + '"]').first().attr('src')
         if (!image) image = $('section img').first().attr('src') ?? ''
         
         let desc = ''
-        // Cerca descrizione in modo flessibile
         const descEl = $('p:contains("Description"), div:contains("Description")').last().next()
         if (descEl.length > 0) desc = descEl.text().trim()
         if (!desc) desc = $('p.leading-6').first().text().trim()
@@ -29,7 +27,6 @@ export class WeebCentralParser {
         let artist = 'Unknown'
         let status = 'Ongoing'
 
-        // Parsing Metadati
         $('strong, span.font-bold').each((_: any, el: any) => {
             const label = $(el).text().trim()
             const value = $(el).next().text().trim() || $(el).parent().next().text().trim()
@@ -122,21 +119,29 @@ export class WeebCentralParser {
         })
     }
 
-    // Helper per estrarre sottotitolo (Ultimo capitolo)
+    // HELPER POTENZIATO: Estrae sottotitoli anche da link o strutture complesse
     private extractSubtitle($el: any): string | undefined {
-        // Cerca elementi che sembrano capitoli
-        let sub = $el.find('span:contains("Chapter"), span:contains("Ch."), time').first().text().trim()
+        // 1. Cerca etichette di testo standard (span, time)
+        let sub = $el.find('span:contains("Chapter"), span:contains("Ch."), time').last().text().trim()
         
-        // Se c'è una data relativa (es "2 hours ago"), usala
+        // 2. Se vuoto, cerca LINK ai capitoli (comune in Hot Updates)
         if (!sub) {
-             const time = $el.find('time').text().trim()
-             if (time) sub = time
+            const chapterLink = $el.find('a[href*="/chapters/"]').first()
+            if (chapterLink.length > 0) {
+                sub = chapterLink.text().trim()
+            }
+        }
+
+        // 3. Fallback: cerca qualsiasi testo che assomiglia a un numero di capitolo
+        if (!sub) {
+             const text = $el.text()
+             const match = text.match(/Chapter\s*\d+/i)
+             if (match) sub = match[0]
         }
         
         return sub || undefined
     }
 
-    // Helper per pulire titoli sporchi (es "One Piece Cover")
     private cleanTitle(title: string): string {
         return title
             .replace(/\s+Cover$/i, '')
@@ -148,19 +153,15 @@ export class WeebCentralParser {
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         
-        // Cerca qualsiasi blocco che contenga un link a /series/ e un'immagine
-        // Questo è più generico e cattura sia griglie che liste
         $('a[href*="/series/"]').each((_: any, el: any) => {
             const $el = $(el)
             const img = $el.find('img').first()
             
-            // Se non c'è immagine nel link diretto, cerchiamo nel genitore (card layout)
             let image = img.attr('src')
             if (!image) {
-                // Caso: Link testuale, cerchiamo l'immagine nel contenitore padre
                 image = $el.closest('article, div').find('img').first().attr('src')
             }
-            if (!image) return // Se proprio non c'è immagine, saltiamo
+            if (!image) return
 
             const href = $el.attr('href')
             const id = href?.split('/series/')[1]
@@ -169,10 +170,9 @@ export class WeebCentralParser {
             let title = img.attr('alt') || $el.text().trim() || 'Unknown'
             title = this.cleanTitle(title)
 
-            // Cerchiamo un sottotitolo nel genitore
+            // Cerca nel contenitore genitore (card)
             const subtitle = this.extractSubtitle($el.closest('article, div'))
 
-            // Evita duplicati (stesso ID aggiunto più volte)
             if (!results.find(r => r.mangaId === id)) {
                 results.push(App.createPartialSourceManga({
                     mangaId: id,
@@ -194,7 +194,6 @@ export class WeebCentralParser {
         const latestItems: PartialSourceManga[] = []
 
         // 1. HOT UPDATES
-        // Cerchiamo la sezione Hot specificamente
         const hotContainer = $('section:contains("Hot Updates"), section:contains("Popular")').first()
         
         hotContainer.find('a[href*="/series/"]').each((_: any, el: any) => {
@@ -207,11 +206,13 @@ export class WeebCentralParser {
 
             let title = img.attr('alt') || 'Unknown'
             title = this.cleanTitle(title)
-            
             const image = img.attr('src') || ''
             
-            // In Hot Updates, il sottotitolo potrebbe essere nascosto o diverso
-            const subtitle = this.extractSubtitle($el.parent())
+            // FIX: Cerca nel genitore (div della card) per trovare il sottotitolo
+            // Hot Updates spesso ha struttura: Image Link -> Div (Titolo) -> Div (Chapter Link)
+            // Risaliamo di 2 livelli per sicurezza
+            const card = $el.closest('div.relative, div.flex-col, article')
+            const subtitle = this.extractSubtitle(card.length ? card : $el.parent())
 
             hotItems.push(App.createPartialSourceManga({
                 mangaId: id, image: image, title: title, subtitle: subtitle
@@ -219,43 +220,31 @@ export class WeebCentralParser {
         })
 
         // 2. RECENT UPDATES
-        // Selettore più aggressivo: prendiamo tutti i link series che NON sono nella hot section
-        // Oppure cerchiamo specificamente la seconda grande griglia
-        
-        // Proviamo a identificare la sezione Recent
         let recentContainer = $('section:contains("Recent"), section:contains("Latest")').first()
-        
-        // Se non la trova per testo, prendiamo "tutto il resto"
-        if (recentContainer.length === 0) {
-             // Fallback: cerca tutti i link series nella pagina principale
-             recentContainer = $('body')
-        }
+        if (recentContainer.length === 0) recentContainer = $('body')
 
         recentContainer.find('a[href*="/series/"]').each((_: any, el: any) => {
              const $el = $(el)
              
-             // Evita di ri-aggiungere gli item della Hot Section
              const href = $el.attr('href')
              const id = href?.split('/series/')[1]
              if (!id) return
-             if (hotItems.find(x => x.mangaId === id)) return // Skip duplicati Hot
+             if (hotItems.find(x => x.mangaId === id)) return 
 
-             // Logica immagine/titolo
              let image = $el.find('img').attr('src')
              let title = $el.find('img').attr('alt')
              
-             // Caso speciale: Recent Updates spesso è una lista testo + immagine piccola
              if (!image) {
-                 image = $el.closest('div').find('img').first().attr('src')
-             }
-             if (!title) {
-                 title = $el.closest('div').find('a.font-bold, a.text-white').first().text().trim()
+                 const card = $el.closest('div, tr')
+                 image = card.find('img').first().attr('src')
+                 title = card.find('a.font-bold, a.text-white').first().text().trim()
              }
              
-             if (!image) return // Se ancora niente immagine, salta
+             if (!image) return 
 
              title = this.cleanTitle(title || 'Unknown')
              
+             // Cerca nel contenitore (spesso table row o grid item)
              const subtitle = this.extractSubtitle($el.closest('div, tr'))
 
              latestItems.push(App.createPartialSourceManga({
