@@ -18,39 +18,65 @@ export class NineMangaITParser {
         let img = element.find('img').first()
         if (element.is('img')) img = element
 
-        let src = img.attr('src') || img.attr('data-src')
+        let src = img.attr('src') || img.attr('data-src') || img.attr('original') || img.attr('data-original')
         
         if (!src || src.includes('logo')) return 'https://paperback.moe/icons/logo-alt.svg'
 
         src = src.trim()
         if (src.startsWith('//')) src = `https:${src}`
+        else if (src.startsWith('/')) src = `https://it.ninemanga.com${src}`
+        else if (src.startsWith('http:')) src = src.replace('http:', 'https:')
         
         return src
     }
 
-    parseMangaDetails($: any, mangaId: string): SourceManga {
-        // Basato su "Manga con resttrizione +18 accettata.txt"
-        const title = $('h1').first().text().trim() || 'Titolo Sconosciuto'
+    /**
+     * Estrae l'ID del manga da un qualsiasi URL (manga o chapter)
+     */
+    private extractMangaId(url: string | undefined): string | null {
+        if (!url) return null
         
-        const imageElement = $('.bookintro img').first()
+        // Regex che cattura l'ID sia da /manga/ID.html che da /chapter/ID/123.html
+        // Gruppo 2 contiene l'ID
+        const regex = /\/(?:manga|chapter)\/([^\/]+?)(?:\.html|\/|$)/
+        const match = url.match(regex)
+        
+        return match ? match[1] : null
+    }
+
+    parseMangaDetails($: any, mangaId: string): SourceManga {
+        let title = $('h1[itemprop="name"]').first().text().trim()
+        if (!title) title = $('.book-title').first().text().trim()
+        if (!title) title = $('.book-detail .title').first().text().trim()
+        
+        title = title.replace(/ Manga$/, '').trim()
+        
+        let imageElement = $('img[itemprop="image"]').first()
+        if (imageElement.length === 0) imageElement = $('.bookintro img').first()
+        
         const image = this.getImageSrc(imageElement)
 
         const author = $('a[itemprop="author"]').first().text().trim() || 'Unknown'
         
         let desc = $('p[itemprop="description"]').text().trim()
-        // Se itemprop non c'è, proviamo a prendere il testo grezzo del div
         if (!desc) {
-            desc = $('.bookintro p').text().trim()
+            // Rimuoviamo elementi non di testo per pulire la descrizione
+            const intro = $('.bookintro').clone()
+            intro.find('ul, h1, div, a, span').remove() 
+            desc = intro.text().trim()
         }
+        desc = desc.replace(/^Sommario:\s*/i, '') || 'Nessuna descrizione disponibile.'
         
         let status = 'Ongoing'
-        const statusText = $('.red').text().toLowerCase() // Spesso "Stato: Completato" è in rosso
-        if (statusText.includes('completato')) status = 'Completed'
+        const statusText = $('.red, .blue, a[href*="completed"]').text().toLowerCase()
+        if (statusText.includes('completato') || statusText.includes('completed')) status = 'Completed'
 
         const arrayTags: Tag[] = []
-        $('.bookintro a[href*="/category/"]').each((_: any, el: any) => {
+        $('li[itemprop="genre"] a, .bookintro a[href*="/category/"]').each((_: any, el: any) => {
             const $el = $(el)
-            const id = $el.attr('href')?.split('/').pop()?.replace('.html', '') ?? ''
+            const href = $el.attr('href')
+            // Estrazione ID categoria pulita
+            const id = href?.match(/\/category\/([^\/]+)/)?.[1]?.replace('.html', '')
             const label = $el.text().trim()
             if (id && label) arrayTags.push({ id, label })
         })
@@ -73,34 +99,40 @@ export class NineMangaITParser {
         const chapters: Chapter[] = []
         const seenIds = new Set<string>()
 
-        // Basato su "Manga con resttrizione +18 accettata.txt"
-        // La lista è in <ul class="chapter_list"> -> <li> -> <a class="chapter_list_a">
-        const links = $('ul.chapter_list a.chapter_list_a').toArray()
+        // Selettori multipli per coprire vari layout
+        let links = $('ul.chapter_list a.chapter_list_a').toArray()
+        if (links.length === 0) links = $('.sub_vol_ul a').toArray()
+        if (links.length === 0) links = $('a[href*="/chapter/"]').toArray()
 
         for (const link of links) {
             const $link = $(link)
             const href = $link.attr('href')
             if (!href) continue
 
-            // href es: /chapter/Nome_Manga/123456.html
-            const parts = href.split('/')
-            const filePart = parts.pop() ?? '' 
-            const chapterId = filePart.split('?')[0].replace('.html', '')
+            // ID del capitolo specifico (es. nome-manga/123.html)
+            const chapterIdRaw = href.split('/chapter/')[1]
+            if (!chapterIdRaw) continue
+            
+            // Rimuove query params e .html
+            const chapterId = chapterIdRaw.split('?')[0].replace('.html', '')
 
+            // Filtro paginazione interna (-10-1.html)
+            if (chapterId.match(/-\d+-\d+$/)) continue 
+            
             if (seenIds.has(chapterId)) continue
             seenIds.add(chapterId)
 
             let titleRaw = $link.attr('title') || $link.text().trim()
             
-            // PULIZIA TITOLO: Rimuoviamo il nome del manga dal titolo del capitolo
-            // Es: "One Piece 1141" -> "1141"
+            // PULIZIA TITOLO
+            // Rimuoviamo il nome del manga (e varianti) dal titolo del capitolo
             const cleanMangaName = mangaId.replace(/_/g, ' ').replace(/-/g, ' ')
-            // Regex case insensitive che rimuove il nome del manga all'inizio
-            titleRaw = titleRaw.replace(new RegExp(`^${cleanMangaName}`, 'i'), '').trim()
+            titleRaw = titleRaw.replace(new RegExp(cleanMangaName, 'gi'), '')
+            titleRaw = titleRaw.replace(new RegExp(mangaId, 'gi'), '')
+            titleRaw = titleRaw.replace(/manga/gi, '').trim()
 
             const dateText = $link.parent().find('span').last().text().trim()
             let time = new Date()
-            // Formato data tipico: "Dec 12, 2025"
             if (dateText) {
                  const parsedDate = new Date(dateText)
                  if (!isNaN(parsedDate.getTime())) time = parsedDate
@@ -113,12 +145,12 @@ export class NineMangaITParser {
                 chapNum = parseFloat(chapNumMatch[1])
             }
 
-            // Nomenclatura per Paperback
+            // Nomenclatura
             let name = titleRaw
-            // Rimuovi "Chapter", "Ch.", "Vol."
-            name = name.replace(/^(chapter|ch|vol)\.?\s*\d+/i, '').trim()
+            name = name.replace(/^(chapter|ch|vol|c)\.?\s*\d+/i, '').trim()
+            // Rimuove simboli residui
+            name = name.replace(/^[-–—:]+/, '').trim()
             
-            // Se rimane solo il numero, svuotiamo name così Paperback mette "Ch. X"
             if (name === String(chapNum) || name === '') name = ''
 
             chapters.push(App.createChapter({
@@ -129,43 +161,35 @@ export class NineMangaITParser {
                 langCode: 'it'
             }))
         }
+        
         return chapters
     }
 
-    /**
-     * Logica PARALLELA per scaricare tutte le pagine
-     */
     async parseChapterDetails(
         $: any, 
         mangaId: string, 
         chapterId: string, 
         source: any 
     ): Promise<ChapterDetails> {
-        // Basato su "Reader.txt": C'è un <select id="page">
         const pageUrls: string[] = []
         
         $('select#page option').each((_: any, obj: any) => {
             let val = $(obj).attr('value') ?? ''
-            // I value sono tipo: "/chapter/Manga/ID-2.html"
             if (val) {
                  if (val.startsWith('/')) val = source.baseUrl + val
                  pageUrls.push(val)
             }
         })
 
-        // Se non troviamo il select, forse è una pagina singola o errore
         if (pageUrls.length === 0) {
-             // Proviamo a prendere l'immagine corrente
              const singleImg = this.extractImage($)
              if (singleImg) {
                  return App.createChapterDetails({ id: chapterId, mangaId, pages: [singleImg] })
              }
-             // Fallback: proviamo a generare url incrementali (rischioso ma meglio di nulla)
-             // Ma col file Reader.txt confermato, il select DOVREBBE esserci.
-             throw new Error("Impossibile trovare la lista pagine (select#page assente).")
+             // Non lanciare errore bloccante, restituisci array vuoto al massimo
+             return App.createChapterDetails({ id: chapterId, mangaId, pages: [] })
         }
 
-        // Parallelismo limitato dal RequestManager
         const promises = pageUrls.map(url => this.fetchImageFromPage(url, source))
         const results = await Promise.all(promises)
         const pages = results.filter(u => u !== null) as string[]
@@ -173,12 +197,11 @@ export class NineMangaITParser {
         return App.createChapterDetails({
             id: chapterId,
             mangaId: mangaId,
-            pages: [...new Set(pages)] // Rimuovi duplicati
+            pages: [...new Set(pages)]
         })
     }
 
     private extractImage($: any): string | null {
-        // Basato su "Reader.txt": <img class="manga_pic">
         const img = $('img.manga_pic').first()
         let src = img.attr('src')
         if (src) {
@@ -194,45 +217,39 @@ export class NineMangaITParser {
                 url: url,
                 method: 'GET',
                 headers: {
-                    'Referer': source.baseUrl, // NineManga controlla il referer
-                    'User-Agent': source.userAgent
+                    'Referer': source.baseUrl, 
+                    'User-Agent': source.userAgent,
+                    'Cookie': 'is_warning=1; my_limit=1; waring=1'
                 }
             })
             const response = await source.requestManager.schedule(request, 1)
             const $ = source.cheerio.load(response.data)
             return this.extractImage($)
         } catch (e) {
-            console.error(`Errore caricamento pagina ${url}: ${e}`)
             return null
         }
     }
 
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
-        // Basato su "Ricerca.txt": <ul class="book-list"> -> <li>
-        $('.book-list li').each((_: any, item: any) => {
+        // Cerchiamo sia in liste ul/li che in definizioni dl/dd
+        $('.book-list li, dl.book-list dd').each((_: any, item: any) => {
             const $item = $(item)
-            const link = $item.find('a.bookname').first()
+            // Cerchiamo link preferibilmente con classe bookname, altrimenti il primo
+            const link = $item.find('a.bookname').first().length ? $item.find('a.bookname').first() : $item.find('a').first()
             const href = link.attr('href')
             
-            if (!href) return
-
-            const id = href.split('/manga/')[1]?.replace('.html', '')
+            const id = this.extractMangaId(href)
             if (!id) return
 
             const image = this.getImageSrc($item)
-            const title = link.text().trim()
-
-            // Info extra (es. "Completato")
-            const info = $item.find('.gray').text().trim()
-            let subtitle = undefined
-            if (info.includes('Completato')) subtitle = 'Completato'
+            const title = link.text().trim() || 'Titolo Sconosciuto'
 
             results.push(App.createPartialSourceManga({
                 mangaId: id,
                 image: image,
                 title: title,
-                subtitle: subtitle
+                subtitle: undefined
             }))
         })
         return results
@@ -241,44 +258,37 @@ export class NineMangaITParser {
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
         const popularSection = App.createHomeSection({ id: 'popular', title: 'Popolari 🔥', containsMoreItems: true, type: HomeSectionType.singleRowLarge })
         const latestSection = App.createHomeSection({ id: 'latest', title: 'Ultimi Aggiornamenti 🆙', containsMoreItems: true, type: HomeSectionType.continuous })
-        const newSection = App.createHomeSection({ id: 'new', title: 'Nuovi Arrivi 🆕', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
+        const newSection = App.createHomeSection({ id: 'new', title: 'Nuove Uscite 🆕', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
 
         const popularItems: PartialSourceManga[] = []
         const latestItems: PartialSourceManga[] = []
         const newItems: PartialSourceManga[] = []
 
-        // Helper per parsare le liste dei TAB della home
+        // Helper generico che accetta selettori multipli
         const parseList = (selector: string, target: PartialSourceManga[]) => {
-            $(selector).find('li').each((_: any, el: any) => {
+            // Cerchiamo elementi li, dd o div.comic-item dentro il selettore container
+            $(selector).find('li, dd, div.comic-item').each((_: any, el: any) => {
                 const $el = $(el)
-                // Selettore basato su "Sezione Popolare in Homepage.txt"
-                const link = $el.find('a.bookname').first()
-                const href = link.attr('href')
                 
-                if (!href) return
-
-                // FIX CRITICO: La home linka a /chapter/Manga/123.html
-                // Dobbiamo estrarre il NOME DEL MANGA da lì.
-                let id = ''
-                if (href.includes('/manga/')) {
-                    id = href.split('/manga/')[1].replace('.html', '')
-                } else if (href.includes('/chapter/')) {
-                    // /chapter/Nome_Manga/123.html -> Nome_Manga
-                    const parts = href.split('/chapter/')
-                    if (parts.length > 1) {
-                        id = parts[1].split('/')[0]
-                    }
-                }
+                // Priorità al link con classe bookname (spesso contiene il titolo pulito)
+                let link = $el.find('a.bookname').first()
+                if (link.length === 0) link = $el.find('a').first()
+                
+                const href = link.attr('href')
+                const id = this.extractMangaId(href)
                 
                 if (!id) return
 
                 const image = this.getImageSrc($el)
-                let title = link.text().trim()
                 
-                // PULIZIA TITOLO HOME: "One Piece 1141" -> "One Piece"
-                // Rimuove numeri interi alla fine della stringa
+                // Pulizia Titolo Home (rimozione numeri finali es: "One Piece 1141")
+                let title = link.text().trim()
+                // Regex: Rimuove numeri interi alla fine della stringa se preceduti da spazio
                 title = title.replace(/\s+\d+$/, '').trim()
                 
+                // Fallback titolo dall'attributo title se presente
+                if (!title) title = link.attr('title') ?? 'Titolo Sconosciuto'
+
                 target.push(App.createPartialSourceManga({
                     mangaId: id,
                     image: image,
