@@ -20,7 +20,7 @@ import { BatCaveParser } from './BatCaveParser'
 const DOMAIN = 'https://batcave.biz'
 
 export const BatCaveInfo: SourceInfo = {
-    version: '1.1.0', // Bump version per le modifiche
+    version: '1.2.0',
     name: 'BatCave',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -73,6 +73,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, this.RETRIES)
+        // Qui serve Cheerio per i metadati (titolo, desc, ecc.)
         const $ = this.cheerio.load(response.data)
         return this.parser.parseMangaDetails($, mangaId)
     }
@@ -83,24 +84,24 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, this.RETRIES)
-        return this.parser.parseChapters(response.data ?? '')
+        // OTTIMIZZAZIONE: Passiamo direttamente la stringa, niente Cheerio load inutile!
+        return this.parser.parseChapters(response.data as string)
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // Gestione ID composto (es: 1234-comic-name) -> prende solo 1234
         const mangaNumericId = mangaId.split('-')[0]
         const request = App.createRequest({
             url: `${this.baseUrl}/reader/${mangaNumericId}/${chapterId}`,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, this.RETRIES)
-        return this.parser.parseChapterDetails(response.data ?? '', mangaId, chapterId)
+        // OTTIMIZZAZIONE: Passiamo direttamente la stringa
+        return this.parser.parseChapterDetails(response.data as string, mangaId, chapterId)
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
         
-        // DLE Standard Search
         const request = App.createRequest({
             url: `${this.baseUrl}/index.php?do=search&subaction=search&story=${encodeURIComponent(query.title ?? '')}&search_start=${page}`,
             method: 'GET'
@@ -110,6 +111,7 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($)
         
+        // Se non ci sono risultati, fermiamo la paginazione
         const nextPage = manga.length > 0 ? page + 1 : undefined
 
         return App.createPagedResults({
@@ -148,7 +150,6 @@ export class BatCave implements SearchResultsProviding, MangaProviding, ChapterP
         const response = await this.requestManager.schedule(request, this.RETRIES)
         const $ = this.cheerio.load(response.data)
         
-        // Fallback robusto per i selettori nelle pagine successive
         let manga = this.parser.parseGridItems($, '.sect--latest .latest, .content .short', '.latest__chapter')
 
         if (manga.length === 0) {

@@ -35,7 +35,8 @@ export class BatCaveParser {
             let subtitle: string | undefined = undefined
             if (subtitleSelector) {
                 const subText = $(subtitleSelector, item).text().trim()
-                subtitle = subText.replace(/chapter\s*/i, 'Ch. ').trim()
+                // UX Fix: Se il sottotitolo è vuoto o sporco, mostriamo "Comic"
+                subtitle = subText ? subText.replace(/chapter\s*/i, 'Ch. ').trim() : 'Comic'
             }
 
             if (id && title) {
@@ -63,11 +64,21 @@ export class BatCaveParser {
 
         $('.page__list li').each((_: any, li: any) => {
             const text = $(li).text().trim()
-            if (text.includes('Writer:')) author = text.replace('Writer:', '').trim()
-            if (text.includes('Artist:')) artist = text.replace('Artist:', '').trim()
+            const lowerText = text.toLowerCase()
+
+            if (text.includes('Writer:')) {
+                author = text.replace('Writer:', '').trim()
+            }
+            if (text.includes('Artist:')) {
+                artist = text.replace('Artist:', '').trim()
+            }
+            // UX Fix: Rilevamento stato più robusto
             if (text.includes('Release type:')) {
-                const type = text.replace('Release type:', '').trim().toLowerCase()
-                if (type.includes('completed')) status = 'Completed'
+                if (lowerText.includes('completed') || lowerText.includes('finished')) {
+                    status = 'Completed'
+                } else if (lowerText.includes('ongoing') || lowerText.includes('publishing')) {
+                    status = 'Ongoing'
+                }
             }
         })
 
@@ -103,7 +114,6 @@ export class BatCaveParser {
         const chapters: Chapter[] = []
         const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s)
         
-        // Estrazione nome serie per pulizia
         const seriesTitleMatch = html.match(/<h1[^>]*>(.*?)<\/h1>/i)
         let seriesNameRaw = seriesTitleMatch ? seriesTitleMatch[1].replace(/<[^>]+>/g, '').trim() : ''
         const seriesBaseName = seriesNameRaw.replace(/\s*\(\d{4}[-–—]?\).*$/, '').trim()
@@ -161,14 +171,12 @@ export class BatCaveParser {
                     }
                     
                     // --- 5. AGGIUNTA PAGINE AL TITOLO ---
-                    // Invece di hackerare langCode, le mettiamo qui
+                    // Sicuro e compatibile con tutti i sistemi
                     const pagesCount = chap.pages || chap.count
                     if (pagesCount) {
-                        // Se c'è già un titolo, aggiungi spazio
                         if (finalName.length > 0) {
                             finalName += ` (${pagesCount}p)`
                         } else {
-                            // Se il titolo era vuoto (es. capitolo standard), lo popoliamo col numero pagine
                             finalName = `(${pagesCount}p)`
                         }
                     }
@@ -191,7 +199,7 @@ export class BatCaveParser {
                         chapNum: chapNum,
                         volume: volNum ? parseFloat(volNum) : undefined,
                         time: time,
-                        langCode: 'en' // RIPRISTINATO STANDARD PER SICUREZZA
+                        langCode: 'en' // SICUREZZA: Sempre 'en' per evitare 403 o errori app
                     }))
                 }
             }
