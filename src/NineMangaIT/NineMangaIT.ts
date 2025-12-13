@@ -18,12 +18,12 @@ import {
 } from '@paperback/types'
 
 import { NineMangaITParser } from './NineMangaITParser'
-import { URLBuilder } from '../helper'
+// RIMOSSO: import { URLBuilder } from '../helper'
 
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '5.0.0', // Ritorno al Mobile (Reforged)
+    version: '5.1.0', // Bump: Removed helper dependency
     name: 'NineMangaIT',
     description: 'Estensione Mobile per NineManga IT. Bypassa +18 e ottimizza il traffico.',
     author: 'DarkDragonkzz',
@@ -44,7 +44,6 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     baseUrl = IT_DOMAIN
     parser = new NineMangaITParser()
 
-    // User-Agent Mobile Android (Fondamentale per ricevere la versione Mobile del sito)
     readonly userAgent = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
 
     constructor(public cheerio: any) {} 
@@ -60,7 +59,6 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
                         'Referer': `${this.baseUrl}/`,
                         'User-Agent': this.userAgent,
                         'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
-                        // Cookie Magici: disabilitano il warning +18 e settano preferenze mobile
                         'Cookie': 'is_warning=1; my_limit=1; waring=1' 
                     }
                 }
@@ -82,7 +80,6 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
-        // Aggiungiamo waring=1 per sicurezza
         const request = App.createRequest({
             url: this.getMangaUrl(mangaId) + '?waring=1',
             method: 'GET'
@@ -106,14 +103,12 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
         let url = chapterId
-        // Costruzione URL robusta per mobile
         if (!url.startsWith('http')) {
              if (!url.startsWith('/')) url = `/chapter/${mangaId}/${chapterId}`
              url = `${this.baseUrl}${url}`
         }
         
         if (!url.endsWith('.html')) url += '.html'
-        // Bypass +18 anche sui capitoli
         if (!url.includes('waring=1')) url += '?waring=1'
 
         const request = App.createRequest({
@@ -126,7 +121,6 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         
         const $ = this.cheerio.load(response.data)
         
-        // Passiamo 'this' per permettere al parser di scaricare le pagine in parallelo
         return this.parser.parseChapterDetails($, mangaId, chapterId, this)
     }
 
@@ -134,14 +128,11 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         let page = metadata?.page ?? 1
         if (page === -1) return App.createPagedResults({ results: [], metadata: { page: -1 } })
 
+        // FIX: Costruzione URL manuale senza bisogno di helper.ts
+        const searchUrl = `${this.baseUrl}/search/?name_sel=contain&wd=${encodeURIComponent(query?.title ?? '')}&page=${page}&type=high`
+
         const request = App.createRequest({
-            url: new URLBuilder(this.baseUrl)
-                .addPathComponent('search')
-                .addQueryParameter('name_sel', 'contain')
-                .addQueryParameter('wd', encodeURIComponent(query?.title ?? ''))
-                .addQueryParameter('page', page.toString())
-                .addQueryParameter('type', 'high')
-                .buildUrl({ addTrailingSlash: true, includeUndefinedParameters: false }),
+            url: searchUrl,
             method: 'GET'
         })
 
