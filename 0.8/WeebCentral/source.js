@@ -733,28 +733,30 @@ var _Sources = (() => {
   var import_types = __toESM(require_lib());
   var WeebCentralParser = class {
     parseMangaDetails($, mangaId) {
-      let title = $("h1").text().trim();
+      let title = $("h1").first().text().trim();
       if (!title) title = "Unknown Title";
-      let image = $('img[alt="' + title + '"]').attr("src");
-      if (!image) image = $('img[src*="/cover/"]').first().attr("src") ?? "";
-      let desc = $("p.leading-6").text().trim();
-      if (!desc) desc = "No description available.";
+      let image = $('img[alt="' + title + '"]').first().attr("src");
+      if (!image) image = $("section img").first().attr("src") ?? "";
+      let desc = "";
+      const descEl = $('p:contains("Description"), div:contains("Description")').last().next();
+      if (descEl.length > 0) desc = descEl.text().trim();
+      if (!desc) desc = $("p.leading-6").first().text().trim();
       let author = "Unknown";
       let artist = "Unknown";
       let status = "Ongoing";
-      $("strong").each((_, el) => {
+      $("strong, span.font-bold").each((_, el) => {
         const label = $(el).text().trim();
-        const parent = $(el).parent();
-        const valueText = parent.find("a, span").map((i, e) => $(e).text().trim()).get().join(", ");
-        if (label.includes("Author")) author = valueText || author;
-        if (label.includes("Artist")) artist = valueText || artist;
-        if (label.includes("Status")) status = valueText || status;
+        const value = $(el).next().text().trim() || $(el).parent().next().text().trim();
+        if (label.includes("Author")) author = value;
+        if (label.includes("Artist")) artist = value;
+        if (label.includes("Status")) status = value;
       });
+      if (artist === "Unknown" && author !== "Unknown") artist = author;
       if (status.toLowerCase().includes("complete")) status = "Completed";
       if (status.toLowerCase().includes("hiatus")) status = "Hiatus";
-      if (status.toLowerCase().includes("canceled")) status = "Cancelled";
+      if (status.toLowerCase().includes("cancel")) status = "Cancelled";
       const arrayTags = [];
-      $('a[href*="tags="]').each((_, el) => {
+      $('a[href*="/search/data?tags="]').each((_, el) => {
         const label = $(el).text().trim();
         if (label) arrayTags.push({ id: label, label });
       });
@@ -768,7 +770,7 @@ var _Sources = (() => {
           author,
           artist,
           tags: tagSections,
-          desc
+          desc: desc || "No description available."
         })
       });
     }
@@ -780,8 +782,7 @@ var _Sources = (() => {
         const chapterId = href?.split("/chapters/")[1];
         if (!chapterId) return;
         const titleRaw = $el.find("span.font-bold, span.grow").first().text().trim();
-        const timeRaw = $el.find("time").attr("datetime");
-        const time = timeRaw ? new Date(timeRaw) : /* @__PURE__ */ new Date();
+        const timeRaw = $el.find("time").attr("datetime") || (/* @__PURE__ */ new Date()).toISOString();
         const chapNumMatch = titleRaw.match(/(\d+(\.\d+)?)/);
         let chapNum = 0;
         if (chapNumMatch) {
@@ -795,7 +796,7 @@ var _Sources = (() => {
           id: chapterId,
           name,
           chapNum,
-          time,
+          time: new Date(timeRaw),
           langCode: "en"
         }));
       });
@@ -816,46 +817,62 @@ var _Sources = (() => {
         pages
       });
     }
+    // Helper per estrarre sottotitolo (Ultimo capitolo)
+    extractSubtitle($el) {
+      let sub = $el.find('span:contains("Chapter"), span:contains("Ch."), time').first().text().trim();
+      if (!sub) {
+        const time = $el.find("time").text().trim();
+        if (time) sub = time;
+      }
+      return sub || void 0;
+    }
+    // Helper per pulire titoli sporchi (es "One Piece Cover")
+    cleanTitle(title) {
+      return title.replace(/\s+Cover$/i, "").replace(/\s+Poster$/i, "").replace(/\s+Scan$/i, "").trim();
+    }
     parseSearchResults($) {
       const results = [];
       $('a[href*="/series/"]').each((_, el) => {
         const $el = $(el);
         const img = $el.find("img").first();
-        if (img.length === 0) return;
+        let image = img.attr("src");
+        if (!image) {
+          image = $el.closest("article, div").find("img").first().attr("src");
+        }
+        if (!image) return;
         const href = $el.attr("href");
         const id = href?.split("/series/")[1];
         if (!id) return;
-        const image = img.attr("src") || "";
-        const title = img.attr("alt") || "Unknown";
-        let subtitle = void 0;
-        const chaptersText = $el.text().match(/(\d+)\s+Chapters?/i);
-        if (chaptersText) {
-          subtitle = `${chaptersText[1]} Chapters`;
+        let title = img.attr("alt") || $el.text().trim() || "Unknown";
+        title = this.cleanTitle(title);
+        const subtitle = this.extractSubtitle($el.closest("article, div"));
+        if (!results.find((r) => r.mangaId === id)) {
+          results.push(App.createPartialSourceManga({
+            mangaId: id,
+            image,
+            title,
+            subtitle
+          }));
         }
-        results.push(App.createPartialSourceManga({
-          mangaId: id,
-          image,
-          title,
-          subtitle
-        }));
       });
       return results;
     }
     parseHomeSections($, sectionCallback) {
       const hotSection = App.createHomeSection({ id: "hot", title: "Hot Updates \u{1F525}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowLarge });
-      const recentSection = App.createHomeSection({ id: "latest", title: "Recent Updates \u{1F195}", containsMoreItems: true, type: import_types.HomeSectionType.continuous });
+      const latestSection = App.createHomeSection({ id: "latest", title: "Recent Updates \u{1F195}", containsMoreItems: true, type: import_types.HomeSectionType.continuous });
       const hotItems = [];
-      const recentItems = [];
-      const hotContainer = $('section:has(h2:contains("Hot Updates"))');
+      const latestItems = [];
+      const hotContainer = $('section:contains("Hot Updates"), section:contains("Popular")').first();
       hotContainer.find('a[href*="/series/"]').each((_, el) => {
         const $el = $(el);
         const img = $el.find("img").first();
         if (img.length === 0) return;
         const id = $el.attr("href")?.split("/series/")[1];
         if (!id) return;
-        const title = img.attr("alt");
-        const image = img.attr("src");
-        const subtitle = $el.find('span:contains("Chapter")').first().text().trim();
+        let title = img.attr("alt") || "Unknown";
+        title = this.cleanTitle(title);
+        const image = img.attr("src") || "";
+        const subtitle = this.extractSubtitle($el.parent());
         hotItems.push(App.createPartialSourceManga({
           mangaId: id,
           image,
@@ -863,20 +880,28 @@ var _Sources = (() => {
           subtitle
         }));
       });
-      const recentContainer = $('section:has(h2:contains("Recent Updates"))');
+      let recentContainer = $('section:contains("Recent"), section:contains("Latest")').first();
+      if (recentContainer.length === 0) {
+        recentContainer = $("body");
+      }
       recentContainer.find('a[href*="/series/"]').each((_, el) => {
         const $el = $(el);
-        const img = $el.find("img").first();
-        if (img.length === 0) return;
-        const id = $el.attr("href")?.split("/series/")[1];
+        const href = $el.attr("href");
+        const id = href?.split("/series/")[1];
         if (!id) return;
-        const title = img.attr("alt");
-        const image = img.attr("src");
-        const chapterText = $el.find('span:contains("Chapter")').first().text().trim();
-        const timeText = $el.text().match(/(\d+\s+(min|hour|day)s?\s+ago)/i)?.[1];
-        let subtitle = chapterText;
-        if (timeText) subtitle = `${chapterText} \u2022 ${timeText}`;
-        recentItems.push(App.createPartialSourceManga({
+        if (hotItems.find((x) => x.mangaId === id)) return;
+        let image = $el.find("img").attr("src");
+        let title = $el.find("img").attr("alt");
+        if (!image) {
+          image = $el.closest("div").find("img").first().attr("src");
+        }
+        if (!title) {
+          title = $el.closest("div").find("a.font-bold, a.text-white").first().text().trim();
+        }
+        if (!image) return;
+        title = this.cleanTitle(title || "Unknown");
+        const subtitle = this.extractSubtitle($el.closest("div, tr"));
+        latestItems.push(App.createPartialSourceManga({
           mangaId: id,
           image,
           title,
@@ -884,9 +909,9 @@ var _Sources = (() => {
         }));
       });
       hotSection.items = hotItems;
-      recentSection.items = recentItems;
+      latestSection.items = latestItems;
       sectionCallback(hotSection);
-      sectionCallback(recentSection);
+      sectionCallback(latestSection);
     }
   };
 
