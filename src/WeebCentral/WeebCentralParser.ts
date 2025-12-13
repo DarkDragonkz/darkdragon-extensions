@@ -14,13 +14,12 @@ const BASE_URL = 'https://weebcentral.com'
 export class WeebCentralParser {
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
-        // Titolo: Cerca l'H1 (Desktop standard) oppure l'alt dell'immagine come fallback
+        // Titolo: H1 o fallback su alt immagine
         let title = $('h1').first().text().trim() 
         if (!title) title = $('picture img').attr('alt')?.replace(' cover', '') ?? 'Unknown'
 
-        // Immagine: Prendiamo quella dentro il blocco desktop se possibile
-        // Cerca source con media query min-width o semplicemente l'immagine di fallback
-        let image = $('picture source[media*="min-width"]').attr('srcset') ?? ''
+        // Immagine
+        let image = $('picture source').attr('srcset') ?? ''
         if (!image) image = $('picture img').attr('src') ?? ''
         
         const desc = $('p.text-lg').text().trim() || 'No description'
@@ -30,8 +29,7 @@ export class WeebCentralParser {
         let artist = 'Unknown'
         const arrayTags: Tag[] = []
 
-        // Parsing Metadata Desktop
-        // Cerca la lista di info
+        // Parsing Metadata
         $('ul.flex.flex-col.gap-4 li').each((_: any, li: any) => {
             const label = $('strong', li).text().trim()
             const links = $('a', li)
@@ -74,7 +72,6 @@ export class WeebCentralParser {
     parseChapters($: any): Chapter[] {
         const chapters: Chapter[] = []
 
-        // Selettore lista capitoli
         $('#chapter-list > div').each((_: any, div: any) => {
             const link = $('a', div).first()
             const href = link.attr('href')
@@ -83,7 +80,6 @@ export class WeebCentralParser {
             const chapterId = href.split('/chapters/')[1]
             if (!chapterId) return
 
-            // Titolo: "Chapter 200"
             const name = link.find('span.grow span').first().text().trim()
             const chapNumMatch = name.match(/Chapter\s+(\d+(\.\d+)?)/i)
             const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0
@@ -106,33 +102,36 @@ export class WeebCentralParser {
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
 
-        // Iteriamo su ogni articolo (riga di risultato)
-        $('article.bg-base-300').each((_: any, article: any) => {
-            // -- LOGICA DESKTOP --
+        // LOGICA PRESA DA "SOURCE.JS" (Quello funzionante)
+        // Cerca ogni tag <article> (usato sia per griglia che lista)
+        $('article').each((_: any, article: any) => {
             
-            // 1. Trova il blocco INFO Desktop (quello con class "hidden lg:block")
-            // Usiamo il selettore che cerca la colonna di testo larga
-            const desktopInfo = $(article).find('section.lg\\:w-\\[75\\%\\]') 
-            // Nota: Se il selettore sopra fallisce per i caratteri speciali, usiamo un approccio più generico:
-            // Cerchiamo il div che ha il titolo con classe "text-lg font-semibold"
-            const titleBlock = $(article).find('.text-lg.font-semibold').first()
+            // 1. Trova il link alla serie
+            const link = $('a[href*="/series/"]', article).first()
+            const href = link.attr('href')
             
-            // Link e Titolo
-            const titleLink = titleBlock.find('a')
-            const title = titleLink.text().trim()
-            const href = titleLink.attr('href')
-            
-            // ID Manga
+            // 2. Estrai ID
+            // Format: /series/ID/Slug o /series/ID
             const id = href?.split('/series/')[1]?.split('/')[0]
-            
-            if (!id || !title) return
+            if (!id) return
 
-            // Immagine Desktop
-            // È dentro section > a > article.hidden.lg:block
-            // Ma per sicurezza prendiamo il primo tag <source> o <img> che troviamo nell'articolo,
-            // dando priorità alle immagini "normal" (non small)
-            let image = $('source[media*="min-width"]', article).attr('srcset')
-            if (!image) image = $('img', article).attr('src') ?? ''
+            // 3. Immagine
+            // Cerca prima source (webp alta qualità), poi img
+            let image = $('source', article).attr('srcset')
+            const imgTag = $('img', article).first()
+            if (!image) image = imgTag.attr('src') ?? ''
+
+            // 4. Titolo (Il trucco vincente: usare l'ALT dell'immagine)
+            // L'altro autore usava questo metodo perché il testo è spesso nascosto o spostato via CSS
+            let title = imgTag.attr('alt')
+            
+            // Pulizia titolo (rimuove " cover" se presente alla fine)
+            if (title) {
+                title = title.replace(/ cover$/i, '').trim()
+            } else {
+                // Fallback se l'alt manca
+                title = $('.text-lg', article).text().trim() ?? 'Unknown'
+            }
 
             results.push(App.createPartialSourceManga({
                 mangaId: id,
