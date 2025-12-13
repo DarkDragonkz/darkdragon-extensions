@@ -734,7 +734,7 @@ var _Sources = (() => {
     parseMangaDetails($, mangaId) {
       let title = $("h1").first().text().trim();
       if (!title) title = $("picture img").attr("alt")?.replace(" cover", "") ?? "Unknown";
-      let image = $('picture source[media*="min-width"]').attr("srcset") ?? "";
+      let image = $("picture source").attr("srcset") ?? "";
       if (!image) image = $("picture img").attr("src") ?? "";
       const desc = $("p.text-lg").text().trim() || "No description";
       let status = "Ongoing";
@@ -801,16 +801,20 @@ var _Sources = (() => {
     }
     parseSearchResults($) {
       const results = [];
-      $("article.bg-base-300").each((_, article) => {
-        const desktopInfo = $(article).find("section.lg\\:w-\\[75\\%\\]");
-        const titleBlock = $(article).find(".text-lg.font-semibold").first();
-        const titleLink = titleBlock.find("a");
-        const title = titleLink.text().trim();
-        const href = titleLink.attr("href");
+      $("article").each((_, article) => {
+        const link = $('a[href*="/series/"]', article).first();
+        const href = link.attr("href");
         const id = href?.split("/series/")[1]?.split("/")[0];
-        if (!id || !title) return;
-        let image = $('source[media*="min-width"]', article).attr("srcset");
-        if (!image) image = $("img", article).attr("src") ?? "";
+        if (!id) return;
+        let image = $("source", article).attr("srcset");
+        const imgTag = $("img", article).first();
+        if (!image) image = imgTag.attr("src") ?? "";
+        let title = imgTag.attr("alt");
+        if (title) {
+          title = title.replace(/ cover$/i, "").trim();
+        } else {
+          title = $(".text-lg", article).text().trim() ?? "Unknown";
+        }
         results.push(App.createPartialSourceManga({
           mangaId: id,
           image,
