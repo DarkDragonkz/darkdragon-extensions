@@ -732,27 +732,18 @@ var _Sources = (() => {
   // src/NineMangaIT/NineMangaITParser.ts
   var import_types = __toESM(require_lib());
   var NineMangaITParser = class {
-    /**
-     * Estrae l'URL immagine corretto.
-     * NineManga usa 'original' per il lazy loading nella lista PC.
-     */
     getImageSrc(element) {
       let img = element.find("img").first();
       if (element.is("img")) img = element;
-      let src = img.attr("original") || img.attr("src");
-      if (!src || src.includes("pixel.gif") || src.includes("loading")) {
-        src = img.attr("src");
-      }
-      if (!src || src.includes("pixel.gif")) {
-        return "https://paperback.moe/icons/logo-alt.svg";
-      }
+      let src = img.attr("src") || img.attr("data-src");
+      if (!src || src.includes("logo")) return "https://paperback.moe/icons/logo-alt.svg";
       src = src.trim();
       if (src.startsWith("//")) src = `https:${src}`;
       else if (src.startsWith("/")) src = `https://it.ninemanga.com${src}`;
       return src;
     }
     /**
-     * Estrae l'ID manga gestendo link che possono puntare ai capitoli
+     * Estrae l'ID corretto anche se il link punta a un capitolo (comune nella home mobile)
      */
     extractMangaId(url) {
       if (!url) return null;
@@ -760,29 +751,22 @@ var _Sources = (() => {
       return match ? match[1] : null;
     }
     parseMangaDetails($, mangaId) {
-      let title = $("h1").first().text().trim();
-      title = title.replace(/\s*Manga$/i, "").trim();
-      const imageElement = $(".bookintro img").first();
+      let title = $("h1").first().text().trim() || "Titolo Sconosciuto";
+      title = title.replace(/ Manga$/, "").trim();
+      let imageElement = $(".bookintro img").first();
+      if (imageElement.length === 0) imageElement = $(".manga-cover img").first();
       const image = this.getImageSrc(imageElement);
-      let author = "Unknown";
-      let status = "Ongoing";
-      $(".message li").each((_, el) => {
-        const text = $(el).text().trim();
-        if (text.includes("Autore:")) {
-          author = $(el).find("a").text().trim() || text.replace("Autore:", "").trim();
-        }
-        if (text.includes("Stato:")) {
-          const lowerText = text.toLowerCase();
-          if (lowerText.includes("completato")) status = "Completed";
-        }
-      });
+      const author = $('a[itemprop="author"]').first().text().trim() || "Unknown";
       let desc = $('p[itemprop="description"]').text().trim();
       if (!desc) {
         const intro = $(".bookintro").clone();
-        intro.find("ul, h1, div, a, img").remove();
+        intro.find("*").remove();
         desc = intro.text().trim();
       }
       desc = desc.replace(/^Sommario:\s*/i, "").trim() || "Nessuna descrizione.";
+      let status = "Ongoing";
+      const statusText = $(".red, .blue").text().toLowerCase();
+      if (statusText.includes("completato") || statusText.includes("completed")) status = "Completed";
       const arrayTags = [];
       $('.bookintro a[href*="/category/"]').each((_, el) => {
         const $el = $(el);
@@ -806,7 +790,7 @@ var _Sources = (() => {
     parseChapters($, mangaId) {
       const chapters = [];
       const seenIds = /* @__PURE__ */ new Set();
-      const links = $("ul.sub_vol_ul li a.chapter_list_a").toArray();
+      const links = $("ul.chapter_list a.chapter_list_a").toArray();
       for (const link of links) {
         const $link = $(link);
         const href = $link.attr("href");
@@ -822,7 +806,7 @@ var _Sources = (() => {
         titleRaw = titleRaw.replace(new RegExp(mangaId, "gi"), "").trim();
         const dateText = $link.parent().find("span").last().text().trim();
         let time = /* @__PURE__ */ new Date();
-        if (dateText) {
+        if (dateText && !dateText.includes("ago")) {
           const parsedDate = new Date(dateText);
           if (!isNaN(parsedDate.getTime())) time = parsedDate;
         }
@@ -857,7 +841,7 @@ var _Sources = (() => {
       if (pageUrls.length === 0) {
         const img = $("img.manga_pic").first();
         const src = this.getImageSrc(img);
-        if (src && !src.includes("logo")) {
+        if (src && !src.includes("logo-alt")) {
           return App.createChapterDetails({ id: chapterId, mangaId, pages: [src] });
         }
         return App.createChapterDetails({ id: chapterId, mangaId, pages: [] });
@@ -885,15 +869,20 @@ var _Sources = (() => {
         const response = await source.requestManager.schedule(request, 1);
         const $ = source.cheerio.load(response.data);
         const img = $("img.manga_pic").first();
-        const src = this.getImageSrc(img);
-        return src && !src.includes("logo") ? src : null;
+        const src = img.attr("src");
+        if (src && !src.includes("logo")) {
+          if (src.startsWith("//")) return `https:${src}`;
+          if (src.startsWith("/")) return `${source.baseUrl}${src}`;
+          return src;
+        }
+        return null;
       } catch (e) {
         return null;
       }
     }
     parseSearchResults($) {
       const results = [];
-      $(".book-list dd").each((_, item) => {
+      $(".book-list li, dl.book-list dd").each((_, item) => {
         const $item = $(item);
         const link = $item.find("a.bookname").first();
         const href = link.attr("href");
@@ -917,43 +906,31 @@ var _Sources = (() => {
       const popularItems = [];
       const latestItems = [];
       const newItems = [];
-      $("ul.p_list li").each((_, el) => {
-        const $el = $(el);
-        const link = $el.find("a.bookname").first();
-        const href = link.attr("href");
-        const id = this.extractMangaId(href);
-        if (!id) return;
-        const image = this.getImageSrc($el);
-        let title = link.text().trim();
-        title = title.replace(/\s+\d+(\.\d+)?$/, "").trim();
-        popularItems.push(App.createPartialSourceManga({
-          mangaId: id,
-          image,
-          title,
-          subtitle: void 0
-        }));
-      });
-      $(".book-list dd, .book-list li").each((_, el) => {
-        if ($(el).parents(".p_list").length > 0) return;
-        const $el = $(el);
-        const link = $el.find("a.bookname").first();
-        const href = link.attr("href");
-        const id = this.extractMangaId(href);
-        if (!id) return;
-        const image = this.getImageSrc($el);
-        let title = link.text().trim();
-        title = title.replace(/\s+\d+(\.\d+)?$/, "").trim();
-        const chapterText = $el.find("a.chapter").first().text().trim();
-        latestItems.push(App.createPartialSourceManga({
-          mangaId: id,
-          image,
-          title,
-          subtitle: chapterText
-        }));
-      });
+      const parseList = (selector, target) => {
+        $(selector).find("li, dd").each((_, el) => {
+          const $el = $(el);
+          let link = $el.find("a.bookname").first();
+          if (link.length === 0) link = $el.find("a").first();
+          const href = link.attr("href");
+          const id = this.extractMangaId(href);
+          if (!id) return;
+          const image = this.getImageSrc($el);
+          let title = link.text().trim();
+          title = title.replace(/\s+\d+(\.\d+)?$/, "").trim();
+          target.push(App.createPartialSourceManga({
+            mangaId: id,
+            image,
+            title,
+            subtitle: void 0
+          }));
+        });
+      };
+      parseList("#tab_content_3", popularItems);
+      parseList("#tab_content_2", latestItems);
+      parseList("#tab_content_1", newItems);
       popularSection.items = popularItems;
       latestSection.items = latestItems;
-      newSection.items = latestItems;
+      newSection.items = newItems;
       sectionCallback(popularSection);
       sectionCallback(latestSection);
       sectionCallback(newSection);
@@ -999,10 +976,10 @@ var _Sources = (() => {
   // src/NineMangaIT/NineMangaIT.ts
   var IT_DOMAIN = "https://it.ninemanga.com";
   var NineMangaITInfo = {
-    version: "4.0.1",
-    // Patch Cookie Fix
+    version: "5.0.0",
+    // Ritorno al Mobile (Reforged)
     name: "NineMangaIT",
-    description: "Estensione per NineManga IT. Richiede bypass Cloudflare manuale (Icona Nuvola).",
+    description: "Estensione Mobile per NineManga IT. Bypassa +18 e ottimizza il traffico.",
     author: "DarkDragonkzz",
     icon: "icon.png",
     contentRating: import_types2.ContentRating.MATURE,
@@ -1021,8 +998,8 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.baseUrl = IT_DOMAIN;
       this.parser = new NineMangaITParser();
-      // User-Agent Desktop
-      this.userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+      // User-Agent Mobile Android (Fondamentale per ricevere la versione Mobile del sito)
+      this.userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 3,
         requestTimeout: 25e3,
@@ -1033,9 +1010,9 @@ var _Sources = (() => {
               ...{
                 "Referer": `${this.baseUrl}/`,
                 "User-Agent": this.userAgent,
-                "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7"
-                // FIX: Rimossa la forzatura 'Cookie' qui.
-                // Ora l'app userà automaticamente i cookie Cloudflare salvati.
+                "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
+                // Cookie Magici: disabilitano il warning +18 e settano preferenze mobile
+                "Cookie": "is_warning=1; my_limit=1; waring=1"
               }
             };
             return request;
