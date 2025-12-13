@@ -846,14 +846,8 @@ var _Sources = (() => {
               cleanTitle = cleanTitle.replace(/_/g, " ").replace(/^\s*[-–—]+\s*/, "").replace(/\s*[-–—]+\s*$/, "").replace(/\s+/g, " ").trim();
             }
             let finalName = "";
-            if (volNum) {
-              finalName += `Vol. ${volNum}`;
-            }
             if (cleanTitle.length > 0 && cleanTitle !== String(chapNum)) {
-              if (finalName.length > 0) {
-                finalName += " - ";
-              }
-              finalName += cleanTitle;
+              finalName = cleanTitle;
             }
             let time = /* @__PURE__ */ new Date();
             if (chap.date) {
@@ -868,9 +862,10 @@ var _Sources = (() => {
             chapters.push(App.createChapter({
               id,
               name: finalName,
-              // Ora contiene solo "Vol. 1 - Titolo" o "Titolo"
+              // SOLO IL TITOLO PURO
               chapNum,
               volume: volNum ? parseFloat(volNum) : void 0,
+              // Paperback aggiunge "Vol. X" grazie a questo
               time,
               langCode: "en"
             }));
