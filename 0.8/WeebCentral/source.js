@@ -732,14 +732,12 @@ var _Sources = (() => {
   // src/WeebCentral/WeebCentralParser.ts
   var import_types = __toESM(require_lib());
   var WeebCentralParser = class {
-    // Helper per decodificare caratteri speciali
     decodeHTMLEntity(str) {
       return str.replace(/&#(\d+);/g, (_match, dec) => {
         return String.fromCharCode(dec);
       }).replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#039;/g, "'");
     }
-    // --- FUNZIONE HELPER "ROBUSTA" (Logica dell'autore esterno) ---
-    // Estrae i dati del manga da un blocco HTML generico (<article>)
+    // Helper centralizzato (Logica di Gabe)
     parseCommonManga($, element, extraSubtitle) {
       const item = $(element);
       const link = item.is("a") ? item : item.find('a[href*="/series/"]').first();
@@ -782,14 +780,12 @@ var _Sources = (() => {
         const links = $("a", li);
         if (label.includes("Author")) {
           author = links.map((_2, a) => $(a).text().trim()).get().join(", ");
-        }
-        if (label.includes("Status")) {
+        } else if (label.includes("Status")) {
           const statusText = links.first().text().trim().toLowerCase();
           if (statusText.includes("complete")) status = "Completed";
           else if (statusText.includes("ongoing")) status = "Ongoing";
           else if (statusText.includes("hiatus")) status = "Hiatus";
-        }
-        if (label.includes("Tags") || label.includes("Type")) {
+        } else if (label.includes("Tags") || label.includes("Type")) {
           links.each((_2, a) => {
             const tagLabel = $(a).text().trim();
             if (tagLabel) {
@@ -814,8 +810,8 @@ var _Sources = (() => {
     }
     parseChapters($) {
       const chapters = [];
-      $("#chapter-list > div").each((_, div) => {
-        const link = $("a", div).first();
+      $('a[href*="/chapters/"]').each((_, a) => {
+        const link = $(a);
         const href = link.attr("href");
         if (!href) return;
         const chapterId = href.split("/chapters/")[1];
@@ -841,7 +837,7 @@ var _Sources = (() => {
         title: "Hot Updates \u{1F525}",
         containsMoreItems: true,
         type: import_types.HomeSectionType.singleRowLarge
-        // <-- MODIFICA UI QUI
+        // <--- MODIFICA QUI
       });
       const recSection = App.createHomeSection({
         id: "recommendations",
@@ -908,11 +904,10 @@ var _Sources = (() => {
       return results;
     }
     parseChapterDetails($, mangaId, chapterId) {
-      const pages = [];
       return App.createChapterDetails({
         id: chapterId,
         mangaId,
-        pages
+        pages: []
       });
     }
   };
@@ -920,7 +915,7 @@ var _Sources = (() => {
   // src/WeebCentral/WeebCentral.ts
   var DOMAIN = "https://weebcentral.com";
   var WeebCentralInfo = {
-    version: "1.2.0",
+    version: "1.2.2",
     name: "WeebCentral",
     icon: "icon.png",
     author: "Tu",
