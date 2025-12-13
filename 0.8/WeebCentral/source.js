@@ -817,19 +817,17 @@ var _Sources = (() => {
         pages
       });
     }
-    // HELPER POTENZIATO: Estrae sottotitoli anche da link o strutture complesse
+    // HELPER FISSO: Cerca SOLO capitoli o stringhe brevi, ignora date ISO lunghe
     extractSubtitle($el) {
-      let sub = $el.find('span:contains("Chapter"), span:contains("Ch."), time').last().text().trim();
+      let sub = $el.find('span:contains("Chapter"), span:contains("Ch."), a:contains("Chapter")').last().text().trim();
       if (!sub) {
         const chapterLink = $el.find('a[href*="/chapters/"]').first();
         if (chapterLink.length > 0) {
           sub = chapterLink.text().trim();
         }
       }
-      if (!sub) {
-        const text = $el.text();
-        const match = text.match(/Chapter\s*\d+/i);
-        if (match) sub = match[0];
+      if (sub && (sub.length > 20 || sub.includes("T") && sub.includes(":"))) {
+        return void 0;
       }
       return sub || void 0;
     }
