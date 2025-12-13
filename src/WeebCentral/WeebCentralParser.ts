@@ -7,272 +7,245 @@ import {
     PartialSourceManga,
     Tag,
     TagSection,
-    MangaInfo
 } from '@paperback/types'
 
-// Nota: Assicurati di avere 'entities' installato o gestito nel tuo bundle
-import { decodeHTML } from 'entities'
+const BASE_URL = 'https://weebcentral.com'
 
-export class Parser {
+export class WeebCentralParser {
 
+    // Helper per decodificare caratteri speciali
     decodeHTMLEntity(str: string): string {
-        return decodeHTML(str)
+        return str.replace(/&#(\d+);/g, (_match, dec) => {
+            return String.fromCharCode(dec)
+        }).replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#039;/g, "'")
     }
 
-    isLastPage($: any): boolean {
-        return $('span:contains("View More Results...")').toArray().length === 0
+    // --- FUNZIONE HELPER "ROBUSTA" (Logica dell'autore esterno) ---
+    // Estrae i dati del manga da un blocco HTML generico (<article>)
+    private parseCommonManga($: any, element: any, extraSubtitle?: string): PartialSourceManga | null {
+        const item = $(element)
+        
+        // 1. Link e ID
+        // Cerca un tag 'a' che contenga "/series/" nell'href
+        const link = item.is('a') ? item : item.find('a[href*="/series/"]').first()
+        const href = link.attr('href')
+        
+        // Estrae ID: .../series/ID/Slug -> split -> prende ID
+        const id = href?.replace(/\/$/, '')?.split('/').slice(-2)[0]
+        if (!id) return null
+
+        // 2. Immagine
+        // Priorità a <source> (webp alta qualità), fallback su <img>
+        let image = item.find('source').first().attr('srcset')
+        if (!image) image = item.find('img').first().attr('src') ?? ''
+
+        // 3. Titolo (Logica "Alt Tag")
+        // Prende il titolo dall'alt dell'immagine per evitare problemi con desktop/mobile
+        let title = item.find('img').first().attr('alt')
+        if (title) {
+            title = title.replace(/ cover$/i, '').trim()
+        } else {
+            // Fallback se l'alt manca
+            title = item.find('.text-lg').text().trim() ?? 'Unknown'
+        }
+        title = this.decodeHTMLEntity(title)
+
+        // 4. Sottotitolo
+        let subtitle = extraSubtitle
+        if (!subtitle) {
+            // Se non fornito, cerca info generiche (es. "Official", "Manhwa")
+            subtitle = item.find('div.opacity-70').first().text().trim()
+        }
+
+        return App.createPartialSourceManga({
+            mangaId: id,
+            image: image,
+            title: title,
+            subtitle: subtitle ? this.decodeHTMLEntity(subtitle) : undefined
+        })
     }
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
-        const title = $('h1').first().text().trim()
-        const image = $('picture > img').attr('src') ?? ''
-        const description = this.decodeHTMLEntity($('.whitespace-pre-wrap').text().trim())
+        let title = $('h1').first().text().trim() 
+        if (!title) title = $('picture img').attr('alt')?.replace(/ cover$/i, '') ?? 'Unknown'
+        title = this.decodeHTMLEntity(title)
+
+        let image = $('picture source').attr('srcset') ?? ''
+        if (!image) image = $('picture img').attr('src') ?? ''
         
-        const authors: string[] = []
-        for (const authorObj of $('strong:contains("Author")').siblings().toArray()) {
-            const author = $('a', authorObj).text().trim()
-            authors.push(author)
-        }
-        const author = authors.join(', ')
+        const desc = this.decodeHTMLEntity($('p.text-lg').text().trim() || 'No description')
 
-        const parsedStatus = $('strong:contains("Status")').next().text().trim()
-        let status = 'Unknown'
-        switch (parsedStatus) {
-            case 'Ongoing': status = 'Ongoing'; break
-            case 'Complete': status = 'Completed'; break
-            case 'Canceled': status = 'Dropped'; break
-            case 'Hiatus': status = 'Hiatus'; break
-            default: status = 'Unknown'; break
-        }
+        let status = 'Ongoing'
+        let author = 'Unknown'
+        let artist = 'Unknown'
+        const arrayTags: Tag[] = []
 
-        const genres: Tag[] = []
-        for (const genreObj of $('a', $('strong:contains("Tags(s)")').siblings()).toArray()) {
-            const genre = $(genreObj).text().trim()
-            const id = encodeURI(genre)
-            genres.push(App.createTag({ id, label: genre }))
-        }
+        $('ul.flex.flex-col.gap-4 li').each((_: any, li: any) => {
+            const label = $('strong', li).text().trim()
+            const links = $('a', li)
 
-        const tagSections: TagSection[] = [
-            App.createTagSection({ id: '0', label: 'genres', tags: genres })
-        ]
+            if (label.includes('Author')) {
+                author = links.map((_: any, a: any) => $(a).text().trim()).get().join(', ')
+            }
+            if (label.includes('Status')) {
+                const statusText = links.first().text().trim().toLowerCase()
+                if (statusText.includes('complete')) status = 'Completed'
+                else if (statusText.includes('ongoing')) status = 'Ongoing'
+                else if (statusText.includes('hiatus')) status = 'Hiatus'
+            }
+            if (label.includes('Tags') || label.includes('Type')) {
+                links.each((_: any, a: any) => {
+                    const tagLabel = $(a).text().trim()
+                    if (tagLabel) {
+                        arrayTags.push(App.createTag({ id: tagLabel, label: tagLabel }))
+                    }
+                })
+            }
+        })
+
+        const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
 
         return App.createSourceManga({
             id: mangaId,
             mangaInfo: App.createMangaInfo({
-                titles: [this.decodeHTMLEntity(title)],
-                image,
-                rating: 0,
-                status: status as any,
-                artist: '',
+                titles: [title],
+                image: image,
+                status: status,
                 author: author,
+                artist: artist,
                 tags: tagSections,
-                desc: description,
-            }),
+                desc: desc
+            })
         })
     }
 
-    parseChapters($: any, mangaId: string): Chapter[] {
-        const floatRegex = /(\d+\.\d+|\d+)/g
+    parseChapters($: any): Chapter[] {
         const chapters: Chapter[] = []
-        const arrChapters = $('a.flex.items-center').toArray()
-        
-        const types: Record<string, number> = {}
-        let currTypeId = 0
-        let sortingIndex = 0
 
-        for (const chapterObj of arrChapters) {
-            const chapterId = $(chapterObj).attr('href')?.replace(/\/$/, '')?.split('/').pop() ?? ''
-            if (!chapterId) continue
+        $('#chapter-list > div').each((_: any, div: any) => {
+            const link = $('a', div).first()
+            const href = link.attr('href')
+            if (!href) return
 
-            const time = new Date($('time.opacity-50', chapterObj).attr('datetime') ?? '')
-            
-            let chapName = $('span.grow.flex.gap-2 span', chapterObj).first().text().trim()
-            let chapNum = 0
-            let chapType = ''
+            const chapterId = href.split('/chapters/')[1]
+            if (!chapterId) return
 
-            const matches = chapName.match(floatRegex)
-            if (matches && matches[matches.length - 1]) {
-                chapNum = parseFloat(matches[matches.length - 1] ?? '0')
-                chapType = chapName.slice(0, -matches[matches.length - 1]!.length).trim()
-            }
+            const name = link.find('span.grow span').first().text().trim()
+            const chapNumMatch = name.match(/Chapter\s+(\d+(\.\d+)?)/i)
+            const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : 0
 
-            sortingIndex--
-
-            if (!(chapType in types)) {
-                types[chapType] = currTypeId--
-            }
+            const dateStr = link.find('time').attr('datetime')
+            const time = dateStr ? new Date(dateStr) : new Date()
 
             chapters.push(App.createChapter({
                 id: chapterId,
-                name: chapName,
-                chapNum,
-                time,
-                sortingIndex,
-                langCode: 'en',
+                name: name,
+                chapNum: chapNum,
+                time: time,
+                langCode: 'en'
             }))
-        }
-
-        if (chapters.length === 0) {
-            throw new Error(`Couldn't find any chapters for mangaId: ${mangaId}`)
-        }
-
-        const totalTypes = Object.keys(types).length
-
-        return chapters.map((chapter) => {
-            chapter.volume = 0
-            const matches = chapter.name.match(floatRegex)
-            if (matches && matches.length > 0) {
-                let chapType = chapter.name.slice(0, -matches[matches.length - 1]!.length).trim()
-                // Nota: in Paperback i volumi devono essere numeri, qui usiamo l'ID del tipo mappato
-                chapter.volume = totalTypes + (types[chapType] ?? 0)
-            }
-            chapter.sortingIndex += chapters.length
-            return App.createChapter(chapter)
         })
-    }
 
-    parseChapterDetails($: any, mangaId: string, chapterId: string): ChapterDetails {
-        const pages: string[] = []
-        for (const img of $('img', 'section.cursor-pointer').toArray()) {
-            let image = $(img).attr('src') ?? ''
-            if (!image) image = $(img).attr('data-src') ?? ''
-            if (!image) continue
-            pages.push(image)
-        }
-
-        return App.createChapterDetails({
-            id: chapterId,
-            mangaId: mangaId,
-            pages: pages,
-        })
-    }
-
-    parseTags($: any): TagSection[] {
-        const genres: Tag[] = []
-        for (const genreObj of $('span', $('div.collapse-content').last()).toArray()) {
-            const label = $(genreObj).text().trim()
-            const id = label
-            genres.push(App.createTag({ id, label }))
-        }
-        return [
-            App.createTagSection({ id: '0', label: 'genres', tags: genres }),
-        ]
-    }
-
-    async parseSearchResults($: any): Promise<PartialSourceManga[]> {
-        const results: PartialSourceManga[] = []
-        for (const item of $('article.flex.gap-4').toArray()) {
-            const id = $('a', item).attr('href')?.split('/series/')[1]?.split('/')[0] ?? ''
-            if (id == '' || typeof id != 'string') throw new Error('Id is empty')
-            
-            const title = $('a.link.link-hover', item).first().text().trim() ?? ''
-            const image = $('img', item).attr('src') ?? $('img', item).attr('data-src') ?? ''
-            
-            results.push(App.createPartialSourceManga({
-                image,
-                title: this.decodeHTMLEntity(title),
-                mangaId: id,
-                subtitle: '',
-            }))
-        }
-        return results
+        return chapters
     }
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
-        const recommendationSection = App.createHomeSection({
-            id: 'recommendation',
-            title: 'Recommended Mangas',
-            type: HomeSectionType.singleRowNormal,
-            containsMoreItems: false,
-        })
+        
+        // 1. Hot Updates (LARGE COVER)
         const hotSection = App.createHomeSection({
             id: 'hot',
-            title: 'Hot Updates',
-            type: HomeSectionType.singleRowNormal,
+            title: 'Hot Updates 🔥',
             containsMoreItems: true,
-        })
-        const recentSection = App.createHomeSection({
-            id: 'recent',
-            title: 'Latest Updates',
-            type: HomeSectionType.singleRowNormal,
-            containsMoreItems: true,
+            type: HomeSectionType.singleRowLarge // <-- MODIFICA UI QUI
         })
 
-        // Popolamento Hot Updates
-        const hot: PartialSourceManga[] = []
-        for (const hotObj of $('article.flex.gap-4', 'section.bg-base-200.max-w-7xl').toArray()) {
-            const id = $('a', hotObj).first().attr('href')?.replace(/\/$/, '')?.split('/').slice(-2)[0] ?? ''
-            const title = $('div.font-semibold', hotObj).first().text().trim() ?? ''
-            const image = $('source', hotObj).first().attr('srcset') ?? ''
-            const subtitle = $('span', hotObj).last().text().trim() ?? ''
-            
-            hot.push(App.createPartialSourceManga({
-                image,
-                title: this.decodeHTMLEntity(title),
-                mangaId: id,
-                subtitle: this.decodeHTMLEntity(subtitle),
-            }))
-        }
-        hotSection.items = hot
+        // 2. Recommendations (NORMAL)
+        const recSection = App.createHomeSection({
+            id: 'recommendations',
+            title: 'Recommendations 💡',
+            containsMoreItems: false,
+            type: HomeSectionType.singleRowNormal
+        })
+
+        // 3. Latest Updates (NORMAL)
+        const latestSection = App.createHomeSection({
+            id: 'latest',
+            title: 'Latest Updates 🆕',
+            containsMoreItems: true,
+            type: HomeSectionType.singleRowNormal
+        })
+
+        // --- Parsing Hot Updates ---
+        const hotManga: PartialSourceManga[] = []
+        const hotContainer = $('section:has(h2:contains("Hot Updates"))').first()
+        $('article', hotContainer).each((_: any, item: any) => {
+            const manga = this.parseCommonManga($, item)
+            if (manga) hotManga.push(manga)
+        })
+        hotSection.items = hotManga
         sectionCallback(hotSection)
 
-        // Popolamento Recent Updates
-        const recent: PartialSourceManga[] = []
-        for (const recentObj of $('article', 'section.bg-base-200.rounded-sm').toArray()) {
-            const id = $('a.aspect-square', recentObj).attr('href')?.replace(/\/$/, '')?.split('/').slice(-2)[0] ?? ''
-            const title = $('div.font-semibold', recentObj).text().trim() ?? ''
-            const image = $('a img', recentObj).attr('src') ?? $('a img', recentObj).attr('data-src') ?? ''
-            const subtitle = $('span', recentObj).last().text().trim() ?? ''
-            
-            recent.push(App.createPartialSourceManga({
-                image,
-                title: this.decodeHTMLEntity(title),
-                mangaId: id,
-                subtitle: this.decodeHTMLEntity(subtitle),
-            }))
+        // --- Parsing Recommendations ---
+        const recManga: PartialSourceManga[] = []
+        const recContainer = $('section:has(h2:contains("Recommendations"))').first()
+        $('article', recContainer).each((_: any, item: any) => {
+            const manga = this.parseCommonManga($, item)
+            if (manga) recManga.push(manga)
+        })
+        if (recManga.length > 0) {
+            recSection.items = recManga
+            sectionCallback(recSection)
         }
-        recentSection.items = recent
-        sectionCallback(recentSection)
 
-        // Popolamento Recommendations
-        const recommendation: PartialSourceManga[] = []
-        for (const recommendationObj of $('.glide__slide:not(.glide__slide--clone)').toArray()) {
-            const id = $('a', recommendationObj).attr('href')?.replace(/\/$/, '')?.split('/').slice(-2)[0] ?? ''
-            const title = $('.text-white', recommendationObj).text().trim() ?? ''
-            const image = $('source', recommendationObj).first().attr('srcset') ?? $('img', recommendationObj).attr('src') ?? ''
+        // --- Parsing Latest Updates ---
+        const latestManga: PartialSourceManga[] = []
+        const latestContainer = $('section:has(h2:contains("Latest Updates"))').first()
+        $('article', latestContainer).each((_: any, item: any) => {
+            // Per i Latest, proviamo a prendere l'ultimo capitolo come sottotitolo
+            const chapterText = $(item).find('a[href*="/chapters/"] span').last().text().trim()
             
-            recommendation.push(App.createPartialSourceManga({
-                image,
-                title: this.decodeHTMLEntity(title),
-                mangaId: id,
-                subtitle: '',
-            }))
-        }
-        recommendationSection.items = recommendation
-        sectionCallback(recommendationSection)
+            const manga = this.parseCommonManga($, item, chapterText)
+            if (manga) latestManga.push(manga)
+        })
+        latestSection.items = latestManga
+        sectionCallback(latestSection)
     }
 
-    parseViewMore($: any, homepageSectionId: string): PartialSourceManga[] {
-        const manga: PartialSourceManga[] = []
+    parseSearchResults($: any): PartialSourceManga[] {
+        const results: PartialSourceManga[] = []
         const collectedIds: string[] = []
-        const selector = homepageSectionId === 'hot' ? 'article.flex' : 'article'
 
-        for (const obj of $(selector).toArray()) {
-            const image = $('source', obj).attr('srcset') ?? ''
-            const title = $('img', obj).attr('alt') ?? ''
-            const id = $('a', obj).first().attr('href')?.replace(/\/$/, '')?.split('/').slice(-2)[0] ?? ''
-            const subtitle = $('div.opacity-70', obj).first().text().trim()
+        $('article').each((_: any, article: any) => {
+            const manga = this.parseCommonManga($, article)
+            if (manga && !collectedIds.includes(manga.mangaId)) {
+                results.push(manga)
+                collectedIds.push(manga.mangaId)
+            }
+        })
 
-            if (!id || !title || collectedIds.includes(id)) continue
+        return results
+    }
 
-            manga.push(App.createPartialSourceManga({
-                image: image,
-                title: this.decodeHTMLEntity(title),
-                mangaId: id,
-                subtitle: this.decodeHTMLEntity(subtitle),
-            }))
-            collectedIds.push(id)
-        }
-        return manga
+    parseViewMore($: any): PartialSourceManga[] {
+        const results: PartialSourceManga[] = []
+        const collectedIds: string[] = []
+
+        $('article').each((_: any, article: any) => {
+            const manga = this.parseCommonManga($, article)
+            if (manga && !collectedIds.includes(manga.mangaId)) {
+                results.push(manga)
+                collectedIds.push(manga.mangaId)
+            }
+        })
+        return results
+    }
+    
+    parseChapterDetails($: any, mangaId: string, chapterId: string): ChapterDetails {
+        const pages: string[] = []
+        return App.createChapterDetails({
+            id: chapterId,
+            mangaId: mangaId,
+            pages: pages
+        })
     }
 }
