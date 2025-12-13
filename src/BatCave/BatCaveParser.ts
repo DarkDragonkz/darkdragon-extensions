@@ -117,7 +117,7 @@ export class BatCaveParser {
                     const id = String(chap.id)
                     let rawTitle = (chap.title || '').trim()
                     
-                    // --- 1. ESTRAZIONE NUMERO CAPITOLO ---
+                    // --- 1. NUMERO CAPITOLO ---
                     let chapNum = 0
                     if (chap.posi) {
                         chapNum = parseFloat(chap.posi)
@@ -126,7 +126,7 @@ export class BatCaveParser {
                         if (numMatch) chapNum = parseFloat(numMatch[numMatch.length - 1] ?? '0')
                     }
 
-                    // --- 2. ESTRAZIONE VOLUME ---
+                    // --- 2. VOLUME ---
                     let volNum: string | undefined = undefined
                     const volMatch = rawTitle.match(/(?:Vol\.?|TPB|Book)[_\s]*(\d+)/i)
                     if (volMatch) {
@@ -159,16 +159,18 @@ export class BatCaveParser {
                     if (cleanTitle.length > 0 && cleanTitle !== String(chapNum)) {
                          finalName = cleanTitle
                     }
-
-                    // --- 5. CUSTOM LANG CODE: FLAG + PAGINE ---
-                    let customLangCode = '🇺🇸' // Default: Bandiera USA
                     
-                    // Controlliamo se esistono le pagine nel JSON
+                    // --- 5. AGGIUNTA PAGINE AL TITOLO ---
+                    // Invece di hackerare langCode, le mettiamo qui
                     const pagesCount = chap.pages || chap.count
-                    
                     if (pagesCount) {
-                        // Formato richiesto: Bandiera - Pagine
-                        customLangCode = `🇺🇸 - ${pagesCount}p`
+                        // Se c'è già un titolo, aggiungi spazio
+                        if (finalName.length > 0) {
+                            finalName += ` (${pagesCount}p)`
+                        } else {
+                            // Se il titolo era vuoto (es. capitolo standard), lo popoliamo col numero pagine
+                            finalName = `(${pagesCount}p)`
+                        }
                     }
 
                     // --- DATA ---
@@ -189,7 +191,7 @@ export class BatCaveParser {
                         chapNum: chapNum,
                         volume: volNum ? parseFloat(volNum) : undefined,
                         time: time,
-                        langCode: customLangCode // <--- Output: "🇺🇸 - 56p"
+                        langCode: 'en' // RIPRISTINATO STANDARD PER SICUREZZA
                     }))
                 }
             }
