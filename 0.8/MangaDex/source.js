@@ -733,18 +733,20 @@ var _Sources = (() => {
   var MD_UPLOADS = "https://uploads.mangadex.org";
   var MangaDexParser = class {
     parseMangaDetails(data, mangaId) {
-      const attributes = data.data.attributes;
-      const relationships = data.data.relationships;
-      const title = attributes.title.en ?? Object.values(attributes.title)[0] ?? "Unknown Title";
-      const desc = attributes.description.en ?? Object.values(attributes.description)[0] ?? "";
+      const attributes = data.data?.attributes || {};
+      const relationships = data.data?.relationships || [];
+      const title = attributes.title?.en ?? Object.values(attributes.title || {})[0] ?? "Unknown Title";
+      const desc = attributes.description?.en ?? Object.values(attributes.description || {})[0] ?? "";
       const authors = relationships.filter((r) => r.type === "author").map((r) => r.attributes?.name).filter((n) => n);
       const artists = relationships.filter((r) => r.type === "artist").map((r) => r.attributes?.name).filter((n) => n);
       const coverRel = relationships.find((r) => r.type === "cover_art");
       const coverFileName = coverRel?.attributes?.fileName;
       const image = coverFileName ? `${MD_UPLOADS}/covers/${mangaId}/${coverFileName}.512.jpg` : "https://paperback.moe/icons/logo-alt.svg";
       const tags = [];
-      for (const tag of attributes.tags) {
-        tags.push(App.createTag({ id: tag.id, label: tag.attributes.name.en }));
+      if (attributes.tags) {
+        for (const tag of attributes.tags) {
+          tags.push(App.createTag({ id: tag.id, label: tag.attributes.name.en }));
+        }
       }
       let status = "Ongoing";
       if (attributes.status === "completed") status = "Completed";
@@ -765,28 +767,29 @@ var _Sources = (() => {
     }
     parseChapters(data) {
       const chapters = [];
-      for (const chapter of data.data) {
+      for (const chapter of data) {
         const attr = chapter.attributes;
         if (attr.externalUrl) {
           continue;
         }
-        const rels = chapter.relationships;
+        const rels = chapter.relationships || [];
         const scanGroup = rels.find((r) => r.type === "scanlation_group")?.attributes?.name;
-        let title = attr.title || "";
-        if (!title && attr.chapter) title = `Chapter ${attr.chapter}`;
-        if (!title) title = "Oneshot";
+        const chapNum = parseFloat(attr.chapter) || 0;
+        let name = attr.title ? String(attr.title).trim() : "";
+        if (name === String(chapNum)) name = "";
         const time = new Date(attr.publishAt);
         chapters.push(App.createChapter({
           id: chapter.id,
-          name: title,
-          chapNum: parseFloat(attr.chapter) || 0,
+          name,
+          chapNum,
           volume: parseFloat(attr.volume) || void 0,
           time,
-          langCode: attr.translatedLanguage,
+          langCode: attr.translatedLanguage || "en",
           group: scanGroup
+          // Aggiunge il gruppo di scanlation
         }));
       }
-      return chapters;
+      return chapters.sort((a, b) => b.chapNum - a.chapNum);
     }
     parseChapterDetails(data, mangaId, chapterId) {
       const baseUrl = data.baseUrl;
@@ -801,9 +804,10 @@ var _Sources = (() => {
     }
     parseSearchResults(data) {
       const results = [];
-      for (const manga of data.data) {
+      const mangaList = data.data || [];
+      for (const manga of mangaList) {
         const attr = manga.attributes;
-        const title = attr.title.en ?? Object.values(attr.title)[0] ?? "Unknown";
+        const title = attr.title?.en ?? Object.values(attr.title || {})[0] ?? "Unknown";
         const coverRel = manga.relationships.find((r) => r.type === "cover_art");
         const fileName = coverRel?.attributes?.fileName;
         let image = "https://paperback.moe/icons/logo-alt.svg";
@@ -825,13 +829,13 @@ var _Sources = (() => {
   // src/MangaDex/MangaDex.ts
   var MD_API = "https://api.mangadex.org";
   var MangaDexInfo = {
-    version: "3.0.1",
-    // Bump per il filtro capitoli esterni
+    version: "3.1.0",
+    // Bump version (Pagination Fix)
     name: "MangaDex (EN)",
     icon: "icon.png",
     author: "DarkDragonkz",
     authorWebsite: "https://github.com/DarkDragonkz",
-    description: "MangaDex English source. Filters out external links.",
+    description: "MangaDex English source. Filters out external links and supports huge manga libraries.",
     contentRating: import_types.ContentRating.MATURE,
     websiteBaseURL: "https://mangadex.org",
     sourceTags: [
@@ -878,13 +882,25 @@ var _Sources = (() => {
     }
     async getChapters(mangaId) {
       const limit = 500;
-      const request = App.createRequest({
-        url: `${MD_API}/manga/${mangaId}/feed?limit=${limit}&translatedLanguage[]=en&order[chapter]=desc&includeFutureUpdates=0&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
-        method: "GET"
-      });
-      const response = await this.requestManager.schedule(request, 1);
-      const data = JSON.parse(response.data ?? "{}");
-      return this.parser.parseChapters(data);
+      let offset = 0;
+      let hasMore = true;
+      const allChaptersData = [];
+      while (hasMore) {
+        const request = App.createRequest({
+          url: `${MD_API}/manga/${mangaId}/feed?limit=${limit}&offset=${offset}&translatedLanguage[]=en&order[chapter]=desc&includeFutureUpdates=0&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
+          method: "GET"
+        });
+        const response = await this.requestManager.schedule(request, 1);
+        const data = JSON.parse(response.data ?? "{}");
+        const results = data.data || [];
+        allChaptersData.push(...results);
+        if (results.length < limit) {
+          hasMore = false;
+        } else {
+          offset += limit;
+        }
+      }
+      return this.parser.parseChapters(allChaptersData);
     }
     async getChapterDetails(mangaId, chapterId) {
       const request = App.createRequest({
