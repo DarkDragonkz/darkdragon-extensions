@@ -22,9 +22,9 @@ import { WeebCentralParser } from './WeebCentralParser'
 const DOMAIN = 'https://weebcentral.com'
 
 export const WeebCentralInfo: SourceInfo = {
-    version: '2.5.0', // Updated: Full Fix ViewMore, Search & Chapters
+    version: '2.6.0', // Hybrid Version: Robust + Clean UI
     name: 'WeebCentral',
-    description: 'Extension for WeebCentral. Fixed Chapter List & Search.',
+    description: 'Extension for WeebCentral. Fixed UI, Search and Chapters.',
     author: 'DarkDragonkzz',
     icon: 'icon.png',
     contentRating: ContentRating.MATURE,
@@ -81,7 +81,7 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        // FIX CRITICO: Chiamiamo l'endpoint full-chapter-list
+        // FONDAMENTALE: Usa full-chapter-list come nel file originale funzionante
         const request = App.createRequest({
             url: `${this.baseUrl}/series/${mangaId}/full-chapter-list`,
             method: 'GET'
@@ -104,6 +104,7 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         const offset = metadata?.offset ?? 0
         
+        // Usa l'endpoint di ricerca dati che ritorna HTML parziale
         const request = App.createRequest({
             url: `${this.baseUrl}/search/data?author=&text=${encodeURIComponent(query.title ?? '')}&sort=Best%20Match&order=Ascending&official=Any&limit=32&offset=${offset}`,
             method: 'GET'
@@ -113,10 +114,9 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($)
         
-        // Se troviamo meno di 32 risultati, siamo alla fine
         return App.createPagedResults({
             results: manga,
-            metadata: manga.length >= 32 ? { offset: offset + 32 } : undefined
+            metadata: this.parser.isLastPage($) ? undefined : { offset: offset + 32 }
         })
     }
 
@@ -132,7 +132,7 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
         const offset = metadata?.offset ?? 0
         let url = ''
         
-        // FIX VIEW MORE: Usiamo i parametri corretti per la paginazione
+        // Mappiamo le sezioni ai filtri di ricerca per avere paginazione infinita funzionante
         if (homepageSectionId === 'hot') {
             url = `${this.baseUrl}/search/data?sort=Popularity&order=Descending&official=Any&limit=32&offset=${offset}`
         } else if (homepageSectionId === 'latest') {
@@ -149,7 +149,7 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
         
         return App.createPagedResults({
             results: manga,
-            metadata: manga.length >= 32 ? { offset: offset + 32 } : undefined
+            metadata: this.parser.isLastPage($) ? undefined : { offset: offset + 32 }
         })
     }
 }
