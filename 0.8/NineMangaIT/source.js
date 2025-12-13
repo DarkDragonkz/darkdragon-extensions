@@ -744,7 +744,8 @@ var _Sources = (() => {
     }
     parseMangaDetails($, mangaId) {
       let title = $('h1[itemprop="name"]').first().text().trim();
-      if (!title) title = $(".book-title").text().trim();
+      if (!title) title = $(".book-title").first().text().trim();
+      if (!title) title = $(".book-detail .title").first().text().trim();
       title = title.replace(/ Manga$/, "").trim();
       let imageElement = $('img[itemprop="image"]').first();
       if (imageElement.length === 0) imageElement = $(".bookintro img").first();
@@ -794,9 +795,7 @@ var _Sources = (() => {
         const parts = href.split("/");
         const filePart = parts.pop() ?? "";
         const chapterId = filePart.split("?")[0].replace(".html", "");
-        if (chapterId.includes("-")) {
-          continue;
-        }
+        if (chapterId.includes("-")) continue;
         if (seenIds.has(chapterId)) continue;
         seenIds.add(chapterId);
         let titleRaw = $link.attr("title") || $link.text().trim();
@@ -826,9 +825,6 @@ var _Sources = (() => {
       }
       return chapters;
     }
-    /**
-     * Parsing parallelo delle immagini del capitolo
-     */
     async parseChapterDetails($, mangaId, chapterId, source) {
       const pageUrls = [];
       $("select#page option, select.sl-page option").each((_, obj) => {
@@ -870,7 +866,6 @@ var _Sources = (() => {
           method: "GET",
           headers: {
             "Referer": source.baseUrl,
-            // Fondamentale per NineManga
             "User-Agent": source.userAgent
           }
         });
@@ -894,6 +889,7 @@ var _Sources = (() => {
         if (!id) continue;
         const image = this.getImageSrc($item);
         let title = link.text().trim();
+        if (!title) title = link.attr("title") ?? "";
         if (!title) title = $item.find("dd.book-list-title, h3").text().trim();
         if (!title) title = "Unknown";
         results.push(App.createPartialSourceManga({
@@ -917,10 +913,20 @@ var _Sources = (() => {
           const $el = $home(el);
           const link = $el.find("a").first();
           const href = link.attr("href");
-          const id = href?.split("/manga/")[1]?.replace(".html", "");
+          if (!href) return;
+          let id = "";
+          if (href.includes("/manga/")) {
+            id = href.split("/manga/")[1]?.replace(".html", "");
+          } else if (href.includes("/chapter/")) {
+            const parts = href.split("/chapter/");
+            if (parts.length > 1) {
+              id = parts[1].split("/")[0];
+            }
+          }
           if (!id) return;
           const image = this.getImageSrc($el);
-          const title = link.attr("title") || link.text().trim();
+          let title = link.attr("title") || link.text().trim();
+          title = title.replace(/\s+\d+(\.\d+)?$/, "").trim();
           target.push(App.createPartialSourceManga({
             mangaId: id,
             image,
@@ -980,8 +986,8 @@ var _Sources = (() => {
   // src/NineMangaIT/NineMangaIT.ts
   var IT_DOMAIN = "https://it.ninemanga.com";
   var NineMangaITInfo = {
-    version: "1.5.0",
-    // Bump version: Mobile Fixes
+    version: "1.6.0",
+    // Bump version: Fix Home ID & Search
     name: "NineMangaIT",
     description: "Estensione per it.ninemanga.com (Mobile Optimized)",
     author: "DarkDragonkzz",
@@ -1002,11 +1008,9 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.baseUrl = IT_DOMAIN;
       this.parser = new NineMangaITParser();
-      // User-Agent Mobile Fisso per evitare redirect o ban
       this.userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 3,
-        // Teniamo basso per non triggerare l'anti-bot su 40 pagine
         requestTimeout: 25e3,
         interceptor: {
           interceptRequest: async (request) => {
@@ -1017,7 +1021,6 @@ var _Sources = (() => {
                 "User-Agent": this.userAgent,
                 "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
                 "Cookie": "is_warning=1; my_limit=1"
-                // Cookie per bypassare warning +18
               }
             };
             return request;
@@ -1031,6 +1034,7 @@ var _Sources = (() => {
     getMangaShareUrl(mangaId) {
       return `${this.baseUrl}/manga/${mangaId}.html`;
     }
+    // FIX ID: Gestisce ID puliti e ID sporchi per evitare 404
     getMangaUrl(mangaId) {
       const id = mangaId.endsWith(".html") ? mangaId : `${mangaId}.html`;
       return `${this.baseUrl}/manga/${id}`;
@@ -1075,7 +1079,7 @@ var _Sources = (() => {
       let page = metadata?.page ?? 1;
       if (page === -1) return App.createPagedResults({ results: [], metadata: { page: -1 } });
       const request = App.createRequest({
-        url: new URLBuilder(this.baseUrl).addPathComponent("search").addQueryParameter("name_sel", "contain").addQueryParameter("wd", encodeURIComponent(query?.title ?? "")).addQueryParameter("page", page.toString()).addQueryParameter("type", "high").buildUrl({ addTrailingSlash: true, includeUndefinedParameters: false }),
+        url: new URLBuilder(this.baseUrl).addPathComponent("search").addQueryParameter("name_sel", "contain").addQueryParameter("wd", encodeURIComponent(query?.title ?? "")).addQueryParameter("page", page.toString()).buildUrl({ addTrailingSlash: true, includeUndefinedParameters: false }),
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
@@ -1083,7 +1087,7 @@ var _Sources = (() => {
       const $ = this.cheerio.load(response.data);
       const manga = this.parser.parseSearchResults($, this.baseUrl);
       page++;
-      if (manga.length < 10) page = -1;
+      if (manga.length === 0) page = -1;
       return App.createPagedResults({
         results: manga,
         metadata: { page }
