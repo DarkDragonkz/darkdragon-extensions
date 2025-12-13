@@ -23,11 +23,11 @@ import { MangaDexITParser } from './MangaDexITParser'
 const MD_API = 'https://api.mangadex.org'
 
 export const MangaDexITInfo: SourceInfo = {
-    version: '1.1.0', // Major bump per refactoring
+    version: '1.2.0', // Bump version (Pagination & Deduplication)
     name: 'MangaDex IT',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
-    description: 'Estensione Italiana per MangaDex. Include ricerca Smart ID e copertine HD.',
+    description: 'Estensione Italiana per MangaDex. Include ricerca Smart ID e copertine HD. Filtra duplicati.',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: 'https://mangadex.org',
     sourceTags: [
@@ -72,24 +72,33 @@ export class MangaDexIT implements SearchResultsProviding, MangaProviding, Chapt
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        // Feed solo Italiano, ordinato per volume/capitolo
-        const request = App.createRequest({
-            url: `${MD_API}/manga/${mangaId}/feed?limit=500&translatedLanguage[]=it&order[volume]=desc&order[chapter]=desc&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic&includeFutureUpdates=0`,
-            method: 'GET'
-        })
+        const limit = 500
+        let offset = 0
+        let hasMore = true
+        const allChaptersData: any[] = []
 
-        const response = await this.requestManager.schedule(request, 1)
-        const data = JSON.parse(response.data ?? '{}')
-        
-        const chapters = this.parser.parseChapters(data)
+        // Ciclo WHILE per scaricare TUTTI i capitoli (es. One Piece > 500 ch)
+        while (hasMore) {
+            const request = App.createRequest({
+                url: `${MD_API}/manga/${mangaId}/feed?limit=${limit}&offset=${offset}&translatedLanguage[]=it&order[chapter]=desc&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic&includeFutureUpdates=0`,
+                method: 'GET'
+            })
 
-        // Sorting Client-Side di sicurezza (Volume -> Capitolo)
-        return chapters.sort((a, b) => {
-            if ((a.volume ?? 0) !== (b.volume ?? 0)) {
-                return (b.volume ?? 0) - (a.volume ?? 0)
+            const response = await this.requestManager.schedule(request, 1)
+            const data = JSON.parse(response.data ?? '{}')
+            
+            const results = data.data || []
+            allChaptersData.push(...results)
+
+            if (results.length < limit) {
+                hasMore = false
+            } else {
+                offset += limit
             }
-            return (b.chapNum ?? 0) - (a.chapNum ?? 0)
-        })
+        }
+        
+        // Passiamo tutto al parser che farà la deduplicazione
+        return this.parser.parseChapters(allChaptersData)
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
@@ -116,9 +125,6 @@ export class MangaDexIT implements SearchResultsProviding, MangaProviding, Chapt
         
         let url = `${MD_API}/manga?limit=${limit}&offset=${offset}&includes[]=cover_art`
 
-        // FILTRI FONDAMENTALI PER IT:
-        // Qui MANTENIAMO il filtro lingua. Se cerco "One Piece" sulla source IT, 
-        // voglio vederlo solo se esistono capitoli in IT.
         url += '&availableTranslatedLanguage[]=it'
         url += '&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic'
         
@@ -133,7 +139,6 @@ export class MangaDexIT implements SearchResultsProviding, MangaProviding, Chapt
                 url += `&title=${encodeURIComponent(safeTitle)}&order[relevance]=desc`
             }
         } else {
-            // Ordine default per popolarità
             url += '&order[followedCount]=desc'
         }
 
@@ -141,7 +146,6 @@ export class MangaDexIT implements SearchResultsProviding, MangaProviding, Chapt
         const response = await this.requestManager.schedule(request, 1)
         const data = JSON.parse(response.data ?? '{}')
         
-        // Risultati ricerca: Qualità cover standard (.256) per velocità
         const results = this.parser.parseSearchResults(data, false)
 
         return App.createPagedResults({
@@ -151,17 +155,17 @@ export class MangaDexIT implements SearchResultsProviding, MangaProviding, Chapt
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        // UI MIGLIORATA:
-        // 1. Popolari: Large (Vetrina)
-        // 2. Ultime Uscite: Continuous (Scroll infinito verticale)
-        // 3. Nuovi Arrivi: Normal (Scroll orizzontale)
+        // La Home italiana è già leggera (3 sezioni), la manteniamo così ma con limit ottimizzato a 15
         const sections = [
             App.createHomeSection({ id: 'popular', title: 'Popolari (IT) 🔥', containsMoreItems: true, type: HomeSectionType.singleRowLarge }),
             App.createHomeSection({ id: 'latest', title: 'Ultime Uscite (IT) 🆙', containsMoreItems: true, type: HomeSectionType.continuous }),
             App.createHomeSection({ id: 'new', title: 'Nuovi Arrivi (IT) 🆕', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
         ]
 
-        // Parametri base comuni: Solo IT, Contenuto completo
+        sectionCallback(sections[0])
+        sectionCallback(sections[1])
+        sectionCallback(sections[2])
+
         const baseParams = 'limit=15&includes[]=cover_art&availableTranslatedLanguage[]=it&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic'
 
         const urls: Record<string, string> = {
@@ -170,14 +174,12 @@ export class MangaDexIT implements SearchResultsProviding, MangaProviding, Chapt
             new: `${MD_API}/manga?${baseParams}&order[createdAt]=desc`
         }
 
-        // Esecuzione parallela
         const promises = sections.map(async (section) => {
             try {
                 const request = App.createRequest({ url: urls[section.id], method: 'GET' })
                 const response = await this.requestManager.schedule(request, 1)
                 const data = JSON.parse(response.data ?? '{}')
                 
-                // Se la sezione è Large, usa cover HD (.512)
                 const useHighQuality = (section.type === HomeSectionType.singleRowLarge)
                 section.items = this.parser.parseSearchResults(data, useHighQuality)
                 
