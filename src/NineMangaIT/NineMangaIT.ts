@@ -23,9 +23,9 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '4.0.1', // Patch Cookie Fix
+    version: '5.0.0', // Ritorno al Mobile (Reforged)
     name: 'NineMangaIT',
-    description: 'Estensione per NineManga IT. Richiede bypass Cloudflare manuale (Icona Nuvola).',
+    description: 'Estensione Mobile per NineManga IT. Bypassa +18 e ottimizza il traffico.',
     author: 'DarkDragonkzz',
     icon: 'icon.png',
     contentRating: ContentRating.MATURE,
@@ -44,8 +44,8 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     baseUrl = IT_DOMAIN
     parser = new NineMangaITParser()
 
-    // User-Agent Desktop
-    readonly userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    // User-Agent Mobile Android (Fondamentale per ricevere la versione Mobile del sito)
+    readonly userAgent = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
 
     constructor(public cheerio: any) {} 
 
@@ -59,9 +59,9 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
                     ...{
                         'Referer': `${this.baseUrl}/`,
                         'User-Agent': this.userAgent,
-                        'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7'
-                        // FIX: Rimossa la forzatura 'Cookie' qui.
-                        // Ora l'app userà automaticamente i cookie Cloudflare salvati.
+                        'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
+                        // Cookie Magici: disabilitano il warning +18 e settano preferenze mobile
+                        'Cookie': 'is_warning=1; my_limit=1; waring=1' 
                     }
                 }
                 return request
@@ -82,7 +82,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
-        // Manteniamo waring=1 nell'URL come sicurezza extra
+        // Aggiungiamo waring=1 per sicurezza
         const request = App.createRequest({
             url: this.getMangaUrl(mangaId) + '?waring=1',
             method: 'GET'
@@ -106,12 +106,14 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
         let url = chapterId
+        // Costruzione URL robusta per mobile
         if (!url.startsWith('http')) {
              if (!url.startsWith('/')) url = `/chapter/${mangaId}/${chapterId}`
              url = `${this.baseUrl}${url}`
         }
         
         if (!url.endsWith('.html')) url += '.html'
+        // Bypass +18 anche sui capitoli
         if (!url.includes('waring=1')) url += '?waring=1'
 
         const request = App.createRequest({
@@ -123,6 +125,8 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         this.checkResponseError(response)
         
         const $ = this.cheerio.load(response.data)
+        
+        // Passiamo 'this' per permettere al parser di scaricare le pagine in parallelo
         return this.parser.parseChapterDetails($, mangaId, chapterId, this)
     }
 
