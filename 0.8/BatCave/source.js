@@ -802,9 +802,16 @@ var _Sources = (() => {
         })
       });
     }
+    // Helper per l'escape delle regex
+    escapeRegExp(string) {
+      return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
     parseChapters(html) {
       const chapters = [];
       const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s);
+      const seriesTitleMatch = html.match(/<h1[^>]*>(.*?)<\/h1>/i);
+      let seriesNameRaw = seriesTitleMatch ? seriesTitleMatch[1].replace(/<[^>]+>/g, "").trim() : "";
+      const seriesBaseName = seriesNameRaw.replace(/\s*\(\d{4}[-–—]?\).*$/, "").trim();
       if (!scriptData) return [];
       try {
         const data = JSON.parse(scriptData[1]);
@@ -820,7 +827,7 @@ var _Sources = (() => {
               if (numMatch) chapNum = parseFloat(numMatch[numMatch.length - 1] ?? "0");
             }
             let volNum = void 0;
-            const volMatch = rawTitle.match(/(?:Vol\.?|TPB)[_\s]*(\d+)/i);
+            const volMatch = rawTitle.match(/(?:Vol\.?|TPB|Book)[_\s]*(\d+)/i);
             if (volMatch) {
               volNum = volMatch[1];
             }
@@ -829,13 +836,29 @@ var _Sources = (() => {
               const parts = rawTitle.split("#");
               cleanTitle = parts.slice(1).join("#").trim();
             } else {
-              cleanTitle = rawTitle.replace(/^(chapter|ch\.?|no\.?)\s*\d+(\.\d+)?/i, "").replace(/^\s*[-–—]\s*/, "").trim();
+              cleanTitle = rawTitle;
+              if (seriesBaseName.length > 0) {
+                const seriesRegex = new RegExp(`^${this.escapeRegExp(seriesBaseName)}`, "i");
+                cleanTitle = cleanTitle.replace(seriesRegex, "").trim();
+              }
+              cleanTitle = cleanTitle.replace(/^(chapter|ch\.?|no\.?)\s*\d+(\.\d+)?/i, "").trim();
+              cleanTitle = cleanTitle.replace(/(?:Vol\.?|TPB|Book)[_\s]*\d+/i, "").trim();
+              cleanTitle = cleanTitle.replace(/_/g, " ").replace(/^\s*[-–—]+\s*/, "").replace(/\s*[-–—]+\s*$/, "").replace(/\s+/g, " ").trim();
+            }
+            let finalNameParts = [];
+            if (volNum) {
+              finalNameParts.push(`Vol. ${volNum}`);
+            }
+            finalNameParts.push(`Ch. ${chapNum}`);
+            if (cleanTitle.length > 0 && cleanTitle !== String(chapNum)) {
+              finalNameParts.push(cleanTitle);
             }
             let finalName = "";
             if (volNum) {
-              finalName += `Vol. ${volNum} `;
+              finalName = `Vol. ${volNum} Ch. ${chapNum}`;
+            } else {
+              finalName = `Ch. ${chapNum}`;
             }
-            finalName += `Ch. ${chapNum}`;
             if (cleanTitle.length > 0) {
               finalName += ` - ${cleanTitle}`;
             }
@@ -854,7 +877,6 @@ var _Sources = (() => {
               name: finalName,
               chapNum,
               volume: volNum ? parseFloat(volNum) : void 0,
-              // Imposta anche il campo volume metadato
               time,
               langCode: "en"
             }));
