@@ -1389,7 +1389,7 @@ var _Sources = (() => {
       const hotSection = App.createHomeSection({
         id: "hot",
         title: "Hot Updates",
-        type: import_types.HomeSectionType.singleRowNormal,
+        type: import_types.HomeSectionType.singleRowLarge,
         containsMoreItems: true
       });
       const recentSection = App.createHomeSection({
@@ -1471,15 +1471,15 @@ var _Sources = (() => {
     version: "1.0.9",
     name: "WeebCentral",
     description: "Extension that pulls manga from WeebCentral.",
-    author: "Gabe",
-    authorWebsite: "http://github.com/GabrielCWT",
+    author: "DarkDragonkz",
+    authorWebsite: "http://github.com/DarkDragonkz",
     icon: "icon.png",
     contentRating: import_types2.ContentRating.EVERYONE,
     websiteBaseURL: BASE_DOMAIN,
     sourceTags: [
       {
-        text: "English",
-        type: import_types2.BadgeColor.GREY
+        text: "English \u{1F1EC}\u{1F1E7}",
+        type: import_types2.BadgeColor.GREEN
       }
     ],
     intents: import_types2.SourceIntents.MANGA_CHAPTERS | import_types2.SourceIntents.HOMEPAGE_SECTIONS | import_types2.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
