@@ -22,41 +22,37 @@ import { WeebCentralParser } from './WeebCentralParser'
 const DOMAIN = 'https://weebcentral.com'
 
 export const WeebCentralInfo: SourceInfo = {
-    version: '3.0.0', // Stable Restore + UI Polish
+    version: '1.0.0',
     name: 'WeebCentral',
-    description: `Extension that pulls manga from ${DOMAIN}`,
-    author: 'DarkDragonkzz',
     icon: 'icon.png',
+    author: 'DarkDragonkzz',
+    description: 'Extension for WeebCentral',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: DOMAIN,
     sourceTags: [
         {
             text: 'English 🇬🇧',
-            type: BadgeColor.BLUE
+            type: BadgeColor.BLUE,
         },
     ],
-    intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,
+    intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,
 }
 
-export class WeebCentral implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding {
-    baseUrl = DOMAIN
+export class WeebCentral implements SearchResultsProviding, MangaProviding, ChapterProviding {
     parser = new WeebCentralParser()
+    baseUrl = DOMAIN
 
-    readonly userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-
-    constructor(public cheerio: any) {} 
+    constructor(private cheerio: any) {}
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 4, 
+        requestsPerSecond: 4,
         requestTimeout: 20000,
         interceptor: {
             interceptRequest: async (request: any) => {
                 request.headers = {
                     ...(request.headers ?? {}),
-                    ...{
-                        'Referer': `${this.baseUrl}/`,
-                        'User-Agent': this.userAgent,
-                    }
+                    'Referer': `${DOMAIN}/`,
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 }
                 return request
             },
@@ -81,34 +77,33 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        // Usa full-chapter-list come da specifica funzionante
+        // TRUCCO: WeebCentral ha una pagina separata per la lista completa dei capitoli
+        // Usiamo quella per essere sicuri di prenderli tutti
         const request = App.createRequest({
             url: `${this.baseUrl}/series/${mangaId}/full-chapter-list`,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
-        return this.parser.parseChapters($, mangaId)
+        return this.parser.parseChapters($)
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        const request = App.createRequest({
-            url: `${this.baseUrl}/chapters/${chapterId}/images?is_prev=False&current_page=1&reading_style=long_strip`,
-            method: 'GET'
+        // Placeholder - da implementare dopo aver visto l'HTML del lettore
+        return App.createChapterDetails({
+            id: chapterId,
+            mangaId: mangaId,
+            pages: []
         })
-        const response = await this.requestManager.schedule(request, 1)
-        const $ = this.cheerio.load(response.data)
-        return this.parser.parseChapterDetails($, mangaId, chapterId)
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        const offset = metadata?.offset ?? 0
+        const page = metadata?.page ?? 1 // WeebCentral usa offset o pagine? Da verificare
         
-        // URL costruito manualmente per rimuovere dipendenza da helper.ts
-        const url = `${this.baseUrl}/search/data?author=&text=${encodeURIComponent(query.title ?? '')}&sort=Best%20Match&order=Ascending&official=Any&limit=32&offset=${offset}`
-
+        // URL Ricerca: https://weebcentral.com/search?text=...&sort=Best+Match...
+        // Nota: Assumiamo che non ci sia paginazione complessa per ora
         const request = App.createRequest({
-            url: url,
+            url: `${this.baseUrl}/search?text=${encodeURIComponent(query.title ?? '')}&display_mode=Full+Display`,
             method: 'GET'
         })
 
@@ -118,43 +113,7 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
         
         return App.createPagedResults({
             results: manga,
-            metadata: manga.length >= 32 ? { offset: offset + 32 } : undefined
-        })
-    }
-
-    async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        const request = App.createRequest({ url: this.baseUrl, method: 'GET' })
-        const response = await this.requestManager.schedule(request, 1)
-        const $ = this.cheerio.load(response.data)
-        
-        this.parser.parseHomeSections($, sectionCallback)
-    }
-
-    async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
-        const page = metadata?.page ?? 1
-        let url = ''
-
-        // Ripristinata logica originale funzionante
-        if (homepageSectionId === 'latest_updates') {
-             url = `${this.baseUrl}/latest-updates/${page}`
-        } else if (homepageSectionId === 'hot') {
-             // Hot updates usa la search api per la paginazione
-             const offset = (page - 1) * 32
-             url = `${this.baseUrl}/search/data?sort=Popularity&order=Descending&official=Any&limit=32&offset=${offset}`
-        } else {
-            return App.createPagedResults({ results: [] })
-        }
-
-        const request = App.createRequest({ url, method: 'GET' })
-        const response = await this.requestManager.schedule(request, 1)
-        const $ = this.cheerio.load(response.data)
-        
-        const manga = this.parser.parseSearchResults($)
-        
-        // Logica di fine pagina mista (offset o conteggio)
-        return App.createPagedResults({
-            results: manga,
-            metadata: manga.length > 0 ? { page: page + 1 } : undefined
+            metadata: undefined // Per ora niente paginazione
         })
     }
 }
