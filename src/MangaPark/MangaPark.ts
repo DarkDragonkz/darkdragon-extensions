@@ -10,18 +10,19 @@ import {
     BadgeColor,
     SourceIntents,
     SourceManga,
-    Request
+    Request,
+    HomeSectionType
 } from '@paperback/types'
 import { MangaParkParser } from './MangaParkParser'
 
 const MP_DOMAIN = 'https://mangapark.net'
 
 export const MangaParkInfo: SourceInfo = {
-    version: '1.1.1', // Bump versione per fix parsing
+    version: '2.0.0', // Major bump per riscrittura JSON
     name: 'MangaPark',
     icon: 'icon.png',
     author: 'DarkDragonkzz',
-    description: 'Extension for MangaPark with HD Covers & Infinite Scroll',
+    description: 'Ultra-fast extension using Next.js Data Extraction. Filters duplicates.',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: MP_DOMAIN,
     sourceTags: [
@@ -42,6 +43,7 @@ export class MangaPark extends Source {
                 req.headers = {
                     ...(req.headers ?? {}),
                     'referer': `${MP_DOMAIN}/`,
+                    // Importante: User-Agent realistico per evitare blocchi Cloudflare sui JSON
                     'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 }
                 return req
@@ -60,8 +62,8 @@ export class MangaPark extends Source {
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        const $ = this.cheerio.load(response.data)
-        return this.parser.parseMangaDetails($, mangaId)
+        // Passiamo direttamente la stringa HTML per estrarre il JSON
+        return this.parser.parseMangaDetails(response.data, mangaId)
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
@@ -70,21 +72,18 @@ export class MangaPark extends Source {
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        const $ = this.cheerio.load(response.data)
-        return this.parser.parseChapters($, mangaId)
+        return this.parser.parseChapters(response.data, mangaId)
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
+        // MangaPark v5 usa URL del tipo /title/ID/CHAPTER
         const request = App.createRequest({
             url: `${MP_DOMAIN}/title/${mangaId}/${chapterId}`,
             method: 'GET'
         })
 
         const response = await this.requestManager.schedule(request, 1)
-        const $ = this.cheerio.load(response.data)
-        
-        // Delega al parser la logica complessa
-        return this.parser.parseChapterDetails($, mangaId, chapterId)
+        return this.parser.parseChapterDetails(response.data, mangaId, chapterId)
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
@@ -94,8 +93,7 @@ export class MangaPark extends Source {
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        const $ = this.cheerio.load(response.data)
-        const manga = this.parser.parseSearchResults($)
+        const manga = this.parser.parseSearchResults(response.data)
         
         return App.createPagedResults({
             results: manga,
@@ -109,8 +107,7 @@ export class MangaPark extends Source {
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        const $ = this.cheerio.load(response.data)
-        this.parser.parseHomeSections($, sectionCallback)
+        this.parser.parseHomeSections(response.data, sectionCallback)
     }
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
@@ -131,8 +128,7 @@ export class MangaPark extends Source {
         })
 
         const response = await this.requestManager.schedule(request, 1)
-        const $ = this.cheerio.load(response.data)
-        const manga = this.parser.parseSearchResults($)
+        const manga = this.parser.parseSearchResults(response.data)
         
         return App.createPagedResults({
             results: manga,
