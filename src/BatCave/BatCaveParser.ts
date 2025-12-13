@@ -103,9 +103,8 @@ export class BatCaveParser {
         const chapters: Chapter[] = []
         const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s)
         
-        // Tentiamo di trovare il titolo della serie per pulirlo dai capitoli
+        // Estrazione nome serie per pulizia
         const seriesTitleMatch = html.match(/<h1[^>]*>(.*?)<\/h1>/i)
-        // Rimuoviamo tag HTML e anni tra parentesi (es. "Green Lantern (2005)" -> "Green Lantern")
         let seriesNameRaw = seriesTitleMatch ? seriesTitleMatch[1].replace(/<[^>]+>/g, '').trim() : ''
         const seriesBaseName = seriesNameRaw.replace(/\s*\(\d{4}[-–—]?\).*$/, '').trim()
 
@@ -127,56 +126,49 @@ export class BatCaveParser {
                         if (numMatch) chapNum = parseFloat(numMatch[numMatch.length - 1] ?? '0')
                     }
 
-                    // --- 2. ESTRAZIONE VOLUME / TPB ---
-                    // Cerchiamo "TPB X", "Vol. X", "Vol X" o "_TPB X"
+                    // --- 2. ESTRAZIONE VOLUME ---
                     let volNum: string | undefined = undefined
                     const volMatch = rawTitle.match(/(?:Vol\.?|TPB|Book)[_\s]*(\d+)/i)
                     if (volMatch) {
                         volNum = volMatch[1]
                     }
 
-                    // --- 3. PULIZIA DEL TITOLO ---
+                    // --- 3. PULIZIA TITOLO ---
                     let cleanTitle = ''
-
                     if (rawTitle.includes('#')) {
-                        // CASO A: C'è il cancelletto (es. DC-Marvel #The Flash)
-                        // Prendiamo tutto dopo il primo #
                         const parts = rawTitle.split('#')
                         cleanTitle = parts.slice(1).join('#').trim()
                     } else {
-                        // CASO B: Nessun cancelletto (es. Green Lantern _TPB 1...)
                         cleanTitle = rawTitle
-
-                        // A. Rimuoviamo il nome della serie se presente all'inizio
                         if (seriesBaseName.length > 0) {
                             const seriesRegex = new RegExp(`^${this.escapeRegExp(seriesBaseName)}`, 'i')
                             cleanTitle = cleanTitle.replace(seriesRegex, '').trim()
                         }
-
-                        // B. Rimuoviamo il prefisso "Chapter X" / "Ch. X" / "No. X"
                         cleanTitle = cleanTitle.replace(/^(chapter|ch\.?|no\.?)\s*\d+(\.\d+)?/i, '').trim()
-
-                        // C. Rimuoviamo il pattern del volume 
-                        // Es: togliamo "_TPB 1" o "Vol. 1" dal titolo perché lo gestisce Paperback
                         cleanTitle = cleanTitle.replace(/(?:Vol\.?|TPB|Book)[_\s]*\d+/i, '').trim()
-
-                        // D. Pulizia finale caratteri sporchi
                         cleanTitle = cleanTitle
-                            .replace(/_/g, ' ')           // Togli underscore
-                            .replace(/^\s*[-–—]+\s*/, '') // Togli trattini iniziali
-                            .replace(/\s*[-–—]+\s*$/, '') // Togli trattini finali
-                            .replace(/\s+/g, ' ')         // Normalizza spazi
+                            .replace(/_/g, ' ')
+                            .replace(/^\s*[-–—]+\s*/, '')
+                            .replace(/\s*[-–—]+\s*$/, '')
+                            .replace(/\s+/g, ' ')
                             .trim()
                     }
 
-                    // --- 4. OUTPUT NOME FINALE ---
-                    // Se cleanTitle è vuoto o è solo il numero del capitolo, lasciamo vuoto.
-                    // Paperback mostrerà automaticamente "Vol. X Ch. Y".
-                    // Se cleanTitle contiene testo (es. "The Flash - Fantastic Four" o "(Part 1)"), lo mostriamo.
-                    
+                    // --- 4. COSTRUZIONE NOME ---
                     let finalName = ''
                     if (cleanTitle.length > 0 && cleanTitle !== String(chapNum)) {
                          finalName = cleanTitle
+                    }
+
+                    // --- 5. HACK: NUMERO PAGINE AL POSTO DI 'EN' ---
+                    // Cerchiamo la proprietà pagine nel JSON. Spesso è 'pages' o 'count'.
+                    // Fallback a 'en' se non troviamo nulla.
+                    let customLangCode = 'en'
+                    
+                    if (chap.pages) {
+                        customLangCode = `${chap.pages}p` // Es: "56p"
+                    } else if (chap.count) {
+                        customLangCode = `${chap.count}p`
                     }
 
                     // --- DATA ---
@@ -193,11 +185,11 @@ export class BatCaveParser {
 
                     chapters.push(App.createChapter({
                         id: id,
-                        name: finalName, // SOLO IL TITOLO PURO
+                        name: finalName,
                         chapNum: chapNum,
-                        volume: volNum ? parseFloat(volNum) : undefined, // Paperback aggiunge "Vol. X" grazie a questo
+                        volume: volNum ? parseFloat(volNum) : undefined,
                         time: time,
-                        langCode: 'en'
+                        langCode: customLangCode // <--- Qui iniettiamo le pagine
                     }))
                 }
             }
