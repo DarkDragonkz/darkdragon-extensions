@@ -26,15 +26,15 @@ export const WeebCentralInfo: SourceInfo = {
     version: '1.0.9',
     name: 'WeebCentral',
     description: 'Extension that pulls manga from WeebCentral.',
-    author: 'Gabe',
-    authorWebsite: 'http://github.com/GabrielCWT',
+    author: 'DarkDragonkz',
+    authorWebsite: 'http://github.com/DarkDragonkz',
     icon: 'icon.png',
     contentRating: ContentRating.EVERYONE,
     websiteBaseURL: BASE_DOMAIN,
     sourceTags: [
         {
-            text: 'English',
-            type: BadgeColor.GREY,
+            text: 'English 🇬🇧',
+            type: BadgeColor.GREEN,
         },
     ],
     intents: SourceIntents.MANGA_CHAPTERS |

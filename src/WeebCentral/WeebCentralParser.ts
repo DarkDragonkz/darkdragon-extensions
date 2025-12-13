@@ -188,7 +188,7 @@ export class Parser {
         const hotSection = App.createHomeSection({
             id: 'hot',
             title: 'Hot Updates',
-            type: HomeSectionType.singleRowNormal,
+            type: HomeSectionType.singleRowLarge,
             containsMoreItems: true,
         })
         const recentSection = App.createHomeSection({
