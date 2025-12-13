@@ -153,7 +153,7 @@ export class BatCaveParser {
                             cleanTitle = cleanTitle.replace(seriesRegex, '').trim()
                         }
 
-                        // B. Rimuoviamo il prefisso "Chapter X" / "Ch. X" (quello che creava il doppio Ch. 1)
+                        // B. Rimuoviamo il prefisso "Chapter X" / "Ch. X"
                         // Rimuove: "Ch. 1", "Chapter 1", "No. 1" dall'inizio
                         cleanTitle = cleanTitle.replace(/^(chapter|ch\.?|no\.?)\s*\d+(\.\d+)?/i, '').trim()
 
@@ -171,37 +171,27 @@ export class BatCaveParser {
                     }
 
                     // --- 4. COSTRUZIONE NOME FINALE ---
-                    // Formato: Vol. X Ch. Y - [Titolo Pulito]
+                    // Formato: "Vol. X - Titolo" (Senza "Ch. X" perché l'app lo aggiunge da sola)
                     
-                    let finalNameParts: string[] = []
-
-                    // Aggiungi Volume
+                    let finalName = ''
+                    
                     if (volNum) {
-                        finalNameParts.push(`Vol. ${volNum}`)
+                        finalName += `Vol. ${volNum}`
                     }
-
-                    // Aggiungi Capitolo
-                    finalNameParts.push(`Ch. ${chapNum}`)
 
                     // Aggiungi Titolo (solo se è rimasto qualcosa di sensato)
-                    // Filtriamo via titoli che sono solo numeri o simboli
+                    // Filtriamo via titoli che sono solo numeri o simboli o duplicati del numero capitolo
                     if (cleanTitle.length > 0 && cleanTitle !== String(chapNum)) {
-                         finalNameParts.push(cleanTitle)
+                        // Se c'è già il volume, aggiungiamo il separatore
+                        if (finalName.length > 0) {
+                            finalName += ' - '
+                        }
+                        finalName += cleanTitle
                     }
 
-                    // Uniamo con " - "
-                    // Se abbiamo Vol e Ch, li uniamo con spazio, poi il titolo con trattino
-                    // Ma per semplicità usiamo un join intelligente
-                    let finalName = ''
-                    if (volNum) {
-                        finalName = `Vol. ${volNum} Ch. ${chapNum}`
-                    } else {
-                        finalName = `Ch. ${chapNum}`
-                    }
-
-                    if (cleanTitle.length > 0) {
-                        finalName += ` - ${cleanTitle}`
-                    }
+                    // FIX: Se finalName è vuoto (es. capitolo era solo "Chapter 1"), 
+                    // l'app mostrerà "Ch. 1" automaticamente se name è undefined o vuoto.
+                    // Per sicurezza non facciamo nulla, finalName vuoto va bene.
 
                     // --- DATA ---
                     let time = new Date()
@@ -217,7 +207,7 @@ export class BatCaveParser {
 
                     chapters.push(App.createChapter({
                         id: id,
-                        name: finalName,
+                        name: finalName, // Ora contiene solo "Vol. 1 - Titolo" o "Titolo"
                         chapNum: chapNum,
                         volume: volNum ? parseFloat(volNum) : undefined,
                         time: time,
