@@ -27,8 +27,11 @@ export class NineMangaITParser {
     }
 
     parseMangaDetails($: any, mangaId: string): SourceManga {
+        // Selettori multipli per gestire diverse visualizzazioni
         let title = $('h1[itemprop="name"]').first().text().trim()
-        if (!title) title = $('.book-title').text().trim()
+        if (!title) title = $('.book-title').first().text().trim()
+        if (!title) title = $('.book-detail .title').first().text().trim()
+        
         title = title.replace(/ Manga$/, '').trim()
         
         let imageElement = $('img[itemprop="image"]').first()
@@ -76,7 +79,6 @@ export class NineMangaITParser {
         const chapters: Chapter[] = []
         const seenIds = new Set<string>()
 
-        // Selettore mobile specifico
         let chapterLinks = $('a.chapter_list_a').toArray()
         if (chapterLinks.length === 0) {
             chapterLinks = $('ul.chapter_list a').toArray()
@@ -89,23 +91,14 @@ export class NineMangaITParser {
 
             const parts = href.split('/')
             const filePart = parts.pop() ?? '' 
-            // ID Pulito: manga-name/123.html -> 123
             const chapterId = filePart.split('?')[0].replace('.html', '')
 
-            // IMPORTANTE: NineManga ha paginazione nei link (es. 123-10-1.html). 
-            // Noi vogliamo solo il capitolo base.
-            if (chapterId.includes('-')) {
-                // Se è un link di paginazione interno, saltiamolo. Vogliamo solo la "main page" del capitolo
-                continue 
-            }
+            if (chapterId.includes('-')) continue 
             
             if (seenIds.has(chapterId)) continue
             seenIds.add(chapterId)
 
             let titleRaw = $link.attr('title') || $link.text().trim()
-            
-            // Pulizia Titolo: Rimuovi nome manga
-            // Es: "Naruto 500" -> "500"
             const cleanMangaId = mangaId.replace(/-/g, ' ')
             titleRaw = titleRaw.replace(new RegExp(cleanMangaId, 'gi'), '').trim()
 
@@ -116,18 +109,14 @@ export class NineMangaITParser {
                  if (!isNaN(parsedDate.getTime())) time = parsedDate
             }
 
-            // Estrazione Numero
             const chapNumMatch = titleRaw.match(/(\d+(\.\d+)?)/g)
             let chapNum = 0
             if (chapNumMatch && chapNumMatch.length > 0) {
                 chapNum = parseFloat(chapNumMatch[chapNumMatch.length - 1])
             }
 
-            // Nomenclatura Standard "Ch. X"
             let name = titleRaw
-            // Rimuovi "Chapter X", "Ch. X"
             name = name.replace(/^(chapter|ch|c)\.?\s*\d+/i, '').trim()
-            // Se rimane solo il numero, lascia vuoto (Paperback mette Ch. X)
             if (name === String(chapNum)) name = ''
 
             chapters.push(App.createChapter({
@@ -141,16 +130,12 @@ export class NineMangaITParser {
         return chapters
     }
 
-    /**
-     * Parsing parallelo delle immagini del capitolo
-     */
     async parseChapterDetails(
         $: any, 
         mangaId: string, 
         chapterId: string, 
         source: any 
     ): Promise<ChapterDetails> {
-        // Su Mobile, c'è un <select id="page"> o <select class="sl-page"> con tutte le pagine
         const pageUrls: string[] = []
         
         $('select#page option, select.sl-page option').each((_: any, obj: any) => {
@@ -161,7 +146,6 @@ export class NineMangaITParser {
             }
         })
 
-        // Se non troviamo il select, proviamo a vedere se è un capitolo "scroll" (raro su mobile)
         if (pageUrls.length === 0) {
              const singleImg = this.extractImage($)
              if (singleImg) {
@@ -170,12 +154,8 @@ export class NineMangaITParser {
              throw new Error("Impossibile trovare le pagine del capitolo.")
         }
 
-        // SCARICAMENTO PARALLELO (Con limite source.requestManager)
-        // Scarichiamo ogni pagina HTML per estrarre l'immagine
         const promises = pageUrls.map(url => this.fetchImageFromPage(url, source))
         const results = await Promise.all(promises)
-        
-        // Filtriamo i null e rimuoviamo duplicati
         const pages = results.filter(u => u !== null) as string[]
 
         return App.createChapterDetails({
@@ -186,7 +166,6 @@ export class NineMangaITParser {
     }
 
     private extractImage($: any): string | null {
-        // Selettore tipico NineManga Mobile
         const img = $('img.manga_pic, div#full_image img, .pic_box img').first()
         let src = img.attr('src')
         if (src) {
@@ -202,11 +181,10 @@ export class NineMangaITParser {
                 url: url,
                 method: 'GET',
                 headers: {
-                    'Referer': source.baseUrl, // Fondamentale per NineManga
+                    'Referer': source.baseUrl,
                     'User-Agent': source.userAgent
                 }
             })
-            // Usiamo schedule con priorità per non bloccare tutto
             const response = await source.requestManager.schedule(request, 1)
             const $ = source.cheerio.load(response.data)
             return this.extractImage($)
@@ -218,7 +196,7 @@ export class NineMangaITParser {
 
     parseSearchResults($: any, baseUrl: string): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
-        // Adattamento ai selettori della lista mobile
+        // Selettori aggiornati per la ricerca
         const items = $('.book-list li, dl.book-list dd, .comic-item').toArray()
 
         for (const item of items) {
@@ -228,12 +206,14 @@ export class NineMangaITParser {
             
             if (!href) continue
 
+            // Fix ID: Rimuove .html se presente
             const id = href.split('/manga/')[1]?.replace('.html', '')
             if (!id) continue
 
             const image = this.getImageSrc($item)
 
             let title = link.text().trim()
+            if (!title) title = link.attr('title') ?? ''
             if (!title) title = $item.find('dd.book-list-title, h3').text().trim()
             if (!title) title = 'Unknown'
 
@@ -256,18 +236,36 @@ export class NineMangaITParser {
         const latestItems: PartialSourceManga[] = []
         const newItems: PartialSourceManga[] = []
 
-        // Helper per parsare le liste ID-based della home
+        // Helper per parsare le liste ID-based della home con FIX ID CRITICO
         const parseList = (selector: string, target: PartialSourceManga[]) => {
             $home(selector).find('li, dd').each((_: any, el: any) => {
                 const $el = $home(el)
                 const link = $el.find('a').first()
                 const href = link.attr('href')
-                const id = href?.split('/manga/')[1]?.replace('.html', '')
+                
+                if (!href) return
+
+                // CRITICO: La home spesso linka a /chapter/MangaName/123.html
+                // Dobbiamo estrarre il nome del manga, non l'ID del capitolo!
+                let id = ''
+                if (href.includes('/manga/')) {
+                    id = href.split('/manga/')[1]?.replace('.html', '')
+                } else if (href.includes('/chapter/')) {
+                    // /chapter/Manga_Name/123.html -> prendiamo Manga_Name
+                    const parts = href.split('/chapter/')
+                    if (parts.length > 1) {
+                        id = parts[1].split('/')[0]
+                    }
+                }
                 
                 if (!id) return
 
                 const image = this.getImageSrc($el)
-                const title = link.attr('title') || link.text().trim()
+                let title = link.attr('title') || link.text().trim()
+                
+                // Fix Titolo: One Piece 1141 -> One Piece
+                // Rimuove numeri alla fine della stringa
+                title = title.replace(/\s+\d+(\.\d+)?$/, '').trim()
                 
                 target.push(App.createPartialSourceManga({
                     mangaId: id,
@@ -278,10 +276,9 @@ export class NineMangaITParser {
             })
         }
 
-        // I selettori ID sono standard sulla home mobile
-        parseList('#tab_content_3', popularItems) // Popolari
-        parseList('#tab_content_2', latestItems)  // Ultimi
-        parseList('#tab_content_1', newItems)     // Nuovi
+        parseList('#tab_content_3', popularItems) 
+        parseList('#tab_content_2', latestItems)  
+        parseList('#tab_content_1', newItems)     
 
         popularSection.items = popularItems
         latestSection.items = latestItems

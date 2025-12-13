@@ -23,7 +23,7 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '1.5.0', // Bump version: Mobile Fixes
+    version: '1.6.0', // Bump version: Fix Home ID & Search
     name: 'NineMangaIT',
     description: 'Estensione per it.ninemanga.com (Mobile Optimized)',
     author: 'DarkDragonkzz',
@@ -44,13 +44,12 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     baseUrl = IT_DOMAIN
     parser = new NineMangaITParser()
 
-    // User-Agent Mobile Fisso per evitare redirect o ban
     readonly userAgent = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
 
     constructor(public cheerio: any) {} 
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 3, // Teniamo basso per non triggerare l'anti-bot su 40 pagine
+        requestsPerSecond: 3, 
         requestTimeout: 25000,
         interceptor: {
             interceptRequest: async (request: any) => {
@@ -60,7 +59,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
                         'Referer': `${this.baseUrl}/`,
                         'User-Agent': this.userAgent,
                         'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
-                        'Cookie': 'is_warning=1; my_limit=1' // Cookie per bypassare warning +18
+                        'Cookie': 'is_warning=1; my_limit=1' 
                     }
                 }
                 return request
@@ -75,7 +74,9 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         return `${this.baseUrl}/manga/${mangaId}.html`
     }
 
+    // FIX ID: Gestisce ID puliti e ID sporchi per evitare 404
     private getMangaUrl(mangaId: string): string {
+        // Se l'ID contiene già .html lo lasciamo, altrimenti lo aggiungiamo
         const id = mangaId.endsWith('.html') ? mangaId : `${mangaId}.html`
         return `${this.baseUrl}/manga/${id}`
     }
@@ -103,15 +104,12 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // Logica URL corretta per il Mobile
         let url = chapterId
         if (!url.startsWith('http')) {
              if (!url.startsWith('/')) url = `/chapter/${mangaId}/${chapterId}`
              url = `${this.baseUrl}${url}`
         }
         
-        // FIX: Rimosso l'hack '-10-1.html' che rompeva i link. 
-        // Assicuriamoci solo che finisca con .html
         if (!url.endsWith('.html')) url += '.html'
 
         const request = App.createRequest({
@@ -124,7 +122,6 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         
         const $ = this.cheerio.load(response.data)
         
-        // Passiamo l'intera istanza source per usare il requestManager nel parser
         return this.parser.parseChapterDetails($, mangaId, chapterId, this)
     }
 
@@ -132,13 +129,13 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         let page = metadata?.page ?? 1
         if (page === -1) return App.createPagedResults({ results: [], metadata: { page: -1 } })
 
+        // FIX RICERCA: Parametri corretti per la ricerca mobile
         const request = App.createRequest({
             url: new URLBuilder(this.baseUrl)
                 .addPathComponent('search')
                 .addQueryParameter('name_sel', 'contain')
                 .addQueryParameter('wd', encodeURIComponent(query?.title ?? ''))
                 .addQueryParameter('page', page.toString())
-                .addQueryParameter('type', 'high')
                 .buildUrl({ addTrailingSlash: true, includeUndefinedParameters: false }),
             method: 'GET'
         })
@@ -149,7 +146,8 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         const manga = this.parser.parseSearchResults($, this.baseUrl)
         
         page++
-        if (manga.length < 10) page = -1
+        // Se troviamo meno di 1 elemento, probabilmente non ce ne sono più
+        if (manga.length === 0) page = -1
 
         return App.createPagedResults({
             results: manga,
