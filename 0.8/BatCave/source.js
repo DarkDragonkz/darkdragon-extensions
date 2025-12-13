@@ -845,22 +845,15 @@ var _Sources = (() => {
               cleanTitle = cleanTitle.replace(/(?:Vol\.?|TPB|Book)[_\s]*\d+/i, "").trim();
               cleanTitle = cleanTitle.replace(/_/g, " ").replace(/^\s*[-–—]+\s*/, "").replace(/\s*[-–—]+\s*$/, "").replace(/\s+/g, " ").trim();
             }
-            let finalNameParts = [];
-            if (volNum) {
-              finalNameParts.push(`Vol. ${volNum}`);
-            }
-            finalNameParts.push(`Ch. ${chapNum}`);
-            if (cleanTitle.length > 0 && cleanTitle !== String(chapNum)) {
-              finalNameParts.push(cleanTitle);
-            }
             let finalName = "";
             if (volNum) {
-              finalName = `Vol. ${volNum} Ch. ${chapNum}`;
-            } else {
-              finalName = `Ch. ${chapNum}`;
+              finalName += `Vol. ${volNum}`;
             }
-            if (cleanTitle.length > 0) {
-              finalName += ` - ${cleanTitle}`;
+            if (cleanTitle.length > 0 && cleanTitle !== String(chapNum)) {
+              if (finalName.length > 0) {
+                finalName += " - ";
+              }
+              finalName += cleanTitle;
             }
             let time = /* @__PURE__ */ new Date();
             if (chap.date) {
@@ -875,6 +868,7 @@ var _Sources = (() => {
             chapters.push(App.createChapter({
               id,
               name: finalName,
+              // Ora contiene solo "Vol. 1 - Titolo" o "Titolo"
               chapNum,
               volume: volNum ? parseFloat(volNum) : void 0,
               time,
