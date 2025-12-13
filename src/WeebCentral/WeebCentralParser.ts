@@ -9,51 +9,42 @@ import {
     TagSection,
 } from '@paperback/types'
 
-const BASE_URL = 'https://weebcentral.com'
-
 export class WeebCentralParser {
 
-    // Helper per decodificare caratteri speciali
     decodeHTMLEntity(str: string): string {
         return str.replace(/&#(\d+);/g, (_match, dec) => {
             return String.fromCharCode(dec)
         }).replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#039;/g, "'")
     }
 
-    // --- FUNZIONE HELPER "ROBUSTA" (Logica dell'autore esterno) ---
-    // Estrae i dati del manga da un blocco HTML generico (<article>)
+    // Helper centralizzato (Logica di Gabe)
     private parseCommonManga($: any, element: any, extraSubtitle?: string): PartialSourceManga | null {
         const item = $(element)
         
-        // 1. Link e ID
-        // Cerca un tag 'a' che contenga "/series/" nell'href
+        // Cerca il link alla serie
         const link = item.is('a') ? item : item.find('a[href*="/series/"]').first()
         const href = link.attr('href')
         
-        // Estrae ID: .../series/ID/Slug -> split -> prende ID
+        // Estrai ID
         const id = href?.replace(/\/$/, '')?.split('/').slice(-2)[0]
         if (!id) return null
 
-        // 2. Immagine
-        // Priorità a <source> (webp alta qualità), fallback su <img>
+        // Immagine: priorità a source, poi img
         let image = item.find('source').first().attr('srcset')
         if (!image) image = item.find('img').first().attr('src') ?? ''
 
-        // 3. Titolo (Logica "Alt Tag")
-        // Prende il titolo dall'alt dell'immagine per evitare problemi con desktop/mobile
+        // Titolo: priorità all'ALT text (come fa source.js)
         let title = item.find('img').first().attr('alt')
         if (title) {
             title = title.replace(/ cover$/i, '').trim()
         } else {
-            // Fallback se l'alt manca
             title = item.find('.text-lg').text().trim() ?? 'Unknown'
         }
         title = this.decodeHTMLEntity(title)
 
-        // 4. Sottotitolo
+        // Sottotitolo
         let subtitle = extraSubtitle
         if (!subtitle) {
-            // Se non fornito, cerca info generiche (es. "Official", "Manhwa")
             subtitle = item.find('div.opacity-70').first().text().trim()
         }
 
@@ -80,20 +71,19 @@ export class WeebCentralParser {
         let artist = 'Unknown'
         const arrayTags: Tag[] = []
 
+        // Recupero Metadata (Generi, Autori, Stato)
         $('ul.flex.flex-col.gap-4 li').each((_: any, li: any) => {
             const label = $('strong', li).text().trim()
             const links = $('a', li)
 
             if (label.includes('Author')) {
                 author = links.map((_: any, a: any) => $(a).text().trim()).get().join(', ')
-            }
-            if (label.includes('Status')) {
+            } else if (label.includes('Status')) {
                 const statusText = links.first().text().trim().toLowerCase()
                 if (statusText.includes('complete')) status = 'Completed'
                 else if (statusText.includes('ongoing')) status = 'Ongoing'
                 else if (statusText.includes('hiatus')) status = 'Hiatus'
-            }
-            if (label.includes('Tags') || label.includes('Type')) {
+            } else if (label.includes('Tags') || label.includes('Type')) {
                 links.each((_: any, a: any) => {
                     const tagLabel = $(a).text().trim()
                     if (tagLabel) {
@@ -122,8 +112,9 @@ export class WeebCentralParser {
     parseChapters($: any): Chapter[] {
         const chapters: Chapter[] = []
 
-        $('#chapter-list > div').each((_: any, div: any) => {
-            const link = $('a', div).first()
+        // Cerca tutti i link che portano a un capitolo
+        $('a[href*="/chapters/"]').each((_: any, a: any) => {
+            const link = $(a)
             const href = link.attr('href')
             if (!href) return
 
@@ -151,15 +142,15 @@ export class WeebCentralParser {
 
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
         
-        // 1. Hot Updates (LARGE COVER)
+        // 1. Hot Updates -> LARGE
         const hotSection = App.createHomeSection({
             id: 'hot',
             title: 'Hot Updates 🔥',
             containsMoreItems: true,
-            type: HomeSectionType.singleRowLarge // <-- MODIFICA UI QUI
+            type: HomeSectionType.singleRowLarge // <--- MODIFICA QUI
         })
 
-        // 2. Recommendations (NORMAL)
+        // 2. Recommendations -> NORMAL
         const recSection = App.createHomeSection({
             id: 'recommendations',
             title: 'Recommendations 💡',
@@ -167,7 +158,7 @@ export class WeebCentralParser {
             type: HomeSectionType.singleRowNormal
         })
 
-        // 3. Latest Updates (NORMAL)
+        // 3. Latest Updates -> NORMAL
         const latestSection = App.createHomeSection({
             id: 'latest',
             title: 'Latest Updates 🆕',
@@ -175,7 +166,7 @@ export class WeebCentralParser {
             type: HomeSectionType.singleRowNormal
         })
 
-        // --- Parsing Hot Updates ---
+        // Parsing Hot Updates
         const hotManga: PartialSourceManga[] = []
         const hotContainer = $('section:has(h2:contains("Hot Updates"))').first()
         $('article', hotContainer).each((_: any, item: any) => {
@@ -185,7 +176,7 @@ export class WeebCentralParser {
         hotSection.items = hotManga
         sectionCallback(hotSection)
 
-        // --- Parsing Recommendations ---
+        // Parsing Recommendations
         const recManga: PartialSourceManga[] = []
         const recContainer = $('section:has(h2:contains("Recommendations"))').first()
         $('article', recContainer).each((_: any, item: any) => {
@@ -197,13 +188,11 @@ export class WeebCentralParser {
             sectionCallback(recSection)
         }
 
-        // --- Parsing Latest Updates ---
+        // Parsing Latest Updates
         const latestManga: PartialSourceManga[] = []
         const latestContainer = $('section:has(h2:contains("Latest Updates"))').first()
         $('article', latestContainer).each((_: any, item: any) => {
-            // Per i Latest, proviamo a prendere l'ultimo capitolo come sottotitolo
             const chapterText = $(item).find('a[href*="/chapters/"] span').last().text().trim()
-            
             const manga = this.parseCommonManga($, item, chapterText)
             if (manga) latestManga.push(manga)
         })
@@ -222,7 +211,6 @@ export class WeebCentralParser {
                 collectedIds.push(manga.mangaId)
             }
         })
-
         return results
     }
 
@@ -241,11 +229,10 @@ export class WeebCentralParser {
     }
     
     parseChapterDetails($: any, mangaId: string, chapterId: string): ChapterDetails {
-        const pages: string[] = []
         return App.createChapterDetails({
             id: chapterId,
             mangaId: mangaId,
-            pages: pages
+            pages: []
         })
     }
 }

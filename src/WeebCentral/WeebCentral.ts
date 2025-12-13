@@ -22,7 +22,7 @@ import { WeebCentralParser } from './WeebCentralParser'
 const DOMAIN = 'https://weebcentral.com'
 
 export const WeebCentralInfo: SourceInfo = {
-    version: '1.2.0',
+    version: '1.2.2',
     name: 'WeebCentral',
     icon: 'icon.png',
     author: 'Tu',
