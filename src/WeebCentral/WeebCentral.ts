@@ -23,7 +23,7 @@ import { Parser } from './WeebCentralParser'
 const BASE_DOMAIN = 'https://weebcentral.com'
 
 export const WeebCentralInfo: SourceInfo = {
-    version: '1.2.4',
+    version: '1.0.9',
     name: 'WeebCentral',
     description: 'Extension that pulls manga from WeebCentral.',
     author: 'Gabe',
@@ -44,30 +44,29 @@ export const WeebCentralInfo: SourceInfo = {
 
 export class WeebCentral implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding {
     
-    constructor(private cheerio: any) { }
-    
+    constructor(private cheerio: any) {}
+
+    baseUrl = BASE_DOMAIN
+    RETRY = 5
+    parser = new Parser()
+
     requestManager = App.createRequestManager({
         requestsPerSecond: 5,
         requestTimeout: 20000,
         interceptor: {
-            interceptRequest: async (request: Request): Promise<Request> => {
+            interceptRequest: async (request: Request) => {
                 request.headers = {
                     ...(request.headers ?? {}),
-                    ...{
-                        'referer': `${BASE_DOMAIN}/`,
-                        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36',
-                    },
+                    'user-agent': await this.requestManager.getDefaultUserAgent(),
+                    'referer': `${this.baseUrl}/`,
                 }
                 return request
             },
-            interceptResponse: async (response: Response): Promise<Response> => {
+            interceptResponse: async (response: Response) => {
                 return response
             },
         },
     })
-
-    parser = new Parser()
-    baseUrl = BASE_DOMAIN
 
     getMangaShareUrl(mangaId: string): string {
         return `${this.baseUrl}/series/${mangaId}`
@@ -78,11 +77,14 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
             url: `${this.baseUrl}/series/${mangaId}`,
             method: 'GET',
         })
-
-        const response = await this.requestManager.schedule(request, 1)
+        const response = await this.requestManager.schedule(request, this.RETRY)
+        
+        if (response.status === 404) {
+            throw new Error(`Manga with id ${mangaId} not found!`)
+        }
+        
         this.checkResponseError(response)
         const $ = this.cheerio.load(response.data)
-        
         return this.parser.parseMangaDetails($, mangaId)
     }
 
@@ -91,12 +93,10 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
             url: `${this.baseUrl}/series/${mangaId}/full-chapter-list`,
             method: 'GET',
         })
-
-        const response = await this.requestManager.schedule(request, 1)
+        const response = await this.requestManager.schedule(request, this.RETRY)
         this.checkResponseError(response)
         const $ = this.cheerio.load(response.data)
-        
-        return this.parser.parseChapters($)
+        return this.parser.parseChapters($, mangaId)
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
@@ -104,88 +104,89 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
             url: `${this.baseUrl}/chapters/${chapterId}/images?reading_style=long_strip`,
             method: 'GET',
         })
-
-        const response = await this.requestManager.schedule(request, 1)
+        const response = await this.requestManager.schedule(request, this.RETRY)
         this.checkResponseError(response)
         const $ = this.cheerio.load(response.data)
-        
-        // Parsing delle immagini dal lettore (Mancante nel tuo file parser originale, ma necessario per non crashare)
-        // Se il tuo file parser originale aveva un metodo parseChapterDetails diverso, usa quello.
-        // Qui uso una logica standard per WeebCentral.
-        const pages: string[] = []
-        $('img').each((_: any, img: any) => {
-            const url = $(img).attr('src')
-            if (url && !url.includes('loader') && !url.includes('logo')) {
-                pages.push(url)
-            }
-        })
+        return this.parser.parseChapterDetails($, mangaId, chapterId)
+    }
 
-        return App.createChapterDetails({
-            id: chapterId,
-            mangaId: mangaId,
-            pages: pages,
+    async getSearchTags(): Promise<TagSection[]> {
+        const request = App.createRequest({
+            url: `${this.baseUrl}/search`,
+            method: 'GET',
         })
+        const response = await this.requestManager.schedule(request, this.RETRY)
+        this.checkResponseError(response)
+        const $ = this.cheerio.load(response.data)
+        return this.parser.parseTags($)
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        const page = metadata?.page ?? 1
-        let url = `${this.baseUrl}/search?text=${encodeURIComponent(query.title ?? '')}`
-        
-        // Aggiunta gestione offset/limit come da logica funzionante
-        const limit = 32
-        const offset = (page - 1) * limit
-        url += `&offset=${offset}&limit=${limit}&display_mode=Full+Display`
+        const LIMIT = 32
+        const offset = metadata?.offset ?? 0
+        let searchParams = ''
 
+        // Title search
+        if (query.title) {
+            searchParams = searchParams.concat(encodeURI(`&text=${query.title ?? ''}`))
+        }
+
+        // Tag search
+        if (query.includedTags) {
+            for (const tag of query.includedTags) {
+                searchParams = searchParams.concat(`&included_tag=${tag.id}`)
+            }
+        }
+
+        searchParams = searchParams.concat(`&limit=${LIMIT}&offset=${offset}`)
+        
         const request = App.createRequest({
-            url: url,
+            url: `${this.baseUrl}/search/data?sort=Best%20Match&order=Ascending&display_mode=Full%20Display${searchParams}`,
             method: 'GET',
         })
 
-        const response = await this.requestManager.schedule(request, 1)
+        const response = await this.requestManager.schedule(request, this.RETRY)
         this.checkResponseError(response)
-        const $ = this.cheerio.load(response.data)
-        const manga = this.parser.parseSearchResults($)
         
-        let mData = undefined
-        if (!this.parser.isLastPage($)) {
-            mData = { page: page + 1 }
-        }
+        const $ = this.cheerio.load(response.data)
+        const results = await this.parser.parseSearchResults($)
+        
+        const nextPageMetadata = this.parser.isLastPage($)
+            ? undefined
+            : { offset: offset + LIMIT }
 
         return App.createPagedResults({
-            results: manga,
-            metadata: mData,
+            results,
+            metadata: nextPageMetadata,
         })
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
         const request = App.createRequest({
-            url: this.baseUrl,
+            url: `${this.baseUrl}`,
             method: 'GET',
         })
-
-        const response = await this.requestManager.schedule(request, 1)
+        const response = await this.requestManager.schedule(request, this.RETRY)
         this.checkResponseError(response)
         const $ = this.cheerio.load(response.data)
-        
         this.parser.parseHomeSections($, sectionCallback)
     }
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
         let param = ''
-        const limit = 32
-        const offset = (page - 1) * limit
 
         switch (homepageSectionId) {
+            case 'recent':
+                param = `latest-updates/${page}`
+                metadata = {
+                    ...metadata,
+                    page: page + 1,
+                }
+                break
             case 'hot':
-                param = `search?sort=Best+Match&offset=${offset}&limit=${limit}&display_mode=Full+Display`
-                break
-            case 'latest':
-                param = `search?sort=Latest+Updates&offset=${offset}&limit=${limit}&display_mode=Full+Display`
-                break
-            case 'recommendations':
-                // Nota: Recommendations solitamente non ha view more nel sito, ma gestiamo il caso
-                param = `search?sort=Best+Match&offset=${offset}&limit=${limit}` 
+                param = `hot-updates`
+                metadata = undefined // Hot updates non sembra avere paginazione nello switch case originale, o usa un'altra logica
                 break
             default:
                 throw new Error('Section id not supported')
@@ -196,19 +197,13 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
             method: 'GET',
         })
         
-        const response = await this.requestManager.schedule(request, 1)
-        this.checkResponseError(response)
+        const response = await this.requestManager.schedule(request, this.RETRY)
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseViewMore($, homepageSectionId)
         
-        let mData = undefined
-        if (!this.parser.isLastPage($)) {
-            mData = { page: page + 1 }
-        }
-
         return App.createPagedResults({
             results: manga,
-            metadata: mData,
+            metadata,
         })
     }
 
@@ -231,7 +226,7 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
             case 503:
                 throw new Error(`CLOUDFLARE BYPASS ERROR:\nPlease go to the homepage of <${this.baseUrl}> and press the cloud icon.`)
             case 404:
-                throw new Error(`The requested page ${response.url} was not found.`)
+                throw new Error(`The requested page ${response.request.url} was not found!`)
         }
     }
 }
