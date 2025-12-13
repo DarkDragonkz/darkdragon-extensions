@@ -733,13 +733,18 @@ var _Sources = (() => {
   var import_types = __toESM(require_lib());
   var NineMangaITParser = class {
     /**
-     * Estrae l'URL dell'immagine pulito e sicuro
+     * Estrae l'URL dell'immagine dando priorità a data-original per evitare loading.gif
      */
     getImageSrc(element) {
       let img = element.find("img").first();
       if (element.is("img")) img = element;
-      let src = img.attr("src") || img.attr("data-src") || img.attr("original") || img.attr("data-original");
-      if (!src || src.includes("logo")) return "https://paperback.moe/icons/logo-alt.svg";
+      let src = img.attr("data-original") || img.attr("original") || img.attr("data-src");
+      if (!src || src.includes("loading") || src === "") {
+        src = img.attr("src");
+      }
+      if (!src || src.includes("logo") || src.includes("loading")) {
+        return "https://paperback.moe/icons/logo-alt.svg";
+      }
       src = src.trim();
       if (src.startsWith("//")) src = `https:${src}`;
       else if (src.startsWith("/")) src = `https://it.ninemanga.com${src}`;
@@ -747,38 +752,43 @@ var _Sources = (() => {
       return src;
     }
     /**
-     * Estrae l'ID del manga da un qualsiasi URL (manga o chapter)
+     * Estrae l'ID del manga da URL misti (/manga/ o /chapter/)
      */
     extractMangaId(url) {
       if (!url) return null;
-      const regex = /\/(?:manga|chapter)\/([^\/]+?)(?:\.html|\/|$)/;
-      const match = url.match(regex);
+      const match = url.match(/\/(?:manga|chapter)\/([^\/]+?)(?:\.html|\/|$)/);
       return match ? match[1] : null;
     }
     parseMangaDetails($, mangaId) {
-      let title = $('h1[itemprop="name"]').first().text().trim();
-      if (!title) title = $(".book-title").first().text().trim();
-      if (!title) title = $(".book-detail .title").first().text().trim();
+      let title = $("h1").first().text().trim();
+      if (!title) title = $(".book-title").text().trim() || "Titolo Sconosciuto";
       title = title.replace(/ Manga$/, "").trim();
-      let imageElement = $('img[itemprop="image"]').first();
-      if (imageElement.length === 0) imageElement = $(".bookintro img").first();
+      let imageElement = $(".bookintro img").first();
+      if (imageElement.length === 0) imageElement = $(".manga-cover img").first();
       const image = this.getImageSrc(imageElement);
-      const author = $('a[itemprop="author"]').first().text().trim() || "Unknown";
+      let author = "Unknown";
+      let artist = "Unknown";
+      let status = "Ongoing";
+      $(".book-detail ul.message li").each((_, el) => {
+        const text = $(el).text().trim();
+        const content = $(el).find("a").text().trim() || $(el).text().split(":")[1]?.trim();
+        if (text.includes("Autore:")) author = content || author;
+        if (text.includes("Stato:")) {
+          const stat = text.toLowerCase();
+          if (stat.includes("completato")) status = "Completed";
+        }
+      });
       let desc = $('p[itemprop="description"]').text().trim();
       if (!desc) {
         const intro = $(".bookintro").clone();
-        intro.find("ul, h1, div, a, span").remove();
+        intro.find("ul, h1, div.book-cover, a").remove();
         desc = intro.text().trim();
       }
-      desc = desc.replace(/^Sommario:\s*/i, "") || "Nessuna descrizione disponibile.";
-      let status = "Ongoing";
-      const statusText = $('.red, .blue, a[href*="completed"]').text().toLowerCase();
-      if (statusText.includes("completato") || statusText.includes("completed")) status = "Completed";
+      desc = desc.replace(/^Sommario:\s*/i, "").trim() || "Nessuna descrizione disponibile.";
       const arrayTags = [];
-      $('li[itemprop="genre"] a, .bookintro a[href*="/category/"]').each((_, el) => {
+      $('.bookintro a[href*="/category/"]').each((_, el) => {
         const $el = $(el);
-        const href = $el.attr("href");
-        const id = href?.match(/\/category\/([^\/]+)/)?.[1]?.replace(".html", "");
+        const id = $el.attr("href")?.split("/").pop()?.replace(".html", "") ?? "";
         const label = $el.text().trim();
         if (id && label) arrayTags.push({ id, label });
       });
@@ -789,7 +799,7 @@ var _Sources = (() => {
           image,
           status,
           author,
-          artist: "Unknown",
+          artist,
           desc,
           tags: [App.createTagSection({ id: "0", label: "Generi", tags: arrayTags })]
         })
@@ -798,42 +808,39 @@ var _Sources = (() => {
     parseChapters($, mangaId) {
       const chapters = [];
       const seenIds = /* @__PURE__ */ new Set();
-      let links = $("ul.chapter_list a.chapter_list_a").toArray();
-      if (links.length === 0) links = $(".sub_vol_ul a").toArray();
-      if (links.length === 0) links = $('a[href*="/chapter/"]').toArray();
+      const links = $("ul.chapter_list a.chapter_list_a").toArray();
       for (const link of links) {
         const $link = $(link);
         const href = $link.attr("href");
         if (!href) continue;
-        const chapterIdRaw = href.split("/chapter/")[1];
-        if (!chapterIdRaw) continue;
-        const chapterId = chapterIdRaw.split("?")[0].replace(".html", "");
-        if (chapterId.match(/-\d+-\d+$/)) continue;
+        const filePart = href.split("/").pop() ?? "";
+        const chapterId = filePart.split("?")[0].replace(".html", "");
+        if (chapterId.includes("-")) continue;
         if (seenIds.has(chapterId)) continue;
         seenIds.add(chapterId);
         let titleRaw = $link.attr("title") || $link.text().trim();
-        const cleanMangaName = mangaId.replace(/_/g, " ").replace(/-/g, " ");
-        titleRaw = titleRaw.replace(new RegExp(cleanMangaName, "gi"), "");
-        titleRaw = titleRaw.replace(new RegExp(mangaId, "gi"), "");
-        titleRaw = titleRaw.replace(/manga/gi, "").trim();
+        const cleanMangaName = mangaId.replace(/[-_]/g, "[- ]");
+        titleRaw = titleRaw.replace(new RegExp(cleanMangaName, "gi"), "").trim();
+        titleRaw = titleRaw.replace(new RegExp(mangaId, "gi"), "").trim();
         const dateText = $link.parent().find("span").last().text().trim();
         let time = /* @__PURE__ */ new Date();
-        if (dateText) {
+        if (dateText && !dateText.includes("ago")) {
           const parsedDate = new Date(dateText);
           if (!isNaN(parsedDate.getTime())) time = parsedDate;
         }
-        const chapNumMatch = titleRaw.match(/(\d+(\.\d+)?)/);
+        const chapNumMatch = titleRaw.match(/(\d+(\.\d+)?)/g);
         let chapNum = 0;
-        if (chapNumMatch) {
-          chapNum = parseFloat(chapNumMatch[1]);
+        if (chapNumMatch && chapNumMatch.length > 0) {
+          chapNum = parseFloat(chapNumMatch[chapNumMatch.length - 1]);
         }
         let name = titleRaw;
         name = name.replace(/^(chapter|ch|vol|c)\.?\s*\d+/i, "").trim();
-        name = name.replace(/^[-–—:]+/, "").trim();
+        name = name.replace(/^[-–—:]+\s*/, "").trim();
         if (name === String(chapNum) || name === "") name = "";
         chapters.push(App.createChapter({
           id: chapterId,
           name,
+          // Se vuoto -> Paperback mostra "Ch. 1141"
           chapNum,
           time,
           langCode: "it"
@@ -845,7 +852,7 @@ var _Sources = (() => {
       const pageUrls = [];
       $("select#page option").each((_, obj) => {
         let val = $(obj).attr("value") ?? "";
-        if (val) {
+        if (val && val !== "0") {
           if (val.startsWith("/")) val = source.baseUrl + val;
           pageUrls.push(val);
         }
@@ -868,12 +875,8 @@ var _Sources = (() => {
     }
     extractImage($) {
       const img = $("img.manga_pic").first();
-      let src = img.attr("src");
-      if (src) {
-        if (src.startsWith("//")) src = "https:" + src;
-        return src;
-      }
-      return null;
+      const src = this.getImageSrc(img);
+      return src && !src.includes("logo-alt") ? src : null;
     }
     async fetchImageFromPage(url, source) {
       try {
@@ -895,9 +898,9 @@ var _Sources = (() => {
     }
     parseSearchResults($) {
       const results = [];
-      $(".book-list li, dl.book-list dd").each((_, item) => {
+      $(".book-list li").each((_, item) => {
         const $item = $(item);
-        const link = $item.find("a.bookname").first().length ? $item.find("a.bookname").first() : $item.find("a").first();
+        const link = $item.find("a.bookname").first();
         const href = link.attr("href");
         const id = this.extractMangaId(href);
         if (!id) return;
@@ -920,17 +923,15 @@ var _Sources = (() => {
       const latestItems = [];
       const newItems = [];
       const parseList = (selector, target) => {
-        $(selector).find("li, dd, div.comic-item").each((_, el) => {
+        $(selector).find("li").each((_, el) => {
           const $el = $(el);
-          let link = $el.find("a.bookname").first();
-          if (link.length === 0) link = $el.find("a").first();
+          const link = $el.find("a.bookname").first();
           const href = link.attr("href");
           const id = this.extractMangaId(href);
           if (!id) return;
           const image = this.getImageSrc($el);
           let title = link.text().trim();
-          title = title.replace(/\s+\d+$/, "").trim();
-          if (!title) title = link.attr("title") ?? "Titolo Sconosciuto";
+          title = title.replace(/\s+\d+(\.\d+)?$/, "").trim();
           target.push(App.createPartialSourceManga({
             mangaId: id,
             image,
@@ -990,13 +991,13 @@ var _Sources = (() => {
   // src/NineMangaIT/NineMangaIT.ts
   var IT_DOMAIN = "https://it.ninemanga.com";
   var NineMangaITInfo = {
-    version: "2.0.0",
-    // Rewrite from scratch
+    version: "2.1.0",
+    // Updated with Cover Fixes & Detail parsing
     name: "NineMangaIT",
-    description: "Estensione nativa per la versione Mobile di NineManga IT. Bypassa il blocco +18.",
+    description: "Estensione per it.ninemanga.com (Mobile Optimized)",
     author: "DarkDragonkzz",
     icon: "icon.png",
-    contentRating: import_types2.ContentRating.MATURE,
+    contentRating: import_types2.ContentRating.EVERYONE,
     language: "it",
     websiteBaseURL: IT_DOMAIN,
     sourceTags: [
@@ -1012,11 +1013,9 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.baseUrl = IT_DOMAIN;
       this.parser = new NineMangaITParser();
-      // User-Agent Mobile specifico (Android) per garantire che il sito ci serva la versione mobile
       this.userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 3,
-        // Basso per evitare ban IP su caricamenti massivi di immagini
         requestTimeout: 25e3,
         interceptor: {
           interceptRequest: async (request) => {
@@ -1026,7 +1025,6 @@ var _Sources = (() => {
                 "Referer": `${this.baseUrl}/`,
                 "User-Agent": this.userAgent,
                 "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
-                // Cookie chiave per evitare redirect strani o avvisi persistenti
                 "Cookie": "is_warning=1; my_limit=1; waring=1"
               }
             };
