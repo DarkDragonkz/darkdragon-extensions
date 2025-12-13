@@ -733,26 +733,27 @@ var _Sources = (() => {
   var import_types = __toESM(require_lib());
   var NineMangaITParser = class {
     /**
-     * Estrae l'URL dell'immagine dando priorità a data-original per evitare loading.gif
+     * Estrae l'URL dell'immagine gestendo il lazy loading specifico di NineManga.
+     * Trovato in Homepage.txt: <img src="..." original="http://..." />
      */
     getImageSrc(element) {
       let img = element.find("img").first();
       if (element.is("img")) img = element;
-      let src = img.attr("data-original") || img.attr("original") || img.attr("data-src");
-      if (!src || src.includes("loading") || src === "") {
+      let src = img.attr("original") || img.attr("data-original") || img.attr("src");
+      if (!src || src.includes("pixel.gif") || src.includes("loading")) {
         src = img.attr("src");
       }
-      if (!src || src.includes("logo") || src.includes("loading")) {
+      if (!src || src.includes("logo") || src.includes("pixel.gif")) {
         return "https://paperback.moe/icons/logo-alt.svg";
       }
       src = src.trim();
       if (src.startsWith("//")) src = `https:${src}`;
       else if (src.startsWith("/")) src = `https://it.ninemanga.com${src}`;
-      else if (src.startsWith("http:")) src = src.replace("http:", "https:");
       return src;
     }
     /**
-     * Estrae l'ID del manga da URL misti (/manga/ o /chapter/)
+     * Estrae l'ID del manga anche se il link punta a un capitolo.
+     * Esempio trovato: /chapter/Nome_Manga/123.html -> ID: Nome_Manga
      */
     extractMangaId(url) {
       if (!url) return null;
@@ -760,31 +761,31 @@ var _Sources = (() => {
       return match ? match[1] : null;
     }
     parseMangaDetails($, mangaId) {
-      let title = $("h1").first().text().trim();
-      if (!title) title = $(".book-title").text().trim() || "Titolo Sconosciuto";
+      let title = $(".book-title").text().trim();
+      if (!title) title = $("h1").first().text().trim();
       title = title.replace(/ Manga$/, "").trim();
       let imageElement = $(".bookintro img").first();
       if (imageElement.length === 0) imageElement = $(".manga-cover img").first();
       const image = this.getImageSrc(imageElement);
       let author = "Unknown";
-      let artist = "Unknown";
       let status = "Ongoing";
-      $(".book-detail ul.message li").each((_, el) => {
+      $(".message li").each((_, el) => {
         const text = $(el).text().trim();
-        const content = $(el).find("a").text().trim() || $(el).text().split(":")[1]?.trim();
-        if (text.includes("Autore:")) author = content || author;
+        if (text.includes("Autore:")) {
+          author = $(el).find("a").text().trim() || text.replace("Autore:", "").trim();
+        }
         if (text.includes("Stato:")) {
-          const stat = text.toLowerCase();
-          if (stat.includes("completato")) status = "Completed";
+          const statusText = text.toLowerCase();
+          if (statusText.includes("completato")) status = "Completed";
         }
       });
       let desc = $('p[itemprop="description"]').text().trim();
       if (!desc) {
         const intro = $(".bookintro").clone();
-        intro.find("ul, h1, div.book-cover, a").remove();
+        intro.find("ul.message, h1, div, a.btn, img").remove();
         desc = intro.text().trim();
       }
-      desc = desc.replace(/^Sommario:\s*/i, "").trim() || "Nessuna descrizione disponibile.";
+      desc = desc.replace(/^Sommario:\s*/i, "").trim();
       const arrayTags = [];
       $('.bookintro a[href*="/category/"]').each((_, el) => {
         const $el = $(el);
@@ -799,8 +800,8 @@ var _Sources = (() => {
           image,
           status,
           author,
-          artist,
-          desc,
+          artist: "Unknown",
+          desc: desc || "Nessuna descrizione.",
           tags: [App.createTagSection({ id: "0", label: "Generi", tags: arrayTags })]
         })
       });
@@ -819,12 +820,13 @@ var _Sources = (() => {
         if (seenIds.has(chapterId)) continue;
         seenIds.add(chapterId);
         let titleRaw = $link.attr("title") || $link.text().trim();
-        const cleanMangaName = mangaId.replace(/[-_]/g, "[- ]");
-        titleRaw = titleRaw.replace(new RegExp(cleanMangaName, "gi"), "").trim();
-        titleRaw = titleRaw.replace(new RegExp(mangaId, "gi"), "").trim();
+        const cleanMangaName = mangaId.replace(/[-_]/g, " ").replace(/\s+/g, ".*");
+        const mangaNameRegex = new RegExp(`^${cleanMangaName}`, "i");
+        titleRaw = titleRaw.replace(mangaNameRegex, "").trim();
+        titleRaw = titleRaw.replace(new RegExp(mangaId.replace(/[-_]/g, " "), "i"), "").trim();
         const dateText = $link.parent().find("span").last().text().trim();
         let time = /* @__PURE__ */ new Date();
-        if (dateText && !dateText.includes("ago")) {
+        if (dateText) {
           const parsedDate = new Date(dateText);
           if (!isNaN(parsedDate.getTime())) time = parsedDate;
         }
@@ -840,7 +842,6 @@ var _Sources = (() => {
         chapters.push(App.createChapter({
           id: chapterId,
           name,
-          // Se vuoto -> Paperback mostra "Ch. 1141"
           chapNum,
           time,
           langCode: "it"
