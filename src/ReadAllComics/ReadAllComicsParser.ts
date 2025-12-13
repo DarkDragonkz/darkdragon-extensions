@@ -9,108 +9,31 @@ import {
     TagSection,
 } from '@paperback/types'
 
-const BASE_URL = 'https://readallcomics.com'
-
 export class ReadAllComicsParser {
 
-    /**
-     * Helper centralizzato per parsare la griglia dei fumetti.
-     */
-    parseGridItems($: any): PartialSourceManga[] {
-        const results: PartialSourceManga[] = []
-
-        $('#post-area .post').each((_: any, item: any) => {
-            const link = $('.pinbin-copy a', item).first()
-            const title = link.text().trim() || link.attr('title')
-            
-            const classAttr = $(item).attr('class') ?? ''
-            const categoryMatch = classAttr.match(/category-([^\s]+)/)
-            const id = categoryMatch ? categoryMatch[1] : null
-
-            if (!id || !title) return
-
-            const img = $('img', item).first()
-            let image = img.attr('src') ?? img.attr('data-src') ?? ''
-            
-            if (image.startsWith('/')) {
-                image = `https://2.bp.blogspot.com${image}`
-            }
-
-            const dateText = $('.pinbin-copy span', item).text().trim()
-
-            results.push(App.createPartialSourceManga({
-                mangaId: id,
-                image: image,
-                title: title,
-                subtitle: dateText || undefined
-            }))
-        })
-
-        if (results.length === 0 && $('.list-story li').length > 0) {
-            $('.list-story li').each((_: any, li: any) => {
-                const link = $('a', li).first()
-                const title = link.text().trim()
-                const href = link.attr('href')
-                
-                if (!href || !title) return
-
-                const urlParts = href.split('/').filter(Boolean)
-                const id = urlParts[urlParts.length - 1]
-                const image = 'https://readallcomics.com/wp-content/uploads/2020/09/logo.png'
-
-                if (id) {
-                    results.push(App.createPartialSourceManga({
-                        mangaId: id,
-                        image: image,
-                        title: title,
-                        subtitle: undefined
-                    }))
-                }
-            })
-        }
-
-        return results
-    }
-
     parseMangaDetails($: any, mangaId: string): SourceManga {
-        const title = $('h1').first().text().trim() || 'Unknown'
+        let title = $('h1').first().text().trim()
+        if (!title) title = 'Unknown Title'
         
-        const img = $('.description-archive img').first()
-        let image = img.attr('src') ?? img.attr('data-src') ?? ''
-        if (image.startsWith('/')) {
-            image = `https://2.bp.blogspot.com${image}`
-        }
+        // Pulizia: Rimuovi "Comic" o "Read"
+        title = title.replace(/^Read\s+/i, '').replace(/\s+Comic$/i, '')
 
-        let author = 'Unknown'
-        let status = 'Ongoing'
-        let desc = ''
+        // L'immagine è spesso nella descrizione o in un div specifico
+        let image = $('.entry-content img').first().attr('src')
+        if (!image) image = 'https://paperback.moe/icons/logo-alt.svg'
+
+        let desc = $('.description').text().trim()
+        if (!desc) desc = $('.entry-content p').first().text().trim()
+        if (!desc) desc = 'No description available.'
+
+        // Tentativo di estrazione generi (WordPress tags)
         const arrayTags: Tag[] = []
-
-        const context = $('.description-archive')
-        let tempDesc = context.clone()
-        tempDesc.find('b, strong, div, img, script, style').remove()
-        desc = tempDesc.text().replace(/Publisher:|Genres:|Author:/g, '').trim()
-
-        const publisherLabel = context.find('b:contains("Publisher:"), strong:contains("Publisher:")')
-        if (publisherLabel.length > 0) {
-            author = publisherLabel[0].nextSibling?.nodeValue?.trim() || 
-                     publisherLabel.next().text().trim() || 
-                     'Unknown'
-        }
-
-        const genreLabel = context.find('b:contains("Genres:"), strong:contains("Genres:")')
-        if (genreLabel.length > 0) {
-            let genreContainer = genreLabel.parent()
-            genreContainer.find('a').each((_: any, a: any) => {
-                const label = $(a).text().trim()
-                const href = $(a).attr('href')
-                const id = href?.split('/').filter(Boolean).pop() ?? label
-                if (id && label) {
-                    arrayTags.push(App.createTag({ id: String(id), label: String(label) }))
-                }
-            })
-        }
-
+        // Selettore generico per i tag in fondo ai post WP
+        $('a[rel="tag"]').each((_: any, el: any) => {
+            const label = $(el).text().trim()
+            const id = label.toLowerCase().replace(/\s+/g, '-')
+            if (label) arrayTags.push({ id, label })
+        })
         const tagSections: TagSection[] = [App.createTagSection({ id: '0', label: 'Genres', tags: arrayTags })]
 
         return App.createSourceManga({
@@ -118,95 +41,72 @@ export class ReadAllComicsParser {
             mangaInfo: App.createMangaInfo({
                 titles: [title],
                 image: image,
-                status: status,
-                author: author,
+                status: 'Ongoing', // Default sicuro per questo sito
+                author: 'Unknown',
+                artist: 'Unknown',
                 tags: tagSections,
-                desc: desc || 'No description available.'
+                desc: desc
             })
         })
     }
 
-    // --- LOGICA DI ORDINAMENTO MIGLIORATA ---
     parseChapters($: any, mangaId: string): Chapter[] {
-        const tempChapters: any[] = []
+        const chapters: Chapter[] = []
         
-        $('.list-story li').each((_: any, li: any) => {
-            const link = $('a', li)
-            const title = link.text().trim()
-            const href = link.attr('href')
-            if (!href) return
+        // ReadAllComics elenca i capitoli in una lista <ul> o <p> dentro entry-content
+        const links = $('.entry-content li a, .entry-content p a').toArray()
 
+        for (const link of links) {
+            const $link = $(link)
+            const href = $link.attr('href')
+            const titleRaw = $link.text().trim()
+
+            if (!href) continue
+
+            // Questo sito usa l'URL completo come ID del capitolo perché non ha ID numerici chiari
             const chapterId = href
 
-            // 1. ESTRAZIONE ANNO (es. Witchblade (1995))
-            // Usiamo l'anno come "Volume" fittizio per raggruppare visivamente
-            const yearMatch = title.match(/\((\d{4})\)/)
-            const year = yearMatch ? parseInt(yearMatch[1] ?? '0') : 0
-
-            // 2. ESTRAZIONE NUMERO CAPITOLO
-            // Rimuoviamo l'anno per evitare falsi positivi
-            const titleClean = title.replace(/\(\d{4}\)/g, '').trim()
-            
+            // Estrazione numero capitolo
+            // Regex cerca "Issue 5", "Chapter 5", "#5" o solo il numero alla fine
+            const chapNumMatch = titleRaw.match(/(?:chapter|ch|issue|no\.|#)\.?\s*(\d+(\.\d+)?)/i)
             let chapNum = 0
-            // Cerca l'ultimo numero nella stringa (es "Witchblade v3 001" -> prende 001)
-            const numMatch = titleClean.match(/(\d+)(\s|$)/g)
-            if (numMatch && numMatch.length > 0) {
-                 // Prende l'ultimo match numerico pulito
-                 const lastNum = numMatch[numMatch.length - 1]?.trim()
-                 if(lastNum) chapNum = parseFloat(lastNum)
+            if (chapNumMatch) {
+                chapNum = parseFloat(chapNumMatch[1])
+            } else {
+                // Fallback: cerca l'ultimo numero nella stringa
+                const numMatch = titleRaw.match(/(\d+(\.\d+)?)/g)
+                if (numMatch && numMatch.length > 0) {
+                    chapNum = parseFloat(numMatch[numMatch.length - 1])
+                }
             }
 
-            tempChapters.push({
+            chapters.push(App.createChapter({
                 id: chapterId,
-                name: title, // Il nome completo originale
+                name: titleRaw,
                 chapNum: chapNum,
-                volume: year, // HACK: Assegna l'anno al volume
-                time: new Date(),
+                time: new Date(), // Data non disponibile facilmente
                 langCode: 'en'
-            })
-        })
+            }))
+        }
 
-        // 3. ORDINAMENTO MANUALE (Sorting Logic)
-        // Ordina PRIMA per Anno (Crescente), POI per Capitolo
-        tempChapters.sort((a, b) => {
-            if (a.volume !== b.volume) {
-                // Ordine cronologico: 1995 prima di 2024
-                // Se vuoi i più recenti in alto, inverti a e b (b.volume - a.volume)
-                return a.volume - b.volume 
-            }
-            return a.chapNum - b.chapNum
-        })
-
-        // 4. MAPPA IN OGGETTI CHAPTER
-        return tempChapters.map((ch, index) => {
-            return App.createChapter({
-                id: ch.id,
-                name: ch.name,
-                chapNum: ch.chapNum,
-                volume: ch.volume > 0 ? ch.volume : undefined, // Mostra "Vol. 1995"
-                time: ch.time,
-                langCode: ch.langCode,
-                sortingIndex: index // Forza l'ordine calcolato sopra
-            })
-        })
+        // ORDINAMENTO DECRESCENTE (Fondamentale)
+        return chapters.sort((a, b) => b.chapNum - a.chapNum)
     }
 
     parseChapterDetails($: any, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
-        
-        $('img').each((_: any, img: any) => {
-            let url = $(img).attr('src') ?? $(img).attr('data-src')
+
+        // Le immagini sono dirette nel contenuto del post
+        $('.entry-content img').each((_: any, el: any) => {
+            const $img = $(el)
+            // Priorità attributi lazy load se presenti, altrimenti src
+            let src = $img.attr('data-src') || $img.attr('data-original') || $img.attr('src')
             
-            if (url && !url.includes('logo') && !url.includes('facebook') && !url.includes('twitter') && !url.includes('preloader')) {
-                if (url.startsWith('/')) {
-                    url = `https://2.bp.blogspot.com${url}`
-                } else if (!url.startsWith('http')) {
-                     url = url.startsWith('//') ? `https:${url}` : BASE_URL + url
-                }
-                
-                if (!pages.includes(url.trim())) {
-                    pages.push(url.trim())
-                }
+            if (src && !src.includes('logo') && !src.includes('pixel') && !src.includes('facebook')) {
+                src = src.trim()
+                // Fix URL relativi se necessario (raro su WP)
+                if (src.startsWith('//')) src = `https:${src}`
+                pages.push(src)
             }
         })
 
@@ -217,19 +117,82 @@ export class ReadAllComicsParser {
         })
     }
 
+    parseSearchResults($: any): PartialSourceManga[] {
+        const results: PartialSourceManga[] = []
+        
+        $('article').each((_: any, el: any) => {
+            const $el = $(el)
+            const titleLink = $el.find('h2.entry-title a').first()
+            const title = titleLink.text().trim()
+            const href = titleLink.attr('href')
+            
+            // L'ID del manga è lo slug della categoria
+            // Es: readallcomics.com/category/batman-2016/ -> batman-2016
+            const idMatch = href?.match(/\/category\/([^\/]+)\/?$/)
+            const id = idMatch ? idMatch[1] : undefined
+
+            const image = $el.find('img').first().attr('src') ?? 'https://paperback.moe/icons/logo-alt.svg'
+
+            if (id && title) {
+                results.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image,
+                    title: title,
+                    subtitle: undefined
+                }))
+            }
+        })
+        return results
+    }
+
     parseHomeSections($: any, sectionCallback: (section: HomeSection) => void): void {
         const latestSection = App.createHomeSection({ 
             id: 'latest', 
-            title: 'Latest Added 🔥', 
-            containsMoreItems: true,
+            title: 'New Comics 🆕', 
+            containsMoreItems: true, 
             type: HomeSectionType.continuous 
         })
-        
-        latestSection.items = this.parseGridItems($)
-        sectionCallback(latestSection)
-    }
 
-    parseSearchResults($: any): PartialSourceManga[] {
-        return this.parseGridItems($)
+        // ReadAllComics non ha una vera sezione "Popolari" fissa nella home, 
+        // a volte è un widget laterale. Implementiamo solo Latest per sicurezza.
+        // Se volessimo i popolari, dovremmo cercare in '.widget_text ul li' ma è fragile.
+
+        const latestItems: PartialSourceManga[] = []
+
+        // WP loop standard: #content .post o .type-post
+        $('.type-post').each((_: any, el: any) => {
+            const $el = $(el)
+            
+            // Cerchiamo link al manga (di solito nei tag o nel titolo se è un post di "uscita")
+            // ReadAllComics posta i singoli capitoli come post del blog.
+            // Il link del manga (serie) è spesso nei breadcrumbs o nei tag.
+            // MA per la home, mostriamo i singoli post come entry point.
+            
+            // Tuttavia, Paperback vuole ID Manga.
+            // Se clicco su un post "Batman #50", quello è un capitolo.
+            // Dobbiamo estrarre la SERIE di appartenenza.
+            
+            // Solitamente c'è un link alla categoria
+            const categoryLink = $el.find('a[rel="category tag"]').first()
+            const categoryHref = categoryLink.attr('href')
+            const title = categoryLink.text().trim() || $el.find('h2 a').text().trim()
+            
+            const idMatch = categoryHref?.match(/\/category\/([^\/]+)\/?$/)
+            const id = idMatch ? idMatch[1] : undefined
+            
+            const image = $el.find('img').first().attr('src') ?? 'https://paperback.moe/icons/logo-alt.svg'
+
+            if (id && title) {
+                latestItems.push(App.createPartialSourceManga({
+                    mangaId: id,
+                    image: image,
+                    title: title,
+                    subtitle: $el.find('h2 a').text().trim() // Mostra il titolo del capitolo come sottotitolo
+                }))
+            }
+        })
+
+        latestSection.items = latestItems
+        sectionCallback(latestSection)
     }
 }
