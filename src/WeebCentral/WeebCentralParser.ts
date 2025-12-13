@@ -119,24 +119,25 @@ export class WeebCentralParser {
         })
     }
 
-    // HELPER POTENZIATO: Estrae sottotitoli anche da link o strutture complesse
+    // HELPER FISSO: Cerca SOLO capitoli o stringhe brevi, ignora date ISO lunghe
     private extractSubtitle($el: any): string | undefined {
-        // 1. Cerca etichette di testo standard (span, time)
-        let sub = $el.find('span:contains("Chapter"), span:contains("Ch."), time').last().text().trim()
+        // 1. Priorità assoluta: Elementi che contengono "Chapter" o "Ch."
+        let sub = $el.find('span:contains("Chapter"), span:contains("Ch."), a:contains("Chapter")').last().text().trim()
         
-        // 2. Se vuoto, cerca LINK ai capitoli (comune in Hot Updates)
+        // 2. Se non trova testo esplicito, prova a cercare un link numerico che non sia il titolo
         if (!sub) {
+            // Cerca un link che abbia un href con 'chapter' ma che non sia l'immagine
             const chapterLink = $el.find('a[href*="/chapters/"]').first()
             if (chapterLink.length > 0) {
+                // Prende il testo, es "Chapter 123"
                 sub = chapterLink.text().trim()
             }
         }
 
-        // 3. Fallback: cerca qualsiasi testo che assomiglia a un numero di capitolo
-        if (!sub) {
-             const text = $el.text()
-             const match = text.match(/Chapter\s*\d+/i)
-             if (match) sub = match[0]
+        // 3. Pulizia finale: Se per caso abbiamo preso una data ISO o stringa lunghissima, scartiamola
+        if (sub && (sub.length > 20 || sub.includes('T') && sub.includes(':'))) {
+            // È probabile che sia una data ISO (es. 2025-12-12T...), la ignoriamo
+            return undefined 
         }
         
         return sub || undefined
@@ -170,7 +171,6 @@ export class WeebCentralParser {
             let title = img.attr('alt') || $el.text().trim() || 'Unknown'
             title = this.cleanTitle(title)
 
-            // Cerca nel contenitore genitore (card)
             const subtitle = this.extractSubtitle($el.closest('article, div'))
 
             if (!results.find(r => r.mangaId === id)) {
@@ -208,9 +208,7 @@ export class WeebCentralParser {
             title = this.cleanTitle(title)
             const image = img.attr('src') || ''
             
-            // FIX: Cerca nel genitore (div della card) per trovare il sottotitolo
-            // Hot Updates spesso ha struttura: Image Link -> Div (Titolo) -> Div (Chapter Link)
-            // Risaliamo di 2 livelli per sicurezza
+            // Cerca il sottotitolo nel genitore della card
             const card = $el.closest('div.relative, div.flex-col, article')
             const subtitle = this.extractSubtitle(card.length ? card : $el.parent())
 
@@ -225,7 +223,6 @@ export class WeebCentralParser {
 
         recentContainer.find('a[href*="/series/"]').each((_: any, el: any) => {
              const $el = $(el)
-             
              const href = $el.attr('href')
              const id = href?.split('/series/')[1]
              if (!id) return
@@ -244,7 +241,7 @@ export class WeebCentralParser {
 
              title = this.cleanTitle(title || 'Unknown')
              
-             // Cerca nel contenitore (spesso table row o grid item)
+             // Cerca sottotitolo (Capitolo) nel contenitore
              const subtitle = this.extractSubtitle($el.closest('div, tr'))
 
              latestItems.push(App.createPartialSourceManga({
