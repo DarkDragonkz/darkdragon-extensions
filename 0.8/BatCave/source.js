@@ -821,15 +821,29 @@ var _Sources = (() => {
               const numMatch = rawTitle.match(/(\d+(\.\d+)?)/g);
               if (numMatch) chapNum = parseFloat(numMatch[numMatch.length - 1] ?? "0");
             }
-            if (seriesTitle && rawTitle.toLowerCase().startsWith(seriesTitle.toLowerCase())) {
-              rawTitle = rawTitle.substring(seriesTitle.length).trim();
+            let yearSuffix = "";
+            const yearMatch = rawTitle.match(/(\(\d{4}[-–—]?\))/);
+            if (yearMatch) {
+              yearSuffix = ` ${yearMatch[1]}`;
             }
-            const chapterNumRegex = new RegExp(`(chapter|ch\\.?|no\\.?)\\s*${chapNum}`, "gi");
-            rawTitle = rawTitle.replace(chapterNumRegex, "").trim();
-            let cleanTitle = rawTitle.replace(/^[-–—:\s]+/, "").replace(/[-–—:\s]+$/, "").replace(/\s+/g, " ").trim();
+            let cleanTitle = rawTitle;
+            if (rawTitle.includes("#")) {
+              const parts = rawTitle.split("#");
+              if (parts.length > 1) {
+                cleanTitle = parts.slice(1).join("#").trim();
+              }
+            } else {
+              if (seriesTitle && cleanTitle.toLowerCase().startsWith(seriesTitle.toLowerCase())) {
+                cleanTitle = cleanTitle.substring(seriesTitle.length).trim();
+              }
+            }
+            cleanTitle = cleanTitle.replace(yearSuffix.trim(), "").replace(/^(chapter|ch\.?|no\.?)\s*\d+(\.\d+)?\s*[-–—]?/i, "").replace(/^[-–—:\s]+/, "").replace(/[-–—:\s]+$/, "").replace(/_/g, " ").replace(/\s+/g, " ").trim();
             let finalName = `Ch. ${chapNum}`;
             if (cleanTitle.length > 0) {
               finalName += ` - ${cleanTitle}`;
+            }
+            if (yearSuffix) {
+              finalName += yearSuffix;
             }
             let time = /* @__PURE__ */ new Date();
             if (chap.date) {
