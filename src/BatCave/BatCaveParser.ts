@@ -153,12 +153,11 @@ export class BatCaveParser {
                             cleanTitle = cleanTitle.replace(seriesRegex, '').trim()
                         }
 
-                        // B. Rimuoviamo il prefisso "Chapter X" / "Ch. X"
-                        // Rimuove: "Ch. 1", "Chapter 1", "No. 1" dall'inizio
+                        // B. Rimuoviamo il prefisso "Chapter X" / "Ch. X" / "No. X"
                         cleanTitle = cleanTitle.replace(/^(chapter|ch\.?|no\.?)\s*\d+(\.\d+)?/i, '').trim()
 
-                        // C. Rimuoviamo il pattern del volume perché lo aggiungeremo noi formattato all'inizio
-                        // Es: togliamo "_TPB 1" o "Vol. 1" dal titolo per non ripeterlo
+                        // C. Rimuoviamo il pattern del volume 
+                        // Es: togliamo "_TPB 1" o "Vol. 1" dal titolo perché lo gestisce Paperback
                         cleanTitle = cleanTitle.replace(/(?:Vol\.?|TPB|Book)[_\s]*\d+/i, '').trim()
 
                         // D. Pulizia finale caratteri sporchi
@@ -170,28 +169,15 @@ export class BatCaveParser {
                             .trim()
                     }
 
-                    // --- 4. COSTRUZIONE NOME FINALE ---
-                    // Formato: "Vol. X - Titolo" (Senza "Ch. X" perché l'app lo aggiunge da sola)
+                    // --- 4. OUTPUT NOME FINALE ---
+                    // Se cleanTitle è vuoto o è solo il numero del capitolo, lasciamo vuoto.
+                    // Paperback mostrerà automaticamente "Vol. X Ch. Y".
+                    // Se cleanTitle contiene testo (es. "The Flash - Fantastic Four" o "(Part 1)"), lo mostriamo.
                     
                     let finalName = ''
-                    
-                    if (volNum) {
-                        finalName += `Vol. ${volNum}`
-                    }
-
-                    // Aggiungi Titolo (solo se è rimasto qualcosa di sensato)
-                    // Filtriamo via titoli che sono solo numeri o simboli o duplicati del numero capitolo
                     if (cleanTitle.length > 0 && cleanTitle !== String(chapNum)) {
-                        // Se c'è già il volume, aggiungiamo il separatore
-                        if (finalName.length > 0) {
-                            finalName += ' - '
-                        }
-                        finalName += cleanTitle
+                         finalName = cleanTitle
                     }
-
-                    // FIX: Se finalName è vuoto (es. capitolo era solo "Chapter 1"), 
-                    // l'app mostrerà "Ch. 1" automaticamente se name è undefined o vuoto.
-                    // Per sicurezza non facciamo nulla, finalName vuoto va bene.
 
                     // --- DATA ---
                     let time = new Date()
@@ -207,9 +193,9 @@ export class BatCaveParser {
 
                     chapters.push(App.createChapter({
                         id: id,
-                        name: finalName, // Ora contiene solo "Vol. 1 - Titolo" o "Titolo"
+                        name: finalName, // SOLO IL TITOLO PURO
                         chapNum: chapNum,
-                        volume: volNum ? parseFloat(volNum) : undefined,
+                        volume: volNum ? parseFloat(volNum) : undefined, // Paperback aggiunge "Vol. X" grazie a questo
                         time: time,
                         langCode: 'en'
                     }))
