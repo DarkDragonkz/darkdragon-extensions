@@ -823,8 +823,23 @@ ${item.alt_titles.join(", ")}`;
     }
     parseChapters(items) {
       const chapters = [];
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
+      const chapterMap = /* @__PURE__ */ new Map();
+      for (const item of items) {
+        const chapNumStr = String(item.number);
+        if (!chapterMap.has(chapNumStr)) {
+          chapterMap.set(chapNumStr, item);
+        } else {
+          const existing = chapterMap.get(chapNumStr);
+          const scoreExisting = (existing.likes ?? existing.up_count ?? 0) * 1e3 + (existing.views ?? 0);
+          const scoreCurrent = (item.likes ?? item.up_count ?? 0) * 1e3 + (item.views ?? 0);
+          if (scoreCurrent > scoreExisting) {
+            chapterMap.set(chapNumStr, item);
+          }
+        }
+      }
+      const uniqueItems = Array.from(chapterMap.values());
+      for (let i = 0; i < uniqueItems.length; i++) {
+        const item = uniqueItems[i];
         let time = /* @__PURE__ */ new Date();
         if (item.created_at) {
           time = new Date(item.created_at * 1e3);
@@ -837,7 +852,6 @@ ${item.alt_titles.join(", ")}`;
         chapters.push(App.createChapter({
           id: String(item.chapter_id),
           name,
-          // Ora è pulito: solo il titolo o stringa vuota
           chapNum,
           volume: item.volume ? parseFloat(item.volume) : void 0,
           time,
@@ -845,7 +859,7 @@ ${item.alt_titles.join(", ")}`;
           sortingIndex: i
         }));
       }
-      return chapters;
+      return chapters.sort((a, b) => b.chapNum - a.chapNum);
     }
     parseChapterDetails(data, mangaId, chapterId) {
       const pages = [];
