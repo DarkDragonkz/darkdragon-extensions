@@ -98,13 +98,6 @@ export class BatCaveParser {
         const chapters: Chapter[] = []
         const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s)
         
-        // Estrarre il nome della serie (es. "Green Lantern (2005)") per pulire i titoli
-        const seriesTitleMatch = html.match(/<h1[^>]*>(.*?)<\/h1>/i)
-        // Rimuove tag HTML e eventuale anno tra parentesi alla fine del titolo serie per il confronto
-        let seriesNameRaw = seriesTitleMatch ? seriesTitleMatch[1].replace(/<[^>]+>/g, '').trim() : ''
-        // Creiamo una versione "base" del nome serie senza l'anno (es. "Green Lantern") per i match parziali
-        const seriesBaseName = seriesNameRaw.replace(/\s*\(\d{4}[-–—]?\).*$/, '').trim()
-
         if (!scriptData) return []
 
         try {
@@ -114,7 +107,7 @@ export class BatCaveParser {
                     const id = String(chap.id)
                     let rawTitle = (chap.title || '').trim() 
                     
-                    // --- 1. CALCOLO NUMERO CAPITOLO ---
+                    // --- 1. ESTRAZIONE NUMERO CAPITOLO ---
                     let chapNum = 0
                     if (chap.posi) {
                         chapNum = parseFloat(chap.posi)
@@ -123,46 +116,40 @@ export class BatCaveParser {
                         if (numMatch) chapNum = parseFloat(numMatch[numMatch.length - 1] ?? '0')
                     }
 
-                    // --- 2. PIPELINE DI PULIZIA TITOLO ---
-                    
-                    let cleanTitle = rawTitle
-
-                    // A. Gestione Hashtag (Priorità Alta)
-                    // Es: "DC-Marvel (2025-) #The Flash" -> Tiene solo "The Flash"
-                    if (cleanTitle.includes('#')) {
-                        const parts = cleanTitle.split('#')
-                        if (parts.length > 1) {
-                            cleanTitle = parts.slice(1).join('#').trim()
-                        }
-                    } 
-                    // B. Gestione Nome Serie (Se non c'è hashtag)
-                    // Es: "Green Lantern _TPB 1..." -> Rimuove "Green Lantern"
-                    else if (seriesBaseName.length > 0) {
-                        // Regex case-insensitive che cerca il nome della serie all'inizio
-                        const seriesRegex = new RegExp(`^${this.escapeRegExp(seriesBaseName)}`, 'i')
-                        cleanTitle = cleanTitle.replace(seriesRegex, '').trim()
+                    // --- 2. ESTRAZIONE VOLUME (TPB/Vol) ---
+                    // Cerca pattern come "Vol. 1", "Vol 1", "TPB 1", "TPB_1"
+                    let volNum: string | undefined = undefined
+                    const volMatch = rawTitle.match(/(?:Vol\.?|TPB)[_\s]*(\d+)/i)
+                    if (volMatch) {
+                        volNum = volMatch[1]
                     }
 
-                    // C. Rimozione Prefissi Ridondanti e Underscore
-                    cleanTitle = cleanTitle
-                        // Rimuove "Ch. 1", "Chapter 1", "No. 1" dall'inizio della stringa pulita
-                        // Questo risolve il problema "Ch. 1 - Ch. 1"
-                        .replace(/^(chapter|ch\.?|no\.?)\s*\d+(\.\d+)?/i, '')
-                        // Sostituisce underscore con spazi (es. "_TPB" -> " TPB")
-                        .replace(/_/g, ' ')
-                        // Rimuove trattini e due punti rimasti all'inizio
-                        .replace(/^[-–—:\s]+/, '')
-                        // Rimuove trattini alla fine
-                        .replace(/[-–—:\s]+$/, '')
-                        // Normalizza spazi doppi
-                        .replace(/\s+/g, ' ')
-                        .trim()
+                    // --- 3. ESTRAZIONE TITOLO PULITO (Post-Hashtag) ---
+                    let cleanTitle = ''
+                    if (rawTitle.includes('#')) {
+                        // Prende TUTTO ciò che c'è dopo il primo '#'
+                        const parts = rawTitle.split('#')
+                        // Join nel caso ci siano altri # nel titolo del capitolo
+                        cleanTitle = parts.slice(1).join('#').trim()
+                    } else {
+                         // FALLBACK: Se non c'è hashtag, prova a pulire il titolo standard
+                         // Rimuove nome serie e "Chapter X"
+                         cleanTitle = rawTitle
+                            .replace(/^(chapter|ch\.?|no\.?)\s*\d+(\.\d+)?/i, '')
+                            .replace(/^\s*[-–—]\s*/, '') // Rimuove trattini iniziali
+                            .trim()
+                    }
 
-                    // D. Costruzione Nome Finale
-                    // Se cleanTitle è vuoto (es. il capitolo si chiamava solo "Chapter 1"), mostra solo "Ch. 1"
-                    // Se cleanTitle esiste, mostra "Ch. 1 - Titolo Pulito"
+                    // --- 4. COSTRUZIONE NOME FINALE ---
+                    // Formato: "Vol. X Ch. Y - Titolo" oppure "Ch. Y - Titolo"
+                    let finalName = ''
                     
-                    let finalName = `Ch. ${chapNum}`
+                    if (volNum) {
+                        finalName += `Vol. ${volNum} `
+                    }
+                    
+                    finalName += `Ch. ${chapNum}`
+
                     if (cleanTitle.length > 0) {
                         finalName += ` - ${cleanTitle}`
                     }
@@ -183,6 +170,7 @@ export class BatCaveParser {
                         id: id,
                         name: finalName,
                         chapNum: chapNum,
+                        volume: volNum ? parseFloat(volNum) : undefined, // Imposta anche il campo volume metadato
                         time: time,
                         langCode: 'en'
                     }))
@@ -193,11 +181,6 @@ export class BatCaveParser {
         }
 
         return chapters.sort((a, b) => b.chapNum - a.chapNum)
-    }
-
-    // Helper per escape dei caratteri speciali nelle regex
-    private escapeRegExp(string: string) {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
     parseChapterDetails(html: string, mangaId: string, chapterId: string): ChapterDetails {
