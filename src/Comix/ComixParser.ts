@@ -85,8 +85,38 @@ export class ComixParser {
     parseChapters(items: any[]): Chapter[] {
         const chapters: Chapter[] = []
         
-        for (let i = 0; i < items.length; i++) {
-            const item = items[i]
+        // --- LOGICA DI DEDUPLICAZIONE (BEST VERSION) ---
+        const chapterMap = new Map<string, any>()
+
+        for (const item of items) {
+            const chapNumStr = String(item.number) // Usiamo stringa per evitare problemi float
+
+            // Se è il primo che incontriamo con questo numero, lo salviamo
+            if (!chapterMap.has(chapNumStr)) {
+                chapterMap.set(chapNumStr, item)
+            } else {
+                // Se ne esiste già uno, facciamo la "battaglia"
+                const existing = chapterMap.get(chapNumStr)
+
+                // Punteggio: Likes (priorità) + Views (fallback)
+                // Usiamo 0 se il campo manca
+                const scoreExisting = (existing.likes ?? existing.up_count ?? 0) * 1000 + (existing.views ?? 0)
+                const scoreCurrent = (item.likes ?? item.up_count ?? 0) * 1000 + (item.views ?? 0)
+
+                // Se il nuovo ha un punteggio più alto, sostituisce il vecchio
+                if (scoreCurrent > scoreExisting) {
+                    chapterMap.set(chapNumStr, item)
+                }
+            }
+        }
+
+        // Convertiamo la Map filtrata di nuovo in un array da processare
+        const uniqueItems = Array.from(chapterMap.values())
+
+        // --- FINE DEDUPLICAZIONE ---
+
+        for (let i = 0; i < uniqueItems.length; i++) {
+            const item = uniqueItems[i]
             
             let time = new Date()
             if (item.created_at) {
@@ -95,21 +125,17 @@ export class ComixParser {
 
             const chapNum = parseFloat(item.number)
 
-            // --- FIX NOMENCLATURA ---
-            // Se l'API ritorna un nome, lo usiamo. Altrimenti lasciamo vuoto.
-            // L'app aggiungerà automaticamente "Ch. X" grazie a chapNum.
+            // FIX NOMENCLATURA
             let name = item.name ? String(item.name).trim() : ''
 
-            // Se il nome è uguale al numero (es. name: "1"), lo svuotiamo per evitare "Ch. 1 - 1"
             if (name === String(chapNum)) name = ''
 
-            // Rimuoviamo prefissi ridondanti che l'API potrebbe inviare (es. "Chapter 5")
             name = name.replace(new RegExp(`^(chapter|ch\\.?)\\s*${chapNum}`, 'i'), '').trim()
-            name = name.replace(/^[-–—]\s*/, '').trim() // Rimuove trattini iniziali
+            name = name.replace(/^[-–—]\s*/, '').trim()
 
             chapters.push(App.createChapter({
                 id: String(item.chapter_id),
-                name: name, // Ora è pulito: solo il titolo o stringa vuota
+                name: name,
                 chapNum: chapNum,
                 volume: item.volume ? parseFloat(item.volume) : undefined,
                 time: time,
@@ -118,7 +144,8 @@ export class ComixParser {
             }))
         }
         
-        return chapters
+        // Ordiniamo per sicurezza (descending)
+        return chapters.sort((a, b) => b.chapNum - a.chapNum)
     }
 
     parseChapterDetails(data: any, mangaId: string, chapterId: string): ChapterDetails {
