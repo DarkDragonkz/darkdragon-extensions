@@ -20,7 +20,7 @@ import { BatCaveParser } from './BatCaveParser'
 const DOMAIN = 'https://batcave.biz'
 
 export const BatCaveInfo: SourceInfo = {
-    version: '1.0.10', // Bump per Nomenclatura e Ordine
+    version: '1.0.9',
     name: 'BatCave',
     icon: 'icon.png',
     author: 'DarkDragonkz',

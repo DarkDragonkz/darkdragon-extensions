@@ -29,7 +29,6 @@ export class BatCaveParser {
         
         $(selector).each((_: any, item: any) => {
             const el = $(item)
-            
             let link = el.find('a').first()
             if (el.is('a')) link = el
 
@@ -144,10 +143,10 @@ export class BatCaveParser {
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
         
-        // Recuperiamo il titolo principale del fumetto per pulire i nomi dei capitoli
+        // Estrai il titolo del fumetto per rimuoverlo dai nomi dei capitoli
         const mangaTitle = $('h1.title__name').text().trim()
 
-        // Iteriamo sui capitoli
+        // Iterazione con indice 'i' per mantenere l'ordine del sito
         $('.chapters-list li').each((i: number, li: any) => {
             const link = $(li).find('a')
             const href = link.attr('href')
@@ -156,38 +155,41 @@ export class BatCaveParser {
             const chapterId = href.replace(BASE_URL, '').replace(/^\//, '')
             let name = link.text().trim()
             
-            // --- PULIZIA NOMENCLATURA ---
-            // 1. Rimuove il titolo del fumetto se presente nel nome del capitolo (case insensitive)
+            // --- MODIFICA RICHIESTA ---
+            
+            // 1. Rimuovi titolo del fumetto dal nome capitolo (es. "Batman #5" -> "#5")
             if (mangaTitle) {
-                const regexTitle = new RegExp(mangaTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
-                name = name.replace(regexTitle, '').trim()
+                // Escape caratteri speciali per la regex
+                const escapedTitle = mangaTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+                const regex = new RegExp(escapedTitle, 'i')
+                name = name.replace(regex, '').trim()
             }
-            
-            // 2. Rimuove trattini o spazi iniziali residui
-            name = name.replace(/^(-|\s)+/, '')
-            
-            // 3. Se è rimasto solo un numero, aggiungi "#" per estetica
-            if (/^\d+(\.\d+)?$/.test(name)) {
-                name = `#${name}`
-            }
-            
-            // Parsing numero per il tracking
-            const numMatch = name.match(/#?(\d+(\.\d+)?)/)
+
+            // 2. Pulizia extra (rimuove trattini iniziali o spazi)
+            name = name.replace(/^(-|\s)+/, '').trim()
+
+            // 3. Parsing numero
+            const numMatch = name.match(/#(\d+(\.\d+)?)/) || name.match(/Chapter\s*(\d+)/i) || name.match(/(\d+)$/)
             const chapNum = numMatch ? parseFloat(numMatch[1]) : 0
+
+            // 4. Se il nome è vuoto o solo numero, rendilo più carino
+            if (!name || /^\d+$/.test(name)) {
+                name = `#${chapNum}`
+            }
 
             chapters.push(App.createChapter({
                 id: chapterId,
-                name: name || `Issue #${chapNum}`, // Fallback se il nome diventa vuoto
+                name: name,
                 chapNum: chapNum,
                 volume: undefined,
                 time: new Date(),
-                langCode: '🇺🇸', // Emoji bandiera USA
-                sortingIndex: i // Mantiene l'ordine ESATTO del sito (0, 1, 2...)
+                langCode: '🇺🇸', // 5. Bandiera USA invece di EN
+                sortingIndex: i // 6. Ordine diretto dal sito (0 = primo in lista)
             }))
         })
 
-        // NON invertiamo l'array. BatCave li mostra dal più recente (in alto) al più vecchio.
-        // Assegnando sortingIndex = i, Paperback li mostrerà nell'ordine in cui li ha letti.
+        // Restituiamo l'array così com'è, senza reverse().
+        // Se il sito mette i più recenti in alto (indice 0), Paperback userà questo ordine.
         return chapters
     }
 
