@@ -806,7 +806,8 @@ var _Sources = (() => {
       const chapters = [];
       const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s);
       const seriesTitleMatch = html.match(/<h1[^>]*>(.*?)<\/h1>/i);
-      const seriesTitle = seriesTitleMatch ? seriesTitleMatch[1].replace(/<[^>]+>/g, "").trim() : "";
+      let seriesNameRaw = seriesTitleMatch ? seriesTitleMatch[1].replace(/<[^>]+>/g, "").trim() : "";
+      const seriesBaseName = seriesNameRaw.replace(/\s*\(\d{4}[-–—]?\).*$/, "").trim();
       if (!scriptData) return [];
       try {
         const data = JSON.parse(scriptData[1]);
@@ -821,29 +822,20 @@ var _Sources = (() => {
               const numMatch = rawTitle.match(/(\d+(\.\d+)?)/g);
               if (numMatch) chapNum = parseFloat(numMatch[numMatch.length - 1] ?? "0");
             }
-            let yearSuffix = "";
-            const yearMatch = rawTitle.match(/(\(\d{4}[-–—]?\))/);
-            if (yearMatch) {
-              yearSuffix = ` ${yearMatch[1]}`;
-            }
             let cleanTitle = rawTitle;
-            if (rawTitle.includes("#")) {
-              const parts = rawTitle.split("#");
+            if (cleanTitle.includes("#")) {
+              const parts = cleanTitle.split("#");
               if (parts.length > 1) {
                 cleanTitle = parts.slice(1).join("#").trim();
               }
-            } else {
-              if (seriesTitle && cleanTitle.toLowerCase().startsWith(seriesTitle.toLowerCase())) {
-                cleanTitle = cleanTitle.substring(seriesTitle.length).trim();
-              }
+            } else if (seriesBaseName.length > 0) {
+              const seriesRegex = new RegExp(`^${this.escapeRegExp(seriesBaseName)}`, "i");
+              cleanTitle = cleanTitle.replace(seriesRegex, "").trim();
             }
-            cleanTitle = cleanTitle.replace(yearSuffix.trim(), "").replace(/^(chapter|ch\.?|no\.?)\s*\d+(\.\d+)?\s*[-–—]?/i, "").replace(/^[-–—:\s]+/, "").replace(/[-–—:\s]+$/, "").replace(/_/g, " ").replace(/\s+/g, " ").trim();
+            cleanTitle = cleanTitle.replace(/^(chapter|ch\.?|no\.?)\s*\d+(\.\d+)?/i, "").replace(/_/g, " ").replace(/^[-–—:\s]+/, "").replace(/[-–—:\s]+$/, "").replace(/\s+/g, " ").trim();
             let finalName = `Ch. ${chapNum}`;
             if (cleanTitle.length > 0) {
               finalName += ` - ${cleanTitle}`;
-            }
-            if (yearSuffix) {
-              finalName += yearSuffix;
             }
             let time = /* @__PURE__ */ new Date();
             if (chap.date) {
@@ -868,6 +860,10 @@ var _Sources = (() => {
         console.error(`BatCave: Error parsing chapters JSON: ${e}`);
       }
       return chapters.sort((a, b) => b.chapNum - a.chapNum);
+    }
+    // Helper per escape dei caratteri speciali nelle regex
+    escapeRegExp(string) {
+      return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     }
     parseChapterDetails(html, mangaId, chapterId) {
       const pages = [];
