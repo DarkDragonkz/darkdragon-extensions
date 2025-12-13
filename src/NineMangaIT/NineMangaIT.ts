@@ -23,9 +23,9 @@ import { URLBuilder } from '../helper'
 const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
-    version: '4.0.0', // Rewrite totale basata su HTML Desktop
+    version: '4.0.1', // Patch Cookie Fix
     name: 'NineMangaIT',
-    description: 'Estensione per NineManga IT. Include bypass +18 e caricamento parallelo.',
+    description: 'Estensione per NineManga IT. Richiede bypass Cloudflare manuale (Icona Nuvola).',
     author: 'DarkDragonkzz',
     icon: 'icon.png',
     contentRating: ContentRating.MATURE,
@@ -44,7 +44,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     baseUrl = IT_DOMAIN
     parser = new NineMangaITParser()
 
-    // Usiamo User-Agent Desktop poiché l'HTML analizzato è Desktop
+    // User-Agent Desktop
     readonly userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
     constructor(public cheerio: any) {} 
@@ -59,9 +59,9 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
                     ...{
                         'Referer': `${this.baseUrl}/`,
                         'User-Agent': this.userAgent,
-                        'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
-                        // Cookie FONDAMENTALI per evitare i redirect +18
-                        'Cookie': 'is_warning=1; my_limit=1; waring=1' 
+                        'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7'
+                        // FIX: Rimossa la forzatura 'Cookie' qui.
+                        // Ora l'app userà automaticamente i cookie Cloudflare salvati.
                     }
                 }
                 return request
@@ -82,6 +82,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
+        // Manteniamo waring=1 nell'URL come sicurezza extra
         const request = App.createRequest({
             url: this.getMangaUrl(mangaId) + '?waring=1',
             method: 'GET'
@@ -104,16 +105,13 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        // Costruzione URL base capitolo
         let url = chapterId
         if (!url.startsWith('http')) {
              if (!url.startsWith('/')) url = `/chapter/${mangaId}/${chapterId}`
              url = `${this.baseUrl}${url}`
         }
         
-        // Assicuriamoci che l'URL sia pulito
         if (!url.endsWith('.html')) url += '.html'
-        // Aggiungiamo il bypass warning anche qui per sicurezza
         if (!url.includes('waring=1')) url += '?waring=1'
 
         const request = App.createRequest({
@@ -125,8 +123,6 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         this.checkResponseError(response)
         
         const $ = this.cheerio.load(response.data)
-        
-        // Passiamo 'this' per usare il requestManager nel parser (caricamento parallelo pagine)
         return this.parser.parseChapterDetails($, mangaId, chapterId, this)
     }
 
@@ -150,7 +146,6 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($)
         
-        // Logica paginazione basata sui risultati trovati
         page++
         if (manga.length === 0) page = -1
 
