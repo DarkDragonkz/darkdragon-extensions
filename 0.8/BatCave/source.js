@@ -735,7 +735,7 @@ var _Sources = (() => {
   var BatCaveParser = class {
     /**
      * Tenta di trasformare l'URL di una miniatura (thumb) nell'URL dell'immagine originale HD.
-     * Rimuove segmenti tipici come '/thumbs/' o suffissi di ridimensionamento.
+     * Gestisce path relativi, assoluti e la struttura tipica DLE /thumbs/.
      */
     getHighResImage(url) {
       if (!url) return "";
@@ -743,7 +743,7 @@ var _Sources = (() => {
         url = BASE_URL + url;
       }
       if (url.includes("/thumbs/")) {
-        return url.replace("/thumbs/", "/");
+        url = url.replace("/thumbs/", "/");
       }
       return url;
     }
@@ -762,7 +762,7 @@ var _Sources = (() => {
         let subtitle = void 0;
         if (subtitleSelector) {
           const subText = $(subtitleSelector, item).text().trim();
-          subtitle = subText.replace(/chapter\s*/i, "").trim();
+          subtitle = subText.replace(/chapter\s*/i, "Ch. ").trim();
         }
         if (id && title) {
           items.push(App.createPartialSourceManga({
@@ -795,8 +795,9 @@ var _Sources = (() => {
       const arrayTags = [];
       $(".page__tags a").each((_, a) => {
         const label = $(a).text().trim();
-        const id = $(a).attr("href")?.split("/").filter(Boolean).pop() ?? label;
-        if (label) arrayTags.push(App.createTag({ id, label }));
+        const hrefParts = $(a).attr("href")?.split("/");
+        const id = hrefParts ? hrefParts[hrefParts.length - 2] : label;
+        if (label) arrayTags.push(App.createTag({ id: id ?? label, label }));
       });
       const tagSections = [App.createTagSection({ id: "0", label: "Genres", tags: arrayTags })];
       return App.createSourceManga({
@@ -821,22 +822,37 @@ var _Sources = (() => {
         if (data.chapters && Array.isArray(data.chapters)) {
           for (const chap of data.chapters) {
             const id = String(chap.id);
-            const titleRaw = (chap.title || `Chapter ${chap.id}`).replace(/_/g, " ").replace(/\s+/g, " ").trim();
-            let time = /* @__PURE__ */ new Date();
-            if (chap.date) {
-              const parts = chap.date.split(".");
-              if (parts.length === 3) time = /* @__PURE__ */ new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
-            }
+            const rawTitle = (chap.title || "").replace(/_/g, " ").trim();
             let chapNum = 0;
             if (chap.posi) {
               chapNum = parseFloat(chap.posi);
             } else {
-              const numMatch = titleRaw.match(/(\d+(\.\d+)?)/g);
+              const numMatch = rawTitle.match(/(\d+(\.\d+)?)/g);
               if (numMatch) chapNum = parseFloat(numMatch[numMatch.length - 1] ?? "0");
+            }
+            let name = "";
+            if (rawTitle) {
+              if (rawTitle.toLowerCase().startsWith("chapter") || rawTitle.includes(String(chapNum))) {
+                name = rawTitle;
+              } else {
+                name = `Chapter ${chapNum} - ${rawTitle}`;
+              }
+            } else {
+              name = `Chapter ${chapNum}`;
+            }
+            let time = /* @__PURE__ */ new Date();
+            if (chap.date) {
+              const parts = chap.date.split(".");
+              if (parts.length === 3) {
+                time = /* @__PURE__ */ new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+              } else {
+                const tryDate = new Date(chap.date);
+                if (!isNaN(tryDate.getTime())) time = tryDate;
+              }
             }
             chapters.push(App.createChapter({
               id,
-              name: titleRaw,
+              name,
               chapNum,
               time,
               langCode: "en"
@@ -844,9 +860,9 @@ var _Sources = (() => {
           }
         }
       } catch (e) {
-        console.error(`Error parsing chapters JSON: ${e}`);
+        console.error(`BatCave: Error parsing chapters JSON: ${e}`);
       }
-      return chapters;
+      return chapters.sort((a, b) => b.chapNum - a.chapNum);
     }
     parseChapterDetails(html, mangaId, chapterId) {
       const pages = [];
@@ -865,7 +881,7 @@ var _Sources = (() => {
             }
           }
         } catch (e) {
-          console.error(`Error parsing images JSON: ${e}`);
+          console.error(`BatCave: Error parsing images JSON: ${e}`);
         }
       }
       return App.createChapterDetails({
@@ -917,14 +933,19 @@ var _Sources = (() => {
       sectionCallback(latestSection);
     }
     parseSearchResults($) {
-      return this.parseGridItems($, ".readed");
+      let results = this.parseGridItems($, ".readed");
+      if (results.length === 0) {
+        results = this.parseGridItems($, ".sect--latest .latest");
+      }
+      return results;
     }
   };
 
   // src/BatCave/BatCave.ts
   var DOMAIN = "https://batcave.biz";
   var BatCaveInfo = {
-    version: "1.0.9",
+    version: "1.1.0",
+    // Bump version per le modifiche
     name: "BatCave",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -945,12 +966,10 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.baseUrl = DOMAIN;
       this.parser = new BatCaveParser();
-      // RETRIES abbassato a 2. 10 è eccessivo e danneggia la UX in caso di down.
       this.RETRIES = 2;
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 4,
         requestTimeout: 2e4,
-        // Timeout leggermente ridotto
         interceptor: {
           interceptRequest: async (request) => {
             request.headers = {
