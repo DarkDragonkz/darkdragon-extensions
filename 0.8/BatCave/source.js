@@ -849,6 +849,12 @@ var _Sources = (() => {
             if (cleanTitle.length > 0 && cleanTitle !== String(chapNum)) {
               finalName = cleanTitle;
             }
+            let customLangCode = "en";
+            if (chap.pages) {
+              customLangCode = `${chap.pages}p`;
+            } else if (chap.count) {
+              customLangCode = `${chap.count}p`;
+            }
             let time = /* @__PURE__ */ new Date();
             if (chap.date) {
               const parts = chap.date.split(".");
@@ -862,12 +868,11 @@ var _Sources = (() => {
             chapters.push(App.createChapter({
               id,
               name: finalName,
-              // SOLO IL TITOLO PURO
               chapNum,
               volume: volNum ? parseFloat(volNum) : void 0,
-              // Paperback aggiunge "Vol. X" grazie a questo
               time,
-              langCode: "en"
+              langCode: customLangCode
+              // <--- Qui iniettiamo le pagine
             }));
           }
         }
