@@ -732,13 +732,12 @@ var _Sources = (() => {
   // src/WeebCentral/WeebCentralParser.ts
   var import_types = __toESM(require_lib());
   var WeebCentralParser = class {
-    // Helper fondamentale per determinare se ci sono altre pagine nella ricerca
     isLastPage($) {
-      return $('a[href*="/series/"]').length < 32;
+      return $('a[href*="/series/"]:has(img)').length < 32;
     }
     /**
-     * IL CUORE DEL PARSER: Estrae dati da qualsiasi blocco HTML (Home, Ricerca, Liste)
-     * Preso dal vecchio file e potenziato per la UI.
+     * Helper centralizzato per estrarre un manga.
+     * FIX: Ritorna null se non trova un'immagine valida (evita i link "Visit" o testuali)
      */
     parseCommonManga($, element) {
       const item = $(element);
@@ -746,19 +745,25 @@ var _Sources = (() => {
       const href = link.attr("href");
       const id = href?.split("/series/")[1]?.split("/")[0];
       if (!id) return null;
-      let title = item.attr("aria-label") ?? item.find("img").first().attr("alt") ?? item.find(".text-white").first().text().trim() ?? item.text().trim();
-      if (!title) title = "Unknown Title";
+      let title = item.find("img").first().attr("alt") ?? link.attr("aria-label") ?? item.find(".text-white.font-bold").first().text().trim();
+      if (!title || title.toLowerCase().includes("visit")) {
+        const text = item.text().trim();
+        if (text.length > 2 && text.length < 100) title = text;
+        else return null;
+      }
       title = title.replace(/\s+Cover$/i, "").replace(/\s+Poster$/i, "").replace(/\s+Scan$/i, "").trim();
-      let image = item.find("img").first().attr("src") ?? item.find("img").first().attr("data-src") ?? "";
-      let subtitle = item.find('a[href*="/chapters/"]').first().text().trim();
-      if (!subtitle) {
-        const textContent = item.text();
-        const match = textContent.match(/(?:Ch\.|Chapter|Ep\.|Episode)\s*\d+(\.\d+)?/i);
+      let image = item.find("img").first().attr("src") ?? item.find("img").first().attr("data-src");
+      if (!image) return null;
+      let subtitle = void 0;
+      const chapterLink = item.find('a[href*="/chapters/"]').first();
+      if (chapterLink.length > 0) {
+        subtitle = chapterLink.text().trim();
+      } else {
+        const text = item.text();
+        const match = text.match(/(?:Ch\.|Chapter|Ep\.|Episode)\s*\d+/i);
         if (match) subtitle = match[0];
       }
-      if (subtitle && subtitle.includes("T") && subtitle.includes(":") && subtitle.includes("-")) {
-        subtitle = void 0;
-      }
+      if (subtitle && (subtitle.length > 20 || subtitle.includes(":"))) subtitle = void 0;
       return App.createPartialSourceManga({
         mangaId: id,
         image,
@@ -767,8 +772,15 @@ var _Sources = (() => {
       });
     }
     parseMangaDetails($, mangaId) {
-      let title = $("h1").first().text().trim() || "Unknown";
-      let image = $('img[alt="' + title + '"]').first().attr("src") ?? $("section img").first().attr("src") ?? "";
+      let title = $("h1").first().text().trim() || "Unknown Title";
+      let image = $('img[alt="' + title + '"]').first().attr("src");
+      if (!image) {
+        image = $("section:first-of-type img").filter((i, el) => {
+          const src = $(el).attr("src") || "";
+          return src.length > 0 && !src.includes("icon") && !src.includes("logo");
+        }).first().attr("src");
+      }
+      if (!image) image = "";
       let desc = $('p:contains("Description")').next().text().trim() || $('div:contains("Description")').next().text().trim() || $("p.leading-6").text().trim();
       let author = "Unknown";
       let artist = "Unknown";
@@ -780,7 +792,7 @@ var _Sources = (() => {
         if (label.includes("Artist")) artist = value;
         if (label.includes("Status")) status = value;
       });
-      if (artist === "Unknown") artist = author;
+      if (artist === "Unknown" && artist !== "Unknown") artist = author;
       if (status.includes("Complete")) status = "Completed";
       const arrayTags = [];
       $('a[href*="/search/data?tags="]').each((_, el) => {
@@ -808,7 +820,8 @@ var _Sources = (() => {
         if (href.includes("full-chapter-list")) return;
         const chapterId = href.split("/chapters/")[1];
         if (!chapterId) return;
-        const titleRaw = $el.find("span.grow, span.font-bold").first().text().trim() || $el.text().trim();
+        let titleRaw = $el.find("span.font-bold, span.grow").first().text().trim();
+        if (!titleRaw) titleRaw = $el.text().replace(/Last Read/gi, "").trim();
         const timeRaw = $el.find("time").attr("datetime") ?? (/* @__PURE__ */ new Date()).toISOString();
         const chapNumMatch = titleRaw.match(/(\d+(\.\d+)?)/);
         let chapNum = 0;
@@ -839,8 +852,10 @@ var _Sources = (() => {
       const results = [];
       $('article, a[href*="/series/"]').each((_, item) => {
         const manga = this.parseCommonManga($, item);
-        if (manga && !results.find((r) => r.mangaId === manga.mangaId)) {
-          results.push(manga);
+        if (manga && manga.mangaId && manga.image) {
+          if (!results.find((r) => r.mangaId === manga.mangaId)) {
+            results.push(manga);
+          }
         }
       });
       return results;
@@ -859,7 +874,7 @@ var _Sources = (() => {
       if (recentContainer.length === 0) recentContainer = $("body");
       $('a[href*="/series/"]', recentContainer).each((_, item) => {
         const manga = this.parseCommonManga($, item);
-        if (manga && manga.image && !hotManga.find((h) => h.mangaId === manga.mangaId)) {
+        if (manga && !hotManga.find((h) => h.mangaId === manga.mangaId)) {
           latestManga.push(manga);
         }
       });
@@ -873,10 +888,10 @@ var _Sources = (() => {
   // src/WeebCentral/WeebCentral.ts
   var DOMAIN = "https://weebcentral.com";
   var WeebCentralInfo = {
-    version: "2.6.0",
-    // Hybrid Version: Robust + Clean UI
+    version: "2.7.0",
+    // Fix Search Junk & Chapters
     name: "WeebCentral",
-    description: "Extension for WeebCentral. Fixed UI, Search and Chapters.",
+    description: "Extension for WeebCentral. Fixed Random Search results.",
     author: "DarkDragonkzz",
     icon: "icon.png",
     contentRating: import_types2.ContentRating.MATURE,
