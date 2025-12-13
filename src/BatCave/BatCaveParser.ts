@@ -94,10 +94,21 @@ export class BatCaveParser {
         })
     }
 
+    // Helper per l'escape delle regex
+    private escapeRegExp(string: string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
     parseChapters(html: string): Chapter[] {
         const chapters: Chapter[] = []
         const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s)
         
+        // Tentiamo di trovare il titolo della serie per pulirlo dai capitoli
+        const seriesTitleMatch = html.match(/<h1[^>]*>(.*?)<\/h1>/i)
+        // Rimuoviamo tag HTML e anni tra parentesi (es. "Green Lantern (2005)" -> "Green Lantern")
+        let seriesNameRaw = seriesTitleMatch ? seriesTitleMatch[1].replace(/<[^>]+>/g, '').trim() : ''
+        const seriesBaseName = seriesNameRaw.replace(/\s*\(\d{4}[-–—]?\).*$/, '').trim()
+
         if (!scriptData) return []
 
         try {
@@ -105,7 +116,7 @@ export class BatCaveParser {
             if (data.chapters && Array.isArray(data.chapters)) {
                 for (const chap of data.chapters) {
                     const id = String(chap.id)
-                    let rawTitle = (chap.title || '').trim() 
+                    let rawTitle = (chap.title || '').trim()
                     
                     // --- 1. ESTRAZIONE NUMERO CAPITOLO ---
                     let chapNum = 0
@@ -116,39 +127,77 @@ export class BatCaveParser {
                         if (numMatch) chapNum = parseFloat(numMatch[numMatch.length - 1] ?? '0')
                     }
 
-                    // --- 2. ESTRAZIONE VOLUME (TPB/Vol) ---
-                    // Cerca pattern come "Vol. 1", "Vol 1", "TPB 1", "TPB_1"
+                    // --- 2. ESTRAZIONE VOLUME / TPB ---
+                    // Cerchiamo "TPB X", "Vol. X", "Vol X" o "_TPB X"
                     let volNum: string | undefined = undefined
-                    const volMatch = rawTitle.match(/(?:Vol\.?|TPB)[_\s]*(\d+)/i)
+                    const volMatch = rawTitle.match(/(?:Vol\.?|TPB|Book)[_\s]*(\d+)/i)
                     if (volMatch) {
                         volNum = volMatch[1]
                     }
 
-                    // --- 3. ESTRAZIONE TITOLO PULITO (Post-Hashtag) ---
+                    // --- 3. PULIZIA DEL TITOLO ---
                     let cleanTitle = ''
+
                     if (rawTitle.includes('#')) {
-                        // Prende TUTTO ciò che c'è dopo il primo '#'
+                        // CASO A: C'è il cancelletto (es. DC-Marvel #The Flash)
+                        // Prendiamo tutto dopo il primo #
                         const parts = rawTitle.split('#')
-                        // Join nel caso ci siano altri # nel titolo del capitolo
                         cleanTitle = parts.slice(1).join('#').trim()
                     } else {
-                         // FALLBACK: Se non c'è hashtag, prova a pulire il titolo standard
-                         // Rimuove nome serie e "Chapter X"
-                         cleanTitle = rawTitle
-                            .replace(/^(chapter|ch\.?|no\.?)\s*\d+(\.\d+)?/i, '')
-                            .replace(/^\s*[-–—]\s*/, '') // Rimuove trattini iniziali
+                        // CASO B: Nessun cancelletto (es. Green Lantern _TPB 1...)
+                        cleanTitle = rawTitle
+
+                        // A. Rimuoviamo il nome della serie se presente all'inizio
+                        if (seriesBaseName.length > 0) {
+                            const seriesRegex = new RegExp(`^${this.escapeRegExp(seriesBaseName)}`, 'i')
+                            cleanTitle = cleanTitle.replace(seriesRegex, '').trim()
+                        }
+
+                        // B. Rimuoviamo il prefisso "Chapter X" / "Ch. X" (quello che creava il doppio Ch. 1)
+                        // Rimuove: "Ch. 1", "Chapter 1", "No. 1" dall'inizio
+                        cleanTitle = cleanTitle.replace(/^(chapter|ch\.?|no\.?)\s*\d+(\.\d+)?/i, '').trim()
+
+                        // C. Rimuoviamo il pattern del volume perché lo aggiungeremo noi formattato all'inizio
+                        // Es: togliamo "_TPB 1" o "Vol. 1" dal titolo per non ripeterlo
+                        cleanTitle = cleanTitle.replace(/(?:Vol\.?|TPB|Book)[_\s]*\d+/i, '').trim()
+
+                        // D. Pulizia finale caratteri sporchi
+                        cleanTitle = cleanTitle
+                            .replace(/_/g, ' ')           // Togli underscore
+                            .replace(/^\s*[-–—]+\s*/, '') // Togli trattini iniziali
+                            .replace(/\s*[-–—]+\s*$/, '') // Togli trattini finali
+                            .replace(/\s+/g, ' ')         // Normalizza spazi
                             .trim()
                     }
 
                     // --- 4. COSTRUZIONE NOME FINALE ---
-                    // Formato: "Vol. X Ch. Y - Titolo" oppure "Ch. Y - Titolo"
-                    let finalName = ''
+                    // Formato: Vol. X Ch. Y - [Titolo Pulito]
                     
+                    let finalNameParts: string[] = []
+
+                    // Aggiungi Volume
                     if (volNum) {
-                        finalName += `Vol. ${volNum} `
+                        finalNameParts.push(`Vol. ${volNum}`)
                     }
-                    
-                    finalName += `Ch. ${chapNum}`
+
+                    // Aggiungi Capitolo
+                    finalNameParts.push(`Ch. ${chapNum}`)
+
+                    // Aggiungi Titolo (solo se è rimasto qualcosa di sensato)
+                    // Filtriamo via titoli che sono solo numeri o simboli
+                    if (cleanTitle.length > 0 && cleanTitle !== String(chapNum)) {
+                         finalNameParts.push(cleanTitle)
+                    }
+
+                    // Uniamo con " - "
+                    // Se abbiamo Vol e Ch, li uniamo con spazio, poi il titolo con trattino
+                    // Ma per semplicità usiamo un join intelligente
+                    let finalName = ''
+                    if (volNum) {
+                        finalName = `Vol. ${volNum} Ch. ${chapNum}`
+                    } else {
+                        finalName = `Ch. ${chapNum}`
+                    }
 
                     if (cleanTitle.length > 0) {
                         finalName += ` - ${cleanTitle}`
@@ -170,7 +219,7 @@ export class BatCaveParser {
                         id: id,
                         name: finalName,
                         chapNum: chapNum,
-                        volume: volNum ? parseFloat(volNum) : undefined, // Imposta anche il campo volume metadato
+                        volume: volNum ? parseFloat(volNum) : undefined,
                         time: time,
                         langCode: 'en'
                     }))
