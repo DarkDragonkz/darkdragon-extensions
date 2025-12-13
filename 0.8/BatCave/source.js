@@ -805,6 +805,8 @@ var _Sources = (() => {
     parseChapters(html) {
       const chapters = [];
       const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s);
+      const seriesTitleMatch = html.match(/<h1[^>]*>(.*?)<\/h1>/i);
+      const seriesTitle = seriesTitleMatch ? seriesTitleMatch[1].replace(/<[^>]+>/g, "").trim() : "";
       if (!scriptData) return [];
       try {
         const data = JSON.parse(scriptData[1]);
@@ -819,25 +821,15 @@ var _Sources = (() => {
               const numMatch = rawTitle.match(/(\d+(\.\d+)?)/g);
               if (numMatch) chapNum = parseFloat(numMatch[numMatch.length - 1] ?? "0");
             }
-            let yearSuffix = "";
-            const yearMatch = rawTitle.match(/\(\d{4}-?\)/);
-            if (yearMatch) {
-              yearSuffix = ` ${yearMatch[0]}`;
-              rawTitle = rawTitle.replace(yearMatch[0], "");
+            if (seriesTitle && rawTitle.toLowerCase().startsWith(seriesTitle.toLowerCase())) {
+              rawTitle = rawTitle.substring(seriesTitle.length).trim();
             }
-            const redundantPrefixRegex = new RegExp(`^(chapter|ch\\.?)\\s*${chapNum}\\s*[-\u2013\u2014]?\\s*`, "i");
-            rawTitle = rawTitle.replace(redundantPrefixRegex, "");
-            rawTitle = rawTitle.replace(/#/g, "");
-            let cleanTitle = rawTitle.replace(/\s+/g, " ").replace(/^[-–—]\s*/, "").replace(/\s*[-–—]$/, "").trim();
-            if (!cleanTitle || cleanTitle.length < 2) {
-              cleanTitle = "";
-            }
+            const chapterNumRegex = new RegExp(`(chapter|ch\\.?|no\\.?)\\s*${chapNum}`, "gi");
+            rawTitle = rawTitle.replace(chapterNumRegex, "").trim();
+            let cleanTitle = rawTitle.replace(/^[-–—:\s]+/, "").replace(/[-–—:\s]+$/, "").replace(/\s+/g, " ").trim();
             let finalName = `Ch. ${chapNum}`;
-            if (cleanTitle) {
+            if (cleanTitle.length > 0) {
               finalName += ` - ${cleanTitle}`;
-            }
-            if (yearSuffix) {
-              finalName += yearSuffix;
             }
             let time = /* @__PURE__ */ new Date();
             if (chap.date) {
