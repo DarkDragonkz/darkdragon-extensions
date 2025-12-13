@@ -160,15 +160,15 @@ export class BatCaveParser {
                          finalName = cleanTitle
                     }
 
-                    // --- 5. HACK: NUMERO PAGINE AL POSTO DI 'EN' ---
-                    // Cerchiamo la proprietà pagine nel JSON. Spesso è 'pages' o 'count'.
-                    // Fallback a 'en' se non troviamo nulla.
-                    let customLangCode = 'en'
+                    // --- 5. CUSTOM LANG CODE: FLAG + PAGINE ---
+                    let customLangCode = '🇺🇸' // Default: Bandiera USA
                     
-                    if (chap.pages) {
-                        customLangCode = `${chap.pages}p` // Es: "56p"
-                    } else if (chap.count) {
-                        customLangCode = `${chap.count}p`
+                    // Controlliamo se esistono le pagine nel JSON
+                    const pagesCount = chap.pages || chap.count
+                    
+                    if (pagesCount) {
+                        // Formato richiesto: Bandiera - Pagine
+                        customLangCode = `🇺🇸 - ${pagesCount}p`
                     }
 
                     // --- DATA ---
@@ -189,7 +189,7 @@ export class BatCaveParser {
                         chapNum: chapNum,
                         volume: volNum ? parseFloat(volNum) : undefined,
                         time: time,
-                        langCode: customLangCode // <--- Qui iniettiamo le pagine
+                        langCode: customLangCode // <--- Output: "🇺🇸 - 56p"
                     }))
                 }
             }
