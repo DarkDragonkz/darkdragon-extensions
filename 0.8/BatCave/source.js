@@ -847,26 +847,26 @@ var _Sources = (() => {
         const chapterId = href.replace(BASE_URL, "").replace(/^\//, "");
         let name = link.text().trim();
         if (mangaTitle) {
-          const regexTitle = new RegExp(mangaTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-          name = name.replace(regexTitle, "").trim();
+          const escapedTitle = mangaTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const regex = new RegExp(escapedTitle, "i");
+          name = name.replace(regex, "").trim();
         }
-        name = name.replace(/^(-|\s)+/, "");
-        if (/^\d+(\.\d+)?$/.test(name)) {
-          name = `#${name}`;
-        }
-        const numMatch = name.match(/#?(\d+(\.\d+)?)/);
+        name = name.replace(/^(-|\s)+/, "").trim();
+        const numMatch = name.match(/#(\d+(\.\d+)?)/) || name.match(/Chapter\s*(\d+)/i) || name.match(/(\d+)$/);
         const chapNum = numMatch ? parseFloat(numMatch[1]) : 0;
+        if (!name || /^\d+$/.test(name)) {
+          name = `#${chapNum}`;
+        }
         chapters.push(App.createChapter({
           id: chapterId,
-          name: name || `Issue #${chapNum}`,
-          // Fallback se il nome diventa vuoto
+          name,
           chapNum,
           volume: void 0,
           time: /* @__PURE__ */ new Date(),
           langCode: "\u{1F1FA}\u{1F1F8}",
-          // Emoji bandiera USA
+          // 5. Bandiera USA invece di EN
           sortingIndex: i
-          // Mantiene l'ordine ESATTO del sito (0, 1, 2...)
+          // 6. Ordine diretto dal sito (0 = primo in lista)
         }));
       });
       return chapters;
@@ -915,8 +915,7 @@ var _Sources = (() => {
   // src/BatCave/BatCave.ts
   var DOMAIN = "https://batcave.biz";
   var BatCaveInfo = {
-    version: "1.0.10",
-    // Bump per Nomenclatura e Ordine
+    version: "1.0.9",
     name: "BatCave",
     icon: "icon.png",
     author: "DarkDragonkz",
