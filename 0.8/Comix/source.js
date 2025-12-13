@@ -771,8 +771,8 @@ var _Sources = (() => {
   ];
   var ComixParser = class {
     parseMangaDetails(data, mangaId) {
-      const item = data.result;
-      const titles = [item.title];
+      const item = data.result || {};
+      const titles = [item.title ?? "Unknown"];
       if (item.alt_titles && Array.isArray(item.alt_titles)) {
         titles.push(...item.alt_titles);
       }
@@ -794,6 +794,7 @@ ${item.alt_titles.join(", ")}`;
       let status = "Ongoing";
       if (item.status === "finished") status = "Completed";
       if (item.status === "canceled") status = "Dropped";
+      if (item.status === "on_hiatus") status = "Hiatus";
       const tags = [];
       if (item.term_ids && Array.isArray(item.term_ids)) {
         for (const id of item.term_ids) {
@@ -828,16 +829,17 @@ ${item.alt_titles.join(", ")}`;
         if (item.created_at) {
           time = new Date(item.created_at * 1e3);
         }
-        let name = item.name ? `${item.name}` : `Chapter ${item.number}`;
-        if (item.number && !name.includes(String(item.number))) {
-          name = `Ch. ${item.number} - ${name}`;
-        }
+        const chapNum = parseFloat(item.number);
+        let name = item.name ? String(item.name).trim() : "";
+        if (name === String(chapNum)) name = "";
+        name = name.replace(new RegExp(`^(chapter|ch\\.?)\\s*${chapNum}`, "i"), "").trim();
+        name = name.replace(/^[-–—]\s*/, "").trim();
         chapters.push(App.createChapter({
           id: String(item.chapter_id),
           name,
-          chapNum: parseFloat(item.number),
+          // Ora è pulito: solo il titolo o stringa vuota
+          chapNum,
           volume: item.volume ? parseFloat(item.volume) : void 0,
-          // Supporto Volumi
           time,
           langCode: item.language || "en",
           sortingIndex: i
@@ -857,7 +859,6 @@ ${item.alt_titles.join(", ")}`;
         pages
       });
     }
-    // Aggiunto parametro 'context' per sottotitoli intelligenti
     parseSearchResults(data, context = "search") {
       const results = [];
       const items = data.result?.items || [];
@@ -894,8 +895,8 @@ ${item.alt_titles.join(", ")}`;
   var BASE_URL = "https://comix.to";
   var API_URL = "https://comix.to/api/v2";
   var ComixInfo = {
-    version: "2.1.0",
-    // Bump version (UI & Volume Support)
+    version: "2.2.0",
+    // Updated
     name: "Comix",
     icon: "icon.png",
     author: "DarkDragonkz",
@@ -961,21 +962,20 @@ ${item.alt_titles.join(", ")}`;
       const allPagesData = [];
       allPagesData.push({ page: 1, items: firstPageItems });
       if (lastPage > 1) {
-        const promises = [];
         for (let page = 2; page <= lastPage; page++) {
           const req = App.createRequest({
             url: `${this.apiUrl}/manga/${mangaId}/chapters?page=${page}&limit=${limit}&order[number]=desc`,
             method: "GET"
           });
-          promises.push(
-            this.requestManager.schedule(req, 1).then((res) => ({
+          const res = await this.requestManager.schedule(req, 1);
+          const pageData = JSON.parse(res.data ?? "{}");
+          if (pageData.result?.items) {
+            allPagesData.push({
               page,
-              items: JSON.parse(res.data ?? "{}").result?.items || []
-            }))
-          );
+              items: pageData.result.items
+            });
+          }
         }
-        const results = await Promise.all(promises);
-        allPagesData.push(...results);
       }
       allPagesData.sort((a, b) => a.page - b.page);
       const allChapters = allPagesData.flatMap((p) => p.items);
@@ -1025,36 +1025,29 @@ ${item.alt_titles.join(", ")}`;
     async getHomePageSections(sectionCallback) {
       const sections = [
         {
-          // Top Trending - Usa layout GRANDE
           request: App.createRequest({ url: `${this.apiUrl}/top?type=trending&days=7&limit=15&includes[]=author`, method: "GET" }),
           section: App.createHomeSection({ id: "popular", title: "Trending Now \u{1F525}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowLarge }),
           context: "popular"
         },
         {
-          // Most Followed - Usa layout Normale
           request: App.createRequest({ url: `${this.apiUrl}/top?type=follows&days=7&limit=20&includes[]=author`, method: "GET" }),
           section: App.createHomeSection({ id: "follow", title: "Most Followed \u{1F496}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
           context: "popular"
         },
         {
-          // Recently Added
           request: App.createRequest({ url: `${this.apiUrl}/manga?order[created_at]=desc&page=1&limit=20&includes[]=author`, method: "GET" }),
           section: App.createHomeSection({ id: "recent", title: "New Arrivals \u{1F195}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal }),
           context: "popular"
         },
         {
-          // Hot Updates - Scroll Continuo
           request: App.createRequest({ url: `${this.apiUrl}/manga?order[chapter_updated_at]=desc&page=1&limit=20&scope=hot`, method: "GET" }),
           section: App.createHomeSection({ id: "updatesHot", title: "Hot Updates \u26A1", containsMoreItems: true, type: import_types.HomeSectionType.continuous }),
           context: "latest"
-          // Mostra "Ch. X"
         },
         {
-          // Latest Updates - Scroll Continuo
           request: App.createRequest({ url: `${this.apiUrl}/manga?order[chapter_updated_at]=desc&page=1&limit=20&scope=new`, method: "GET" }),
           section: App.createHomeSection({ id: "updatesNew", title: "Latest Updates \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.continuous }),
           context: "latest"
-          // Mostra "Ch. X"
         }
       ];
       const promises = sections.map(async (item) => {
