@@ -21,12 +21,12 @@ import { MangaDexParser } from './MangaDexParser'
 const MD_API = 'https://api.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '3.1.0', // Bump version (Pagination Fix)
+    version: '3.2.0', // Bump version (Deduplication & Light Home)
     name: 'MangaDex (EN)',
     icon: 'icon.png',
     author: 'DarkDragonkz',
     authorWebsite: 'https://github.com/DarkDragonkz',
-    description: 'MangaDex English source. Filters out external links and supports huge manga libraries.',
+    description: 'MangaDex English source. Deduplicates chapters and optimized for speed.',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: 'https://mangadex.org',
     sourceTags: [
@@ -75,12 +75,11 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        const limit = 500 // Massimo consentito da MD
+        const limit = 500
         let offset = 0
         let hasMore = true
         const allChaptersData: any[] = []
 
-        // Loop per scaricare TUTTI i capitoli (es. One Piece ha 1000+ capitoli)
         while (hasMore) {
             const request = App.createRequest({
                 url: `${MD_API}/manga/${mangaId}/feed?limit=${limit}&offset=${offset}&translatedLanguage[]=en&order[chapter]=desc&includeFutureUpdates=0&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
@@ -139,53 +138,44 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
         
+        // OTTIMIZZAZIONE HOME: Rimosse 2 sezioni meno utili e ridotto il carico
+        
         const s1 = App.createHomeSection({ id: 'popular_new', title: 'Popular New Titles 🔥', containsMoreItems: false, type: HomeSectionType.singleRowLarge })
         const s2 = App.createHomeSection({ id: 'latest', title: 'Latest Updates 🆕', containsMoreItems: true, type: HomeSectionType.continuous })
         const s3 = App.createHomeSection({ id: 'recommended', title: 'Recommended ⭐', containsMoreItems: false, type: HomeSectionType.singleRowLarge })
-        const s4 = App.createHomeSection({ id: 'self_published', title: 'Self-Published 🖊️', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
-        const s5 = App.createHomeSection({ id: 'featured', title: 'Featured ⚡', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
-        const s6 = App.createHomeSection({ id: 'recently_added', title: 'Recently Added ✨', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
-
+        const s4 = App.createHomeSection({ id: 'featured', title: 'Featured ⚡', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
+        
         sectionCallback(s1)
         sectionCallback(s2)
         sectionCallback(s3)
         sectionCallback(s4)
-        sectionCallback(s5)
-        sectionCallback(s6)
 
-        const base = `limit=15&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&availableTranslatedLanguage[]=en`
+        // Riduciamo il limit a 10 per velocizzare (Mobile friendly)
+        const base = `limit=10&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&availableTranslatedLanguage[]=en`
         const oneMonthAgo = new Date(Date.now() - 2592000000).toISOString().slice(0, 19)
 
         const req1 = App.createRequest({ url: `${MD_API}/manga?${base}&order[followedCount]=desc&createdAtSince=${oneMonthAgo}`, method: 'GET' })
         const req2 = App.createRequest({ url: `${MD_API}/manga?${base}&order[latestUploadedChapter]=desc`, method: 'GET' })
         const req3 = App.createRequest({ url: `${MD_API}/manga?${base}&order[rating]=desc`, method: 'GET' })
-        const req4 = App.createRequest({ url: `${MD_API}/manga?${base}&originalLanguage[]=en&order[followedCount]=desc`, method: 'GET' })
-        const req5 = App.createRequest({ url: `${MD_API}/manga?${base}&order[relevance]=desc`, method: 'GET' })
-        const req6 = App.createRequest({ url: `${MD_API}/manga?${base}&order[createdAt]=desc`, method: 'GET' })
+        const req4 = App.createRequest({ url: `${MD_API}/manga?${base}&order[relevance]=desc`, method: 'GET' })
 
-        // Eseguiamo le richieste. Promise.all è ok qui per velocità.
-        const [d1, d2, d3, d4, d5, d6] = await Promise.all([
+        // Solo 4 richieste in parallelo invece di 6
+        const [d1, d2, d3, d4] = await Promise.all([
             this.requestManager.schedule(req1, 1),
             this.requestManager.schedule(req2, 1),
             this.requestManager.schedule(req3, 1),
-            this.requestManager.schedule(req4, 1),
-            this.requestManager.schedule(req5, 1),
-            this.requestManager.schedule(req6, 1)
+            this.requestManager.schedule(req4, 1)
         ])
 
         s1.items = this.parser.parseSearchResults(JSON.parse(d1.data ?? '{}'))
         s2.items = this.parser.parseSearchResults(JSON.parse(d2.data ?? '{}'))
         s3.items = this.parser.parseSearchResults(JSON.parse(d3.data ?? '{}'))
         s4.items = this.parser.parseSearchResults(JSON.parse(d4.data ?? '{}'))
-        s5.items = this.parser.parseSearchResults(JSON.parse(d5.data ?? '{}'))
-        s6.items = this.parser.parseSearchResults(JSON.parse(d6.data ?? '{}'))
 
         sectionCallback(s1)
         sectionCallback(s2)
         sectionCallback(s3)
         sectionCallback(s4)
-        sectionCallback(s5)
-        sectionCallback(s6)
     }
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {

@@ -54,26 +54,41 @@ export class MangaDexParser {
 
     parseChapters(data: any[]): Chapter[] {
         const chapters: Chapter[] = []
+        const seenChapters = new Set<string>() // Set per tracciare i numeri già visti
+
+        // 1. Ordiniamo i dati grezzi per DATA DI PUBBLICAZIONE (dal più recente al più vecchio).
+        // Questo assicura che quando incontriamo un duplicato, il primo che processiamo (e teniamo)
+        // sia l'ultima versione caricata (es. v2 o fix).
+        data.sort((a, b) => {
+            const dateA = new Date(a.attributes.publishAt).getTime()
+            const dateB = new Date(b.attributes.publishAt).getTime()
+            return dateB - dateA
+        })
         
         for (const chapter of data) {
             const attr = chapter.attributes
             
             // Filtro capitoli esterni
-            if (attr.externalUrl) {
-                continue 
+            if (attr.externalUrl) continue 
+
+            const chapNum = parseFloat(attr.chapter)
+            // Usa una stringa univoca per il numero (gestisce anche i decimali come 10.5)
+            // Se chapNum è NaN (es. Oneshots senza numero), usiamo l'ID come fallback per non nasconderli
+            const chapNumId = !isNaN(chapNum) ? String(chapNum) : `id:${chapter.id}`
+
+            // --- LOGICA DEDUPLICAZIONE ---
+            // Se abbiamo già aggiunto questo numero di capitolo, saltiamo (perché abbiamo già preso il più recente)
+            if (seenChapters.has(chapNumId) && !isNaN(chapNum)) {
+                continue
             }
+            seenChapters.add(chapNumId)
+            // -----------------------------
 
             const rels = chapter.relationships || []
             const scanGroup = rels.find((r: any) => r.type === 'scanlation_group')?.attributes?.name
             
-            const chapNum = parseFloat(attr.chapter) || 0
-            
-            // Costruzione Nome:
-            // MD spesso ritorna un titolo vuoto o null.
-            // Se c'è un titolo, lo usiamo. Se no, lasciamo gestire all'app "Ch. X".
+            // Nomenclatura Pulita
             let name = attr.title ? String(attr.title).trim() : ''
-
-            // Se il titolo è solo il numero del capitolo, lo puliamo
             if (name === String(chapNum)) name = ''
 
             const time = new Date(attr.publishAt)
@@ -81,15 +96,15 @@ export class MangaDexParser {
             chapters.push(App.createChapter({
                 id: chapter.id,
                 name: name,
-                chapNum: chapNum,
+                chapNum: isNaN(chapNum) ? 0 : chapNum,
                 volume: parseFloat(attr.volume) || undefined,
                 time: time,
                 langCode: attr.translatedLanguage || 'en', 
-                group: scanGroup // Aggiunge il gruppo di scanlation
+                group: scanGroup
             }))
         }
         
-        // Sorting Client-Side per sicurezza (Descending)
+        // Sorting finale per l'App (dal più alto al più basso)
         return chapters.sort((a, b) => b.chapNum - a.chapNum)
     }
 
