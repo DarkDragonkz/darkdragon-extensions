@@ -22,9 +22,9 @@ import { WeebCentralParser } from './WeebCentralParser'
 const DOMAIN = 'https://weebcentral.com'
 
 export const WeebCentralInfo: SourceInfo = {
-    version: '2.7.0', // Fix Search Junk & Chapters
+    version: '3.0.0', // Stable Restore + UI Polish
     name: 'WeebCentral',
-    description: 'Extension for WeebCentral. Fixed Random Search results.',
+    description: `Extension that pulls manga from ${DOMAIN}`,
     author: 'DarkDragonkzz',
     icon: 'icon.png',
     contentRating: ContentRating.MATURE,
@@ -81,6 +81,7 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
+        // Usa full-chapter-list come da specifica funzionante
         const request = App.createRequest({
             url: `${this.baseUrl}/series/${mangaId}/full-chapter-list`,
             method: 'GET'
@@ -103,8 +104,11 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         const offset = metadata?.offset ?? 0
         
+        // URL costruito manualmente per rimuovere dipendenza da helper.ts
+        const url = `${this.baseUrl}/search/data?author=&text=${encodeURIComponent(query.title ?? '')}&sort=Best%20Match&order=Ascending&official=Any&limit=32&offset=${offset}`
+
         const request = App.createRequest({
-            url: `${this.baseUrl}/search/data?author=&text=${encodeURIComponent(query.title ?? '')}&sort=Best%20Match&order=Ascending&official=Any&limit=32&offset=${offset}`,
+            url: url,
             method: 'GET'
         })
 
@@ -114,7 +118,7 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
         
         return App.createPagedResults({
             results: manga,
-            metadata: this.parser.isLastPage($) ? undefined : { offset: offset + 32 }
+            metadata: manga.length >= 32 ? { offset: offset + 32 } : undefined
         })
     }
 
@@ -127,13 +131,16 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
-        const offset = metadata?.offset ?? 0
+        const page = metadata?.page ?? 1
         let url = ''
-        
-        if (homepageSectionId === 'hot') {
-            url = `${this.baseUrl}/search/data?sort=Popularity&order=Descending&official=Any&limit=32&offset=${offset}`
-        } else if (homepageSectionId === 'latest') {
-            url = `${this.baseUrl}/search/data?sort=Latest%20Updates&order=Descending&official=Any&limit=32&offset=${offset}`
+
+        // Ripristinata logica originale funzionante
+        if (homepageSectionId === 'latest_updates') {
+             url = `${this.baseUrl}/latest-updates/${page}`
+        } else if (homepageSectionId === 'hot') {
+             // Hot updates usa la search api per la paginazione
+             const offset = (page - 1) * 32
+             url = `${this.baseUrl}/search/data?sort=Popularity&order=Descending&official=Any&limit=32&offset=${offset}`
         } else {
             return App.createPagedResults({ results: [] })
         }
@@ -144,9 +151,10 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
         
         const manga = this.parser.parseSearchResults($)
         
+        // Logica di fine pagina mista (offset o conteggio)
         return App.createPagedResults({
             results: manga,
-            metadata: this.parser.isLastPage($) ? undefined : { offset: offset + 32 }
+            metadata: manga.length > 0 ? { page: page + 1 } : undefined
         })
     }
 }
