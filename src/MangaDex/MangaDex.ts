@@ -32,7 +32,7 @@ export const MangaDexInfo: SourceInfo = {
     sourceTags: [
         {
             text: 'English 🇬🇧',
-            type: BadgeColor.BLUE,
+            type: BadgeColor.GREEN,
         },
     ],
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS,
