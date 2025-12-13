@@ -23,7 +23,7 @@ const BASE_URL = 'https://comix.to'
 const API_URL = 'https://comix.to/api/v2'
 
 export const ComixInfo: SourceInfo = {
-    version: '2.1.0', // Bump version (UI & Volume Support)
+    version: '2.2.0', // Updated
     name: 'Comix',
     icon: 'icon.png',
     author: 'DarkDragonkz',
@@ -96,23 +96,26 @@ export class Comix implements SearchResultsProviding, MangaProviding, ChapterPro
         const allPagesData: { page: number, items: any[] }[] = []
         allPagesData.push({ page: 1, items: firstPageItems })
 
-        // Gestione paginazione se ci sono più di 100 capitoli
+        // FIX SICUREZZA: Esecuzione sequenziale per evitare Rate Limit (403/429)
+        // Promise.all sparava troppe richieste insieme.
         if (lastPage > 1) {
-            const promises = []
             for (let page = 2; page <= lastPage; page++) {
                 const req = App.createRequest({
                     url: `${this.apiUrl}/manga/${mangaId}/chapters?page=${page}&limit=${limit}&order[number]=desc`,
                     method: 'GET'
                 })
-                promises.push(
-                    this.requestManager.schedule(req, 1).then(res => ({
+                
+                // Attendiamo ogni richiesta per essere gentili col server
+                const res = await this.requestManager.schedule(req, 1)
+                const pageData = JSON.parse(res.data ?? '{}')
+                
+                if (pageData.result?.items) {
+                    allPagesData.push({
                         page: page,
-                        items: JSON.parse(res.data ?? '{}').result?.items || []
-                    }))
-                )
+                        items: pageData.result.items
+                    })
+                }
             }
-            const results = await Promise.all(promises)
-            allPagesData.push(...results)
         }
 
         allPagesData.sort((a, b) => a.page - b.page)
@@ -145,10 +148,9 @@ export class Comix implements SearchResultsProviding, MangaProviding, ChapterPro
         const response = await this.requestManager.schedule(request, 1)
         const data = JSON.parse(response.data ?? '{}')
         
-        // Passiamo 'search' come contesto
         let manga = this.parser.parseSearchResults(data, 'search')
         
-        // Client-Side Sorting per rilevanza
+        // Sorting Client-Side per rilevanza
         if (query.title && manga.length > 0) {
             const q = query.title.toLowerCase().trim()
             manga.sort((a, b) => {
@@ -173,37 +175,31 @@ export class Comix implements SearchResultsProviding, MangaProviding, ChapterPro
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        // UI MIGLIORATA: Titoli più accattivanti
         const sections = [
             {
-                // Top Trending - Usa layout GRANDE
                 request: App.createRequest({ url: `${this.apiUrl}/top?type=trending&days=7&limit=15&includes[]=author`, method: 'GET' }),
                 section: App.createHomeSection({ id: 'popular', title: 'Trending Now 🔥', containsMoreItems: true, type: HomeSectionType.singleRowLarge }),
                 context: 'popular'
             },
             {
-                // Most Followed - Usa layout Normale
                 request: App.createRequest({ url: `${this.apiUrl}/top?type=follows&days=7&limit=20&includes[]=author`, method: 'GET' }),
                 section: App.createHomeSection({ id: 'follow', title: 'Most Followed 💖', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
                 context: 'popular'
             },
             {
-                // Recently Added
                 request: App.createRequest({ url: `${this.apiUrl}/manga?order[created_at]=desc&page=1&limit=20&includes[]=author`, method: 'GET' }),
                 section: App.createHomeSection({ id: 'recent', title: 'New Arrivals 🆕', containsMoreItems: true, type: HomeSectionType.singleRowNormal }),
                 context: 'popular'
             },
             {
-                // Hot Updates - Scroll Continuo
                 request: App.createRequest({ url: `${this.apiUrl}/manga?order[chapter_updated_at]=desc&page=1&limit=20&scope=hot`, method: 'GET' }),
                 section: App.createHomeSection({ id: 'updatesHot', title: 'Hot Updates ⚡', containsMoreItems: true, type: HomeSectionType.continuous }),
-                context: 'latest' // Mostra "Ch. X"
+                context: 'latest'
             },
             {
-                // Latest Updates - Scroll Continuo
                 request: App.createRequest({ url: `${this.apiUrl}/manga?order[chapter_updated_at]=desc&page=1&limit=20&scope=new`, method: 'GET' }),
                 section: App.createHomeSection({ id: 'updatesNew', title: 'Latest Updates 🆙', containsMoreItems: true, type: HomeSectionType.continuous }),
-                context: 'latest' // Mostra "Ch. X"
+                context: 'latest'
             }
         ]
 
@@ -211,7 +207,6 @@ export class Comix implements SearchResultsProviding, MangaProviding, ChapterPro
             try {
                 const response = await this.requestManager.schedule(item.request, 1)
                 const data = JSON.parse(response.data ?? '{}')
-                // Passa il contesto specifico per migliorare i sottotitoli
                 item.section.items = this.parser.parseSearchResults(data, item.context as any)
                 sectionCallback(item.section)
             } catch (e) {

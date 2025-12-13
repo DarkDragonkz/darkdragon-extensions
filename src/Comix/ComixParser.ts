@@ -7,7 +7,7 @@ import {
     TagSection,
 } from '@paperback/types'
 
-// Mappatura generi statica per evitare chiamate API inutili
+// Mappatura generi statica
 const GENRES = [
     { id: "6", value: "Action" }, { id: "87264", value: "Adult" }, { id: "7", value: "Adventure" },
     { id: "8", value: "Boys Love" }, { id: "9", value: "Comedy" }, { id: "10", value: "Crime" },
@@ -27,10 +27,9 @@ const GENRES = [
 export class ComixParser {
 
     parseMangaDetails(data: any, mangaId: string): SourceManga {
-        const item = data.result
+        const item = data.result || {}
         
-        // Titoli e Autori
-        const titles = [item.title]
+        const titles = [item.title ?? 'Unknown']
         if (item.alt_titles && Array.isArray(item.alt_titles)) {
             titles.push(...item.alt_titles)
         }
@@ -38,13 +37,10 @@ export class ComixParser {
         const authors = item.author?.map((a: any) => a.title) || []
         const artists = item.artist?.map((a: any) => a.title) || []
 
-        // Immagine
         const image = item.poster?.large || item.poster?.medium || 'https://paperback.moe/icons/logo-alt.svg'
 
-        // Descrizione Arricchita
         let desc = item.synopsis || 'No synopsis available.'
         
-        // Aggiungiamo info extra alla descrizione per l'utente
         if (item.rated_avg) {
             desc = `⭐ Rating: ${item.rated_avg}/10\n\n${desc}`
         }
@@ -52,12 +48,11 @@ export class ComixParser {
             desc += `\n\nAlt Titles:\n${item.alt_titles.join(', ')}`
         }
 
-        // Status
         let status = 'Ongoing'
         if (item.status === 'finished') status = 'Completed'
-        if (item.status === 'canceled') status = 'Dropped' // Mapping extra se supportato
+        if (item.status === 'canceled') status = 'Dropped' 
+        if (item.status === 'on_hiatus') status = 'Hiatus'
 
-        // Tags
         const tags: Tag[] = []
         if (item.term_ids && Array.isArray(item.term_ids)) {
             for (const id of item.term_ids) {
@@ -68,7 +63,6 @@ export class ComixParser {
             }
         }
         
-        // Aggiunge flag NSFW come tag se necessario
         if (item.is_nsfw) {
             tags.push(App.createTag({ id: 'nsfw', label: 'NSFW' }))
         }
@@ -94,23 +88,30 @@ export class ComixParser {
         for (let i = 0; i < items.length; i++) {
             const item = items[i]
             
-            // Gestione Data: Le API PHP di solito ritornano secondi, JS vuole millisecondi
             let time = new Date()
             if (item.created_at) {
                 time = new Date(item.created_at * 1000) 
             }
 
-            // Nome Capitolo Pulito
-            let name = item.name ? `${item.name}` : `Chapter ${item.number}`
-            if (item.number && !name.includes(String(item.number))) {
-                name = `Ch. ${item.number} - ${name}`
-            }
+            const chapNum = parseFloat(item.number)
+
+            // --- FIX NOMENCLATURA ---
+            // Se l'API ritorna un nome, lo usiamo. Altrimenti lasciamo vuoto.
+            // L'app aggiungerà automaticamente "Ch. X" grazie a chapNum.
+            let name = item.name ? String(item.name).trim() : ''
+
+            // Se il nome è uguale al numero (es. name: "1"), lo svuotiamo per evitare "Ch. 1 - 1"
+            if (name === String(chapNum)) name = ''
+
+            // Rimuoviamo prefissi ridondanti che l'API potrebbe inviare (es. "Chapter 5")
+            name = name.replace(new RegExp(`^(chapter|ch\\.?)\\s*${chapNum}`, 'i'), '').trim()
+            name = name.replace(/^[-–—]\s*/, '').trim() // Rimuove trattini iniziali
 
             chapters.push(App.createChapter({
                 id: String(item.chapter_id),
-                name: name,
-                chapNum: parseFloat(item.number),
-                volume: item.volume ? parseFloat(item.volume) : undefined, // Supporto Volumi
+                name: name, // Ora è pulito: solo il titolo o stringa vuota
+                chapNum: chapNum,
+                volume: item.volume ? parseFloat(item.volume) : undefined,
                 time: time,
                 langCode: item.language || 'en',
                 sortingIndex: i 
@@ -135,7 +136,6 @@ export class ComixParser {
         })
     }
 
-    // Aggiunto parametro 'context' per sottotitoli intelligenti
     parseSearchResults(data: any, context: 'search' | 'popular' | 'latest' = 'search'): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
         const items = data.result?.items || []
@@ -145,16 +145,13 @@ export class ComixParser {
             const title = item.title
             const image = item.poster?.large || item.poster?.medium || 'https://paperback.moe/icons/logo-alt.svg'
             
-            // SOTTOTITOLI INTELLIGENTI
             let subtitle = undefined
             
             if (context === 'latest' || context === 'search') {
-                // Per gli ultimi aggiornamenti, l'utente vuole vedere il numero del capitolo
                 if (item.latest_chapter) {
                     subtitle = `Ch. ${item.latest_chapter}`
                 }
             } else if (context === 'popular') {
-                // Per i popolari, è meglio vedere l'autore o lo stato
                 if (item.author && item.author.length > 0) {
                     subtitle = item.author[0].title
                 } else if (item.status) {
