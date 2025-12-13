@@ -805,9 +805,6 @@ var _Sources = (() => {
     parseChapters(html) {
       const chapters = [];
       const scriptData = html.match(/window\.__DATA__\s*=\s*({.*?});/s);
-      const seriesTitleMatch = html.match(/<h1[^>]*>(.*?)<\/h1>/i);
-      let seriesNameRaw = seriesTitleMatch ? seriesTitleMatch[1].replace(/<[^>]+>/g, "").trim() : "";
-      const seriesBaseName = seriesNameRaw.replace(/\s*\(\d{4}[-–—]?\).*$/, "").trim();
       if (!scriptData) return [];
       try {
         const data = JSON.parse(scriptData[1]);
@@ -822,18 +819,23 @@ var _Sources = (() => {
               const numMatch = rawTitle.match(/(\d+(\.\d+)?)/g);
               if (numMatch) chapNum = parseFloat(numMatch[numMatch.length - 1] ?? "0");
             }
-            let cleanTitle = rawTitle;
-            if (cleanTitle.includes("#")) {
-              const parts = cleanTitle.split("#");
-              if (parts.length > 1) {
-                cleanTitle = parts.slice(1).join("#").trim();
-              }
-            } else if (seriesBaseName.length > 0) {
-              const seriesRegex = new RegExp(`^${this.escapeRegExp(seriesBaseName)}`, "i");
-              cleanTitle = cleanTitle.replace(seriesRegex, "").trim();
+            let volNum = void 0;
+            const volMatch = rawTitle.match(/(?:Vol\.?|TPB)[_\s]*(\d+)/i);
+            if (volMatch) {
+              volNum = volMatch[1];
             }
-            cleanTitle = cleanTitle.replace(/^(chapter|ch\.?|no\.?)\s*\d+(\.\d+)?/i, "").replace(/_/g, " ").replace(/^[-–—:\s]+/, "").replace(/[-–—:\s]+$/, "").replace(/\s+/g, " ").trim();
-            let finalName = `Ch. ${chapNum}`;
+            let cleanTitle = "";
+            if (rawTitle.includes("#")) {
+              const parts = rawTitle.split("#");
+              cleanTitle = parts.slice(1).join("#").trim();
+            } else {
+              cleanTitle = rawTitle.replace(/^(chapter|ch\.?|no\.?)\s*\d+(\.\d+)?/i, "").replace(/^\s*[-–—]\s*/, "").trim();
+            }
+            let finalName = "";
+            if (volNum) {
+              finalName += `Vol. ${volNum} `;
+            }
+            finalName += `Ch. ${chapNum}`;
             if (cleanTitle.length > 0) {
               finalName += ` - ${cleanTitle}`;
             }
@@ -851,6 +853,8 @@ var _Sources = (() => {
               id,
               name: finalName,
               chapNum,
+              volume: volNum ? parseFloat(volNum) : void 0,
+              // Imposta anche il campo volume metadato
               time,
               langCode: "en"
             }));
@@ -860,10 +864,6 @@ var _Sources = (() => {
         console.error(`BatCave: Error parsing chapters JSON: ${e}`);
       }
       return chapters.sort((a, b) => b.chapNum - a.chapNum);
-    }
-    // Helper per escape dei caratteri speciali nelle regex
-    escapeRegExp(string) {
-      return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     }
     parseChapterDetails(html, mangaId, chapterId) {
       const pages = [];
