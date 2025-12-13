@@ -21,12 +21,12 @@ import { MangaDexParser } from './MangaDexParser'
 const MD_API = 'https://api.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
-    version: '3.0.1', // Bump per il filtro capitoli esterni
+    version: '3.1.0', // Bump version (Pagination Fix)
     name: 'MangaDex (EN)',
     icon: 'icon.png',
     author: 'DarkDragonkz',
     authorWebsite: 'https://github.com/DarkDragonkz',
-    description: 'MangaDex English source. Filters out external links.',
+    description: 'MangaDex English source. Filters out external links and supports huge manga libraries.',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: 'https://mangadex.org',
     sourceTags: [
@@ -75,15 +75,32 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
-        const limit = 500
-        const request = App.createRequest({
-            url: `${MD_API}/manga/${mangaId}/feed?limit=${limit}&translatedLanguage[]=en&order[chapter]=desc&includeFutureUpdates=0&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
-            method: 'GET'
-        })
+        const limit = 500 // Massimo consentito da MD
+        let offset = 0
+        let hasMore = true
+        const allChaptersData: any[] = []
 
-        const response = await this.requestManager.schedule(request, 1)
-        const data = JSON.parse(response.data ?? '{}')
-        return this.parser.parseChapters(data)
+        // Loop per scaricare TUTTI i capitoli (es. One Piece ha 1000+ capitoli)
+        while (hasMore) {
+            const request = App.createRequest({
+                url: `${MD_API}/manga/${mangaId}/feed?limit=${limit}&offset=${offset}&translatedLanguage[]=en&order[chapter]=desc&includeFutureUpdates=0&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`,
+                method: 'GET'
+            })
+
+            const response = await this.requestManager.schedule(request, 1)
+            const data = JSON.parse(response.data ?? '{}')
+            
+            const results = data.data || []
+            allChaptersData.push(...results)
+
+            if (results.length < limit) {
+                hasMore = false
+            } else {
+                offset += limit
+            }
+        }
+
+        return this.parser.parseChapters(allChaptersData)
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
@@ -122,22 +139,11 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
         
-        // 1. Popular New Titles - GRANDI
         const s1 = App.createHomeSection({ id: 'popular_new', title: 'Popular New Titles 🔥', containsMoreItems: false, type: HomeSectionType.singleRowLarge })
-        
-        // 2. Latest Updates - View More (Continuous)
         const s2 = App.createHomeSection({ id: 'latest', title: 'Latest Updates 🆕', containsMoreItems: true, type: HomeSectionType.continuous })
-        
-        // 3. Recommended - GRANDI
         const s3 = App.createHomeSection({ id: 'recommended', title: 'Recommended ⭐', containsMoreItems: false, type: HomeSectionType.singleRowLarge })
-        
-        // 4. Self-Published - Normali
         const s4 = App.createHomeSection({ id: 'self_published', title: 'Self-Published 🖊️', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
-        
-        // 5. Featured - Normali
         const s5 = App.createHomeSection({ id: 'featured', title: 'Featured ⚡', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
-        
-        // 6. Recently Added - Normali
         const s6 = App.createHomeSection({ id: 'recently_added', title: 'Recently Added ✨', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
 
         sectionCallback(s1)
@@ -157,6 +163,7 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         const req5 = App.createRequest({ url: `${MD_API}/manga?${base}&order[relevance]=desc`, method: 'GET' })
         const req6 = App.createRequest({ url: `${MD_API}/manga?${base}&order[createdAt]=desc`, method: 'GET' })
 
+        // Eseguiamo le richieste. Promise.all è ok qui per velocità.
         const [d1, d2, d3, d4, d5, d6] = await Promise.all([
             this.requestManager.schedule(req1, 1),
             this.requestManager.schedule(req2, 1),

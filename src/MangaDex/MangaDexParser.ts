@@ -12,11 +12,11 @@ const MD_UPLOADS = 'https://uploads.mangadex.org'
 export class MangaDexParser {
 
     parseMangaDetails(data: any, mangaId: string): SourceManga {
-        const attributes = data.data.attributes
-        const relationships = data.data.relationships
+        const attributes = data.data?.attributes || {}
+        const relationships = data.data?.relationships || []
 
-        const title = attributes.title.en ?? Object.values(attributes.title)[0] ?? 'Unknown Title'
-        const desc = attributes.description.en ?? Object.values(attributes.description)[0] ?? ''
+        const title = attributes.title?.en ?? Object.values(attributes.title || {})[0] ?? 'Unknown Title'
+        const desc = attributes.description?.en ?? Object.values(attributes.description || {})[0] ?? ''
         
         const authors = relationships.filter((r: any) => r.type === 'author').map((r: any) => r.attributes?.name).filter((n: any) => n)
         const artists = relationships.filter((r: any) => r.type === 'artist').map((r: any) => r.attributes?.name).filter((n: any) => n)
@@ -27,8 +27,10 @@ export class MangaDexParser {
         const image = coverFileName ? `${MD_UPLOADS}/covers/${mangaId}/${coverFileName}.512.jpg` : 'https://paperback.moe/icons/logo-alt.svg'
 
         const tags: Tag[] = []
-        for (const tag of attributes.tags) {
-            tags.push(App.createTag({ id: tag.id, label: tag.attributes.name.en }))
+        if (attributes.tags) {
+            for (const tag of attributes.tags) {
+                tags.push(App.createTag({ id: tag.id, label: tag.attributes.name.en }))
+            }
         }
         
         let status = 'Ongoing'
@@ -50,40 +52,45 @@ export class MangaDexParser {
         })
     }
 
-    parseChapters(data: any): Chapter[] {
+    parseChapters(data: any[]): Chapter[] {
         const chapters: Chapter[] = []
         
-        for (const chapter of data.data) {
+        for (const chapter of data) {
             const attr = chapter.attributes
             
-            // --- FIX: Rimuovi capitoli esterni ---
-            // Se c'è un externalUrl (es. link a MangaPlus), saltiamo il capitolo
-            // perché Paperback non può aprirlo nativamente.
+            // Filtro capitoli esterni
             if (attr.externalUrl) {
                 continue 
             }
-            // -------------------------------------
 
-            const rels = chapter.relationships
+            const rels = chapter.relationships || []
             const scanGroup = rels.find((r: any) => r.type === 'scanlation_group')?.attributes?.name
             
-            let title = attr.title || ''
-            if (!title && attr.chapter) title = `Chapter ${attr.chapter}`
-            if (!title) title = 'Oneshot'
+            const chapNum = parseFloat(attr.chapter) || 0
+            
+            // Costruzione Nome:
+            // MD spesso ritorna un titolo vuoto o null.
+            // Se c'è un titolo, lo usiamo. Se no, lasciamo gestire all'app "Ch. X".
+            let name = attr.title ? String(attr.title).trim() : ''
+
+            // Se il titolo è solo il numero del capitolo, lo puliamo
+            if (name === String(chapNum)) name = ''
 
             const time = new Date(attr.publishAt)
             
             chapters.push(App.createChapter({
                 id: chapter.id,
-                name: title,
-                chapNum: parseFloat(attr.chapter) || 0,
+                name: name,
+                chapNum: chapNum,
                 volume: parseFloat(attr.volume) || undefined,
                 time: time,
-                langCode: attr.translatedLanguage, 
-                group: scanGroup
+                langCode: attr.translatedLanguage || 'en', 
+                group: scanGroup // Aggiunge il gruppo di scanlation
             }))
         }
-        return chapters
+        
+        // Sorting Client-Side per sicurezza (Descending)
+        return chapters.sort((a, b) => b.chapNum - a.chapNum)
     }
 
     parseChapterDetails(data: any, mangaId: string, chapterId: string): ChapterDetails {
@@ -102,10 +109,11 @@ export class MangaDexParser {
 
     parseSearchResults(data: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
+        const mangaList = data.data || []
         
-        for (const manga of data.data) {
+        for (const manga of mangaList) {
             const attr = manga.attributes
-            const title = attr.title.en ?? Object.values(attr.title)[0] ?? 'Unknown'
+            const title = attr.title?.en ?? Object.values(attr.title || {})[0] ?? 'Unknown'
             
             const coverRel = manga.relationships.find((r: any) => r.type === 'cover_art')
             const fileName = coverRel?.attributes?.fileName
