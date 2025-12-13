@@ -767,26 +767,34 @@ var _Sources = (() => {
     }
     parseChapters(data) {
       const chapters = [];
+      const seenChapters = /* @__PURE__ */ new Set();
+      data.sort((a, b) => {
+        const dateA = new Date(a.attributes.publishAt).getTime();
+        const dateB = new Date(b.attributes.publishAt).getTime();
+        return dateB - dateA;
+      });
       for (const chapter of data) {
         const attr = chapter.attributes;
-        if (attr.externalUrl) {
+        if (attr.externalUrl) continue;
+        const chapNum = parseFloat(attr.chapter);
+        const chapNumId = !isNaN(chapNum) ? String(chapNum) : `id:${chapter.id}`;
+        if (seenChapters.has(chapNumId) && !isNaN(chapNum)) {
           continue;
         }
+        seenChapters.add(chapNumId);
         const rels = chapter.relationships || [];
         const scanGroup = rels.find((r) => r.type === "scanlation_group")?.attributes?.name;
-        const chapNum = parseFloat(attr.chapter) || 0;
         let name = attr.title ? String(attr.title).trim() : "";
         if (name === String(chapNum)) name = "";
         const time = new Date(attr.publishAt);
         chapters.push(App.createChapter({
           id: chapter.id,
           name,
-          chapNum,
+          chapNum: isNaN(chapNum) ? 0 : chapNum,
           volume: parseFloat(attr.volume) || void 0,
           time,
           langCode: attr.translatedLanguage || "en",
           group: scanGroup
-          // Aggiunge il gruppo di scanlation
         }));
       }
       return chapters.sort((a, b) => b.chapNum - a.chapNum);
@@ -829,13 +837,13 @@ var _Sources = (() => {
   // src/MangaDex/MangaDex.ts
   var MD_API = "https://api.mangadex.org";
   var MangaDexInfo = {
-    version: "3.1.0",
-    // Bump version (Pagination Fix)
+    version: "3.2.0",
+    // Bump version (Deduplication & Light Home)
     name: "MangaDex (EN)",
     icon: "icon.png",
     author: "DarkDragonkz",
     authorWebsite: "https://github.com/DarkDragonkz",
-    description: "MangaDex English source. Filters out external links and supports huge manga libraries.",
+    description: "MangaDex English source. Deduplicates chapters and optimized for speed.",
     contentRating: import_types.ContentRating.MATURE,
     websiteBaseURL: "https://mangadex.org",
     sourceTags: [
@@ -933,43 +941,31 @@ var _Sources = (() => {
       const s1 = App.createHomeSection({ id: "popular_new", title: "Popular New Titles \u{1F525}", containsMoreItems: false, type: import_types.HomeSectionType.singleRowLarge });
       const s2 = App.createHomeSection({ id: "latest", title: "Latest Updates \u{1F195}", containsMoreItems: true, type: import_types.HomeSectionType.continuous });
       const s3 = App.createHomeSection({ id: "recommended", title: "Recommended \u2B50", containsMoreItems: false, type: import_types.HomeSectionType.singleRowLarge });
-      const s4 = App.createHomeSection({ id: "self_published", title: "Self-Published \u{1F58A}\uFE0F", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
-      const s5 = App.createHomeSection({ id: "featured", title: "Featured \u26A1", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
-      const s6 = App.createHomeSection({ id: "recently_added", title: "Recently Added \u2728", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
+      const s4 = App.createHomeSection({ id: "featured", title: "Featured \u26A1", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
       sectionCallback(s1);
       sectionCallback(s2);
       sectionCallback(s3);
       sectionCallback(s4);
-      sectionCallback(s5);
-      sectionCallback(s6);
-      const base = `limit=15&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&availableTranslatedLanguage[]=en`;
+      const base = `limit=10&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&availableTranslatedLanguage[]=en`;
       const oneMonthAgo = new Date(Date.now() - 2592e6).toISOString().slice(0, 19);
       const req1 = App.createRequest({ url: `${MD_API}/manga?${base}&order[followedCount]=desc&createdAtSince=${oneMonthAgo}`, method: "GET" });
       const req2 = App.createRequest({ url: `${MD_API}/manga?${base}&order[latestUploadedChapter]=desc`, method: "GET" });
       const req3 = App.createRequest({ url: `${MD_API}/manga?${base}&order[rating]=desc`, method: "GET" });
-      const req4 = App.createRequest({ url: `${MD_API}/manga?${base}&originalLanguage[]=en&order[followedCount]=desc`, method: "GET" });
-      const req5 = App.createRequest({ url: `${MD_API}/manga?${base}&order[relevance]=desc`, method: "GET" });
-      const req6 = App.createRequest({ url: `${MD_API}/manga?${base}&order[createdAt]=desc`, method: "GET" });
-      const [d1, d2, d3, d4, d5, d6] = await Promise.all([
+      const req4 = App.createRequest({ url: `${MD_API}/manga?${base}&order[relevance]=desc`, method: "GET" });
+      const [d1, d2, d3, d4] = await Promise.all([
         this.requestManager.schedule(req1, 1),
         this.requestManager.schedule(req2, 1),
         this.requestManager.schedule(req3, 1),
-        this.requestManager.schedule(req4, 1),
-        this.requestManager.schedule(req5, 1),
-        this.requestManager.schedule(req6, 1)
+        this.requestManager.schedule(req4, 1)
       ]);
       s1.items = this.parser.parseSearchResults(JSON.parse(d1.data ?? "{}"));
       s2.items = this.parser.parseSearchResults(JSON.parse(d2.data ?? "{}"));
       s3.items = this.parser.parseSearchResults(JSON.parse(d3.data ?? "{}"));
       s4.items = this.parser.parseSearchResults(JSON.parse(d4.data ?? "{}"));
-      s5.items = this.parser.parseSearchResults(JSON.parse(d5.data ?? "{}"));
-      s6.items = this.parser.parseSearchResults(JSON.parse(d6.data ?? "{}"));
       sectionCallback(s1);
       sectionCallback(s2);
       sectionCallback(s3);
       sectionCallback(s4);
-      sectionCallback(s5);
-      sectionCallback(s6);
     }
     async getViewMoreItems(homepageSectionId, metadata) {
       const limit = 20;
