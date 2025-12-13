@@ -789,7 +789,7 @@ var _Sources = (() => {
           chapNum = parseFloat(chapNumMatch[1]);
         }
         let name = titleRaw;
-        name = name.replace(/^(chapter|ch)\.?\s*\d+/i, "").trim();
+        name = name.replace(/^(chapter|ch|episode|ep|no\.|#)\.?\s*\d+/i, "").trim();
         name = name.replace(/^[-–—:]+\s*/, "").trim();
         if (name === String(chapNum) || name === "") name = "";
         chapters.push(App.createChapter({
@@ -817,16 +817,16 @@ var _Sources = (() => {
         pages
       });
     }
-    // HELPER FISSO: Cerca SOLO capitoli o stringhe brevi, ignora date ISO lunghe
+    // HELPER FIXATO: Supporta Episode e Link diretti
     extractSubtitle($el) {
-      let sub = $el.find('span:contains("Chapter"), span:contains("Ch."), a:contains("Chapter")').last().text().trim();
+      let sub = $el.find('span:contains("Chapter"), span:contains("Ch"), span:contains("Episode"), span:contains("Ep"), a:contains("Chapter")').last().text().trim();
       if (!sub) {
         const chapterLink = $el.find('a[href*="/chapters/"]').first();
         if (chapterLink.length > 0) {
           sub = chapterLink.text().trim();
         }
       }
-      if (sub && (sub.length > 20 || sub.includes("T") && sub.includes(":"))) {
+      if (sub && (sub.length > 30 || sub.includes("T") && sub.includes(":") && sub.includes("-"))) {
         return void 0;
       }
       return sub || void 0;
@@ -902,7 +902,7 @@ var _Sources = (() => {
         }
         if (!image) return;
         title = this.cleanTitle(title || "Unknown");
-        const subtitle = this.extractSubtitle($el.closest("div, tr"));
+        const subtitle = this.extractSubtitle($el.closest("div, tr, article"));
         latestItems.push(App.createPartialSourceManga({
           mangaId: id,
           image,
