@@ -83,7 +83,7 @@ export class WeebCentralParser {
             }
 
             let name = titleRaw
-            name = name.replace(/^(chapter|ch)\.?\s*\d+/i, '').trim()
+            name = name.replace(/^(chapter|ch|episode|ep|no\.|#)\.?\s*\d+/i, '').trim()
             name = name.replace(/^[-–—:]+\s*/, '').trim()
 
             if (name === String(chapNum) || name === '') name = ''
@@ -119,24 +119,25 @@ export class WeebCentralParser {
         })
     }
 
-    // HELPER FISSO: Cerca SOLO capitoli o stringhe brevi, ignora date ISO lunghe
+    // HELPER FIXATO: Supporta Episode e Link diretti
     private extractSubtitle($el: any): string | undefined {
-        // 1. Priorità assoluta: Elementi che contengono "Chapter" o "Ch."
-        let sub = $el.find('span:contains("Chapter"), span:contains("Ch."), a:contains("Chapter")').last().text().trim()
+        // 1. Cerca testo con parole chiave estese (Chapter, Episode, etc.)
+        let sub = $el.find('span:contains("Chapter"), span:contains("Ch"), span:contains("Episode"), span:contains("Ep"), a:contains("Chapter")').last().text().trim()
         
-        // 2. Se non trova testo esplicito, prova a cercare un link numerico che non sia il titolo
+        // 2. Se non trova etichette, cerca un LINK a un capitolo (Strategia per Latest Updates)
         if (!sub) {
-            // Cerca un link che abbia un href con 'chapter' ma che non sia l'immagine
+            // Cerca il primo link nel blocco che punta a /chapters/
+            // Spesso in "Latest" c'è solo un link col numero "155" o "Ep. 10"
             const chapterLink = $el.find('a[href*="/chapters/"]').first()
             if (chapterLink.length > 0) {
-                // Prende il testo, es "Chapter 123"
+                // Prendi il testo intero del link (es. "Chapter 123" o "123")
+                // A volte il testo è dentro uno span nel link
                 sub = chapterLink.text().trim()
             }
         }
 
-        // 3. Pulizia finale: Se per caso abbiamo preso una data ISO o stringa lunghissima, scartiamola
-        if (sub && (sub.length > 20 || sub.includes('T') && sub.includes(':'))) {
-            // È probabile che sia una data ISO (es. 2025-12-12T...), la ignoriamo
+        // 3. Pulizia finale: Rimuove date ISO lunghe se erroneamente catturate
+        if (sub && (sub.length > 30 || (sub.includes('T') && sub.includes(':') && sub.includes('-')))) {
             return undefined 
         }
         
@@ -223,6 +224,7 @@ export class WeebCentralParser {
 
         recentContainer.find('a[href*="/series/"]').each((_: any, el: any) => {
              const $el = $(el)
+             
              const href = $el.attr('href')
              const id = href?.split('/series/')[1]
              if (!id) return
@@ -241,8 +243,9 @@ export class WeebCentralParser {
 
              title = this.cleanTitle(title || 'Unknown')
              
-             // Cerca sottotitolo (Capitolo) nel contenitore
-             const subtitle = this.extractSubtitle($el.closest('div, tr'))
+             // Cerca sottotitolo nel contenitore
+             // In Latest Updates spesso il contenitore è una riga o grid item
+             const subtitle = this.extractSubtitle($el.closest('div, tr, article'))
 
              latestItems.push(App.createPartialSourceManga({
                  mangaId: id, image: image, title: title, subtitle: subtitle
