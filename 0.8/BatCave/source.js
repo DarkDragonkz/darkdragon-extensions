@@ -849,10 +849,13 @@ var _Sources = (() => {
             if (cleanTitle.length > 0 && cleanTitle !== String(chapNum)) {
               finalName = cleanTitle;
             }
-            let customLangCode = "\u{1F1FA}\u{1F1F8}";
             const pagesCount = chap.pages || chap.count;
             if (pagesCount) {
-              customLangCode = `\u{1F1FA}\u{1F1F8} - ${pagesCount}p`;
+              if (finalName.length > 0) {
+                finalName += ` (${pagesCount}p)`;
+              } else {
+                finalName = `(${pagesCount}p)`;
+              }
             }
             let time = /* @__PURE__ */ new Date();
             if (chap.date) {
@@ -870,8 +873,8 @@ var _Sources = (() => {
               chapNum,
               volume: volNum ? parseFloat(volNum) : void 0,
               time,
-              langCode: customLangCode
-              // <--- Output: "🇺🇸 - 56p"
+              langCode: "en"
+              // RIPRISTINATO STANDARD PER SICUREZZA
             }));
           }
         }
