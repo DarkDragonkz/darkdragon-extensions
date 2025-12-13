@@ -734,17 +734,15 @@ var _Sources = (() => {
     parseMangaDetails($, mangaId) {
       let title = $("h1").first().text().trim();
       if (!title) title = $("picture img").attr("alt")?.replace(" cover", "") ?? "Unknown";
-      let image = $("picture source").attr("srcset") ?? "";
+      let image = $('picture source[media*="min-width"]').attr("srcset") ?? "";
       if (!image) image = $("picture img").attr("src") ?? "";
-      let desc = "";
-      desc = $("p.text-lg").text().trim() || "No description";
+      const desc = $("p.text-lg").text().trim() || "No description";
       let status = "Ongoing";
       let author = "Unknown";
       let artist = "Unknown";
       const arrayTags = [];
       $("ul.flex.flex-col.gap-4 li").each((_, li) => {
         const label = $("strong", li).text().trim();
-        const value = $(li).clone().children().remove().end().text().trim();
         const links = $("a", li);
         if (label.includes("Author")) {
           author = links.map((_2, a) => $(a).text().trim()).get().join(", ");
@@ -758,8 +756,9 @@ var _Sources = (() => {
         if (label.includes("Tags") || label.includes("Type")) {
           links.each((_2, a) => {
             const tagLabel = $(a).text().trim();
-            const tagId = tagLabel;
-            arrayTags.push(App.createTag({ id: tagId, label: tagLabel }));
+            if (tagLabel) {
+              arrayTags.push(App.createTag({ id: tagLabel, label: tagLabel }));
+            }
           });
         }
       });
@@ -772,7 +771,6 @@ var _Sources = (() => {
           status,
           author,
           artist,
-          // Spesso artista e autore sono insieme
           tags: tagSections,
           desc
         })
@@ -801,16 +799,17 @@ var _Sources = (() => {
       });
       return chapters;
     }
-    // In WeebCentral la pagina dei risultati ha una struttura simile
     parseSearchResults($) {
       const results = [];
       $("article.bg-base-300").each((_, article) => {
-        const link = $("a", article).first();
-        const href = link.attr("href");
+        const desktopInfo = $(article).find("section.lg\\:w-\\[75\\%\\]");
+        const titleBlock = $(article).find(".text-lg.font-semibold").first();
+        const titleLink = titleBlock.find("a");
+        const title = titleLink.text().trim();
+        const href = titleLink.attr("href");
         const id = href?.split("/series/")[1]?.split("/")[0];
-        if (!id) return;
-        const title = $("div.text-white.text-lg", article).text().trim();
-        let image = $("source", article).attr("srcset");
+        if (!id || !title) return;
+        let image = $('source[media*="min-width"]', article).attr("srcset");
         if (!image) image = $("img", article).attr("src") ?? "";
         results.push(App.createPartialSourceManga({
           mangaId: id,
@@ -821,9 +820,6 @@ var _Sources = (() => {
       });
       return results;
     }
-    // Per i dettagli del capitolo (immagini) servirà un'analisi successiva
-    // poiché non hai mandato l'HTML del lettore.
-    // Metto un placeholder
     parseChapterDetails($, mangaId, chapterId) {
       const pages = [];
       return App.createChapterDetails({
