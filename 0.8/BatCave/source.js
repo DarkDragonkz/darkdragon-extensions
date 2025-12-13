@@ -733,23 +733,12 @@ var _Sources = (() => {
   var import_types = __toESM(require_lib());
   var BASE_URL = "https://batcave.biz";
   var BatCaveParser = class {
-    /**
-     * Tenta di trasformare l'URL di una miniatura (thumb) nell'URL dell'immagine originale HD.
-     * Gestisce path relativi, assoluti e la struttura tipica DLE /thumbs/.
-     */
     getHighResImage(url) {
       if (!url) return "";
-      if (url.startsWith("/")) {
-        url = BASE_URL + url;
-      }
-      if (url.includes("/thumbs/")) {
-        url = url.replace("/thumbs/", "/");
-      }
+      if (url.startsWith("/")) url = BASE_URL + url;
+      if (url.includes("/thumbs/")) url = url.replace("/thumbs/", "/");
       return url;
     }
-    /**
-     * Helper per parsare le liste di manga (Grid/List items).
-     */
     parseGridItems($, selector, subtitleSelector) {
       const items = [];
       $(selector).each((_, item) => {
@@ -822,7 +811,7 @@ var _Sources = (() => {
         if (data.chapters && Array.isArray(data.chapters)) {
           for (const chap of data.chapters) {
             const id = String(chap.id);
-            const rawTitle = (chap.title || "").replace(/_/g, " ").trim();
+            let rawTitle = (chap.title || "").trim();
             let chapNum = 0;
             if (chap.posi) {
               chapNum = parseFloat(chap.posi);
@@ -830,15 +819,25 @@ var _Sources = (() => {
               const numMatch = rawTitle.match(/(\d+(\.\d+)?)/g);
               if (numMatch) chapNum = parseFloat(numMatch[numMatch.length - 1] ?? "0");
             }
-            let name = "";
-            if (rawTitle) {
-              if (rawTitle.toLowerCase().startsWith("chapter") || rawTitle.includes(String(chapNum))) {
-                name = rawTitle;
-              } else {
-                name = `Chapter ${chapNum} - ${rawTitle}`;
-              }
-            } else {
-              name = `Chapter ${chapNum}`;
+            let yearSuffix = "";
+            const yearMatch = rawTitle.match(/\(\d{4}-?\)/);
+            if (yearMatch) {
+              yearSuffix = ` ${yearMatch[0]}`;
+              rawTitle = rawTitle.replace(yearMatch[0], "");
+            }
+            const redundantPrefixRegex = new RegExp(`^(chapter|ch\\.?)\\s*${chapNum}\\s*[-\u2013\u2014]?\\s*`, "i");
+            rawTitle = rawTitle.replace(redundantPrefixRegex, "");
+            rawTitle = rawTitle.replace(/#/g, "");
+            let cleanTitle = rawTitle.replace(/\s+/g, " ").replace(/^[-–—]\s*/, "").replace(/\s*[-–—]$/, "").trim();
+            if (!cleanTitle || cleanTitle.length < 2) {
+              cleanTitle = "";
+            }
+            let finalName = `Ch. ${chapNum}`;
+            if (cleanTitle) {
+              finalName += ` - ${cleanTitle}`;
+            }
+            if (yearSuffix) {
+              finalName += yearSuffix;
             }
             let time = /* @__PURE__ */ new Date();
             if (chap.date) {
@@ -852,7 +851,7 @@ var _Sources = (() => {
             }
             chapters.push(App.createChapter({
               id,
-              name,
+              name: finalName,
               chapNum,
               time,
               langCode: "en"
