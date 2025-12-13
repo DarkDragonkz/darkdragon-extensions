@@ -13,26 +13,26 @@ import {
     MangaProviding,
     ChapterProviding,
     HomePageSectionsProviding,
+    Request,
+    Response,
 } from '@paperback/types'
 
 import { WeebCentralParser } from './WeebCentralParser'
-import { URLBuilder } from '../helper'
 
 const DOMAIN = 'https://weebcentral.com'
 
 export const WeebCentralInfo: SourceInfo = {
-    version: '1.1.0', // Major Bump per UI update
+    version: '2.5.0', // Updated: Full Fix ViewMore, Search & Chapters
     name: 'WeebCentral',
-    icon: 'icon.png',
+    description: 'Extension for WeebCentral. Fixed Chapter List & Search.',
     author: 'DarkDragonkzz',
-    authorWebsite: 'https://github.com/DarkDragonkz',
-    description: `Extension that pulls manga from ${DOMAIN}`,
+    icon: 'icon.png',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: DOMAIN,
     sourceTags: [
         {
-            text: 'English 🇬🇧', 
-            type: BadgeColor.GREEN
+            text: 'English 🇬🇧',
+            type: BadgeColor.BLUE
         },
     ],
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,
@@ -42,18 +42,20 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
     baseUrl = DOMAIN
     parser = new WeebCentralParser()
 
-    constructor(private cheerio: any) {}
+    readonly userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
+    constructor(public cheerio: any) {} 
 
     requestManager = App.createRequestManager({
-        requestsPerSecond: 4, // Leggermente ridotto per sicurezza
+        requestsPerSecond: 4, 
         requestTimeout: 20000,
         interceptor: {
             interceptRequest: async (request: any) => {
                 request.headers = {
                     ...(request.headers ?? {}),
                     ...{
-                        'referer': `${this.baseUrl}/`,
-                        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                        'Referer': `${this.baseUrl}/`,
+                        'User-Agent': this.userAgent,
                     }
                 }
                 return request
@@ -71,7 +73,7 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
         const request = App.createRequest({
             url: `${this.baseUrl}/series/${mangaId}`,
-            method: 'GET',
+            method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
@@ -79,9 +81,10 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
+        // FIX CRITICO: Chiamiamo l'endpoint full-chapter-list
         const request = App.createRequest({
             url: `${this.baseUrl}/series/${mangaId}/full-chapter-list`,
-            method: 'GET',
+            method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
@@ -90,104 +93,63 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
         const request = App.createRequest({
-            url: `${this.baseUrl}/chapters/${chapterId}/images?reading_style=long_strip`,
-            method: 'GET',
+            url: `${this.baseUrl}/chapters/${chapterId}/images?is_prev=False&current_page=1&reading_style=long_strip`,
+            method: 'GET'
         })
-        
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         return this.parser.parseChapterDetails($, mangaId, chapterId)
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
-        const limit = 32
         const offset = metadata?.offset ?? 0
         
-        const url = new URLBuilder(this.baseUrl)
-            .addPathComponent('search')
-            .addPathComponent('data')
-            .addQueryParameter('limit', limit.toString())
-            .addQueryParameter('offset', offset.toString())
-            .addQueryParameter('sort', 'Best Match')
-            .addQueryParameter('display_mode', 'Full Display')
-            .addQueryParameter('official', 'Any')
-        
-        if (query.title) {
-            url.addQueryParameter('text', query.title)
-        }
-
         const request = App.createRequest({
-            url: url.buildUrl(),
-            method: 'GET',
+            url: `${this.baseUrl}/search/data?author=&text=${encodeURIComponent(query.title ?? '')}&sort=Best%20Match&order=Ascending&official=Any&limit=32&offset=${offset}`,
+            method: 'GET'
         })
 
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         const manga = this.parser.parseSearchResults($)
         
-        let nextMetadata: any = undefined
-        if (!this.parser.isLastPage($)) {
-             nextMetadata = { offset: offset + limit }
-        }
-
+        // Se troviamo meno di 32 risultati, siamo alla fine
         return App.createPagedResults({
             results: manga,
-            metadata: nextMetadata
+            metadata: manga.length >= 32 ? { offset: offset + 32 } : undefined
         })
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        const request = App.createRequest({
-            url: this.baseUrl,
-            method: 'GET',
-        })
+        const request = App.createRequest({ url: this.baseUrl, method: 'GET' })
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
+        
         this.parser.parseHomeSections($, sectionCallback)
     }
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
-        const page = metadata?.page ?? 1
+        const offset = metadata?.offset ?? 0
         let url = ''
-
-        if (homepageSectionId === 'latest_updates') {
-            // WeebCentral usa offset a 32 per pagina (o simili), 
-            // ma l'endpoint /latest-updates/ accetta spesso un numero pagina semplice
-            // Se fallisce, potrebbe richiedere offset = (page-1) * 32
-            url = `${this.baseUrl}/latest-updates/${page}`
+        
+        // FIX VIEW MORE: Usiamo i parametri corretti per la paginazione
+        if (homepageSectionId === 'hot') {
+            url = `${this.baseUrl}/search/data?sort=Popularity&order=Descending&official=Any&limit=32&offset=${offset}`
+        } else if (homepageSectionId === 'latest') {
+            url = `${this.baseUrl}/search/data?sort=Latest%20Updates&order=Descending&official=Any&limit=32&offset=${offset}`
         } else {
             return App.createPagedResults({ results: [] })
         }
 
-        const request = App.createRequest({
-            url: url,
-            method: 'GET',
-        })
-
+        const request = App.createRequest({ url, method: 'GET' })
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data)
         
-        // Usiamo il parser condiviso anche qui
         const manga = this.parser.parseSearchResults($)
         
-        if (manga.length > 0) {
-            return App.createPagedResults({
-                results: manga,
-                metadata: { page: page + 1 }
-            })
-        }
-
-        return App.createPagedResults({ results: [] })
-    }
-    
-    async getCloudflareBypassRequestAsync() {
-        return App.createRequest({
-            url: this.baseUrl,
-            method: 'GET',
-            headers: {
-                'referer': `${this.baseUrl}/`,
-                'user-agent': await this.requestManager.getDefaultUserAgent()
-            }
+        return App.createPagedResults({
+            results: manga,
+            metadata: manga.length >= 32 ? { offset: offset + 32 } : undefined
         })
     }
 }

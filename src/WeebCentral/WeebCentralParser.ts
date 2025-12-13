@@ -11,6 +11,15 @@ import {
 
 export class WeebCentralParser {
 
+    // Funzione mancante che causava l'errore in ricerca
+    isLastPage($: any): boolean {
+        // WeebCentral carica 32 item per pagina.
+        // Se troviamo meno di 32 risultati, o non c'è il bottone "Next", è l'ultima pagina.
+        // Dato che usiamo search/data che ritorna HTML grezzo, contiamo i risultati.
+        const items = $('a[href*="/series/"]').length
+        return items < 32
+    }
+
     parseMangaDetails($: any, mangaId: string): SourceManga {
         let title = $('h1').first().text().trim()
         if (!title) title = 'Unknown Title'
@@ -37,7 +46,6 @@ export class WeebCentralParser {
         })
 
         if (artist === 'Unknown' && author !== 'Unknown') artist = author
-
         if (status.toLowerCase().includes('complete')) status = 'Completed'
         if (status.toLowerCase().includes('hiatus')) status = 'Hiatus'
         if (status.toLowerCase().includes('cancel')) status = 'Cancelled'
@@ -66,6 +74,7 @@ export class WeebCentralParser {
     parseChapters($: any, mangaId: string): Chapter[] {
         const chapters: Chapter[] = []
         
+        // I capitoli sono link <a> dentro la risposta di /full-chapter-list
         $('a[href*="/chapters/"]').each((_: any, el: any) => {
             const $el = $(el)
             const href = $el.attr('href')
@@ -102,67 +111,37 @@ export class WeebCentralParser {
 
     parseChapterDetails($: any, mangaId: string, chapterId: string): ChapterDetails {
         const pages: string[] = []
-
         $('img').each((_: any, el: any) => {
             const $img = $(el)
             let src = $img.attr('src')
-            
             if (src && src.startsWith('http') && !src.includes('logo') && !src.includes('icon')) {
                 pages.push(src)
             }
         })
-        
-        return App.createChapterDetails({
-            id: chapterId,
-            mangaId: mangaId,
-            pages: pages
-        })
+        return App.createChapterDetails({ id: chapterId, mangaId, pages: pages })
     }
 
-    // HELPER FIXATO: Supporta Episode e Link diretti
     private extractSubtitle($el: any): string | undefined {
-        // 1. Cerca testo con parole chiave estese (Chapter, Episode, etc.)
         let sub = $el.find('span:contains("Chapter"), span:contains("Ch"), span:contains("Episode"), span:contains("Ep"), a:contains("Chapter")').last().text().trim()
-        
-        // 2. Se non trova etichette, cerca un LINK a un capitolo (Strategia per Latest Updates)
         if (!sub) {
-            // Cerca il primo link nel blocco che punta a /chapters/
-            // Spesso in "Latest" c'è solo un link col numero "155" o "Ep. 10"
             const chapterLink = $el.find('a[href*="/chapters/"]').first()
-            if (chapterLink.length > 0) {
-                // Prendi il testo intero del link (es. "Chapter 123" o "123")
-                // A volte il testo è dentro uno span nel link
-                sub = chapterLink.text().trim()
-            }
+            if (chapterLink.length > 0) sub = chapterLink.text().trim()
         }
-
-        // 3. Pulizia finale: Rimuove date ISO lunghe se erroneamente catturate
-        if (sub && (sub.length > 30 || (sub.includes('T') && sub.includes(':') && sub.includes('-')))) {
-            return undefined 
-        }
-        
+        if (sub && (sub.length > 30 || (sub.includes('T') && sub.includes(':') && sub.includes('-')))) return undefined 
         return sub || undefined
     }
 
     private cleanTitle(title: string): string {
-        return title
-            .replace(/\s+Cover$/i, '')
-            .replace(/\s+Poster$/i, '')
-            .replace(/\s+Scan$/i, '')
-            .trim()
+        return title.replace(/\s+Cover$/i, '').replace(/\s+Poster$/i, '').replace(/\s+Scan$/i, '').trim()
     }
 
     parseSearchResults($: any): PartialSourceManga[] {
         const results: PartialSourceManga[] = []
-        
         $('a[href*="/series/"]').each((_: any, el: any) => {
             const $el = $(el)
             const img = $el.find('img').first()
-            
             let image = img.attr('src')
-            if (!image) {
-                image = $el.closest('article, div').find('img').first().attr('src')
-            }
+            if (!image) image = $el.closest('article, div').find('img').first().attr('src')
             if (!image) return
 
             const href = $el.attr('href')
@@ -171,19 +150,14 @@ export class WeebCentralParser {
 
             let title = img.attr('alt') || $el.text().trim() || 'Unknown'
             title = this.cleanTitle(title)
-
             const subtitle = this.extractSubtitle($el.closest('article, div'))
 
             if (!results.find(r => r.mangaId === id)) {
                 results.push(App.createPartialSourceManga({
-                    mangaId: id,
-                    image: image,
-                    title: title,
-                    subtitle: subtitle
+                    mangaId: id, image: image, title: title, subtitle: subtitle
                 }))
             }
         })
-        
         return results
     }
 
@@ -194,9 +168,7 @@ export class WeebCentralParser {
         const hotItems: PartialSourceManga[] = []
         const latestItems: PartialSourceManga[] = []
 
-        // 1. HOT UPDATES
         const hotContainer = $('section:contains("Hot Updates"), section:contains("Popular")').first()
-        
         hotContainer.find('a[href*="/series/"]').each((_: any, el: any) => {
             const $el = $(el)
             const img = $el.find('img').first()
@@ -209,22 +181,17 @@ export class WeebCentralParser {
             title = this.cleanTitle(title)
             const image = img.attr('src') || ''
             
-            // Cerca il sottotitolo nel genitore della card
             const card = $el.closest('div.relative, div.flex-col, article')
             const subtitle = this.extractSubtitle(card.length ? card : $el.parent())
 
-            hotItems.push(App.createPartialSourceManga({
-                mangaId: id, image: image, title: title, subtitle: subtitle
-            }))
+            hotItems.push(App.createPartialSourceManga({ mangaId: id, image: image, title: title, subtitle: subtitle }))
         })
 
-        // 2. RECENT UPDATES
         let recentContainer = $('section:contains("Recent"), section:contains("Latest")').first()
         if (recentContainer.length === 0) recentContainer = $('body')
 
         recentContainer.find('a[href*="/series/"]').each((_: any, el: any) => {
              const $el = $(el)
-             
              const href = $el.attr('href')
              const id = href?.split('/series/')[1]
              if (!id) return
@@ -238,23 +205,15 @@ export class WeebCentralParser {
                  image = card.find('img').first().attr('src')
                  title = card.find('a.font-bold, a.text-white').first().text().trim()
              }
-             
              if (!image) return 
-
              title = this.cleanTitle(title || 'Unknown')
-             
-             // Cerca sottotitolo nel contenitore
-             // In Latest Updates spesso il contenitore è una riga o grid item
              const subtitle = this.extractSubtitle($el.closest('div, tr, article'))
 
-             latestItems.push(App.createPartialSourceManga({
-                 mangaId: id, image: image, title: title, subtitle: subtitle
-             }))
+             latestItems.push(App.createPartialSourceManga({ mangaId: id, image: image, title: title, subtitle: subtitle }))
         })
 
         hotSection.items = hotItems
         latestSection.items = latestItems
-        
         sectionCallback(hotSection)
         sectionCallback(latestSection)
     }
