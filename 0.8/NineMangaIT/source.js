@@ -937,47 +937,11 @@ var _Sources = (() => {
     }
   };
 
-  // src/helper.ts
-  var URLBuilder = class {
-    constructor(baseUrl) {
-      this.parameters = {};
-      this.pathComponents = [];
-      this.baseUrl = baseUrl.replace(/(^\/)?(?=.*)(\/$)?/gim, "");
-    }
-    addPathComponent(component) {
-      this.pathComponents.push(component.replace(/(^\/)?(?=.*)(\/$)?/gim, ""));
-      return this;
-    }
-    addQueryParameter(key, value) {
-      this.parameters[key] = value;
-      return this;
-    }
-    buildUrl({ addTrailingSlash, includeUndefinedParameters } = { addTrailingSlash: false, includeUndefinedParameters: false }) {
-      let finalUrl = this.baseUrl + "/";
-      finalUrl += this.pathComponents.join("/");
-      finalUrl += addTrailingSlash ? "/" : "";
-      finalUrl += Object.values(this.parameters).length > 0 ? "?" : "";
-      finalUrl += Object.entries(this.parameters).map((entry) => {
-        if (entry[1] == null && !includeUndefinedParameters) {
-          return void 0;
-        }
-        if (Array.isArray(entry[1])) {
-          return `${entry[0]}=` + entry[1].map((value) => value || includeUndefinedParameters ? `${value},` : void 0).filter((x) => x !== void 0).join("");
-        }
-        if (typeof entry[1] === "object") {
-          return Object.keys(entry[1]).map((key) => `${entry[0]}[${key}]=${entry[1][key]}`).join("&");
-        }
-        return `${entry[0]}=${entry[1]}`;
-      }).filter((x) => x !== void 0).join("&");
-      return finalUrl;
-    }
-  };
-
   // src/NineMangaIT/NineMangaIT.ts
   var IT_DOMAIN = "https://it.ninemanga.com";
   var NineMangaITInfo = {
-    version: "5.0.0",
-    // Ritorno al Mobile (Reforged)
+    version: "5.1.0",
+    // Bump: Removed helper dependency
     name: "NineMangaIT",
     description: "Estensione Mobile per NineManga IT. Bypassa +18 e ottimizza il traffico.",
     author: "DarkDragonkzz",
@@ -998,7 +962,6 @@ var _Sources = (() => {
       this.cheerio = cheerio;
       this.baseUrl = IT_DOMAIN;
       this.parser = new NineMangaITParser();
-      // User-Agent Mobile Android (Fondamentale per ricevere la versione Mobile del sito)
       this.userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 3,
@@ -1011,7 +974,6 @@ var _Sources = (() => {
                 "Referer": `${this.baseUrl}/`,
                 "User-Agent": this.userAgent,
                 "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
-                // Cookie Magici: disabilitano il warning +18 e settano preferenze mobile
                 "Cookie": "is_warning=1; my_limit=1; waring=1"
               }
             };
@@ -1070,8 +1032,9 @@ var _Sources = (() => {
     async getSearchResults(query, metadata) {
       let page = metadata?.page ?? 1;
       if (page === -1) return App.createPagedResults({ results: [], metadata: { page: -1 } });
+      const searchUrl = `${this.baseUrl}/search/?name_sel=contain&wd=${encodeURIComponent(query?.title ?? "")}&page=${page}&type=high`;
       const request = App.createRequest({
-        url: new URLBuilder(this.baseUrl).addPathComponent("search").addQueryParameter("name_sel", "contain").addQueryParameter("wd", encodeURIComponent(query?.title ?? "")).addQueryParameter("page", page.toString()).addQueryParameter("type", "high").buildUrl({ addTrailingSlash: true, includeUndefinedParameters: false }),
+        url: searchUrl,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
