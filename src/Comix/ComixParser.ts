@@ -97,14 +97,20 @@ export class ComixParser {
             } else {
                 // Se ne esiste già uno, facciamo la "battaglia"
                 const existing = chapterMap.get(chapNumStr)
+                const isOfficial = (entry: any) =>
+                    Boolean(entry.is_official ?? entry.isOfficial ?? entry.official)
 
                 // Punteggio: Likes (priorità) + Views (fallback)
                 // Usiamo 0 se il campo manca
                 const scoreExisting = (existing.likes ?? existing.up_count ?? 0) * 1000 + (existing.views ?? 0)
                 const scoreCurrent = (item.likes ?? item.up_count ?? 0) * 1000 + (item.views ?? 0)
+                const existingOfficial = isOfficial(existing)
+                const currentOfficial = isOfficial(item)
 
-                // Se il nuovo ha un punteggio più alto, sostituisce il vecchio
-                if (scoreCurrent > scoreExisting) {
+                // Priorita': official > punteggio (likes/views)
+                if (currentOfficial && !existingOfficial) {
+                    chapterMap.set(chapNumStr, item)
+                } else if (currentOfficial === existingOfficial && scoreCurrent > scoreExisting) {
                     chapterMap.set(chapNumStr, item)
                 }
             }
@@ -199,3 +205,4 @@ export class ComixParser {
         return results
     }
 }
+
