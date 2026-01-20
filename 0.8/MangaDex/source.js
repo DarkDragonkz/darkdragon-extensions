@@ -801,8 +801,16 @@ var _Sources = (() => {
     }
     parseChapterDetails(data, mangaId, chapterId) {
       const baseUrl = data.baseUrl;
-      const hash = data.chapter.hash;
-      const files = data.chapter.data;
+      const chapter = data.chapter;
+      const hash = chapter?.hash;
+      const files = chapter?.data;
+      if (!baseUrl || !hash || !Array.isArray(files)) {
+        return App.createChapterDetails({
+          id: chapterId,
+          mangaId,
+          pages: []
+        });
+      }
       const pages = files.map((file) => `${baseUrl}/data/${hash}/${file}`);
       return App.createChapterDetails({
         id: chapterId,
@@ -816,7 +824,7 @@ var _Sources = (() => {
       for (const manga of mangaList) {
         const attr = manga.attributes;
         const title = attr.title?.en ?? Object.values(attr.title || {})[0] ?? "Unknown";
-        const coverRel = manga.relationships.find((r) => r.type === "cover_art");
+        const coverRel = manga.relationships?.find((r) => r.type === "cover_art");
         const fileName = coverRel?.attributes?.fileName;
         let image = "https://paperback.moe/icons/logo-alt.svg";
         if (fileName) {

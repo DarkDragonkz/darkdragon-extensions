@@ -1367,7 +1367,7 @@ var _Sources = (() => {
       const results = [];
       for (const item of $("article.flex.gap-4").toArray()) {
         const id = $("a", item).attr("href")?.split("/series/")[1]?.split("/")[0] ?? "";
-        if (id == "" || typeof id != "string") throw new Error("Id is empty");
+        if (id == "" || typeof id != "string") continue;
         const title = $("a.link.link-hover", item).first().text().trim() ?? "";
         const image = $("img", item).attr("src") ?? $("img", item).attr("data-src") ?? "";
         results.push(App.createPartialSourceManga({
@@ -1559,7 +1559,7 @@ var _Sources = (() => {
       const offset = metadata?.offset ?? 0;
       let searchParams = "";
       if (query.title) {
-        searchParams = searchParams.concat(encodeURI(`&text=${query.title ?? ""}`));
+        searchParams = searchParams.concat(`&text=${encodeURIComponent(query.title)}`);
       }
       if (query.includedTags) {
         for (const tag of query.includedTags) {

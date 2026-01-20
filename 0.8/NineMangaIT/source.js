@@ -982,19 +982,26 @@ var _Sources = (() => {
       let finalUrl = this.baseUrl + "/";
       finalUrl += this.pathComponents.join("/");
       finalUrl += addTrailingSlash ? "/" : "";
-      finalUrl += Object.values(this.parameters).length > 0 ? "?" : "";
-      finalUrl += Object.entries(this.parameters).map((entry) => {
-        if (entry[1] == null && !includeUndefinedParameters) {
-          return void 0;
+      const params = [];
+      for (const [key, value] of Object.entries(this.parameters)) {
+        if (value == null && !includeUndefinedParameters) continue;
+        if (Array.isArray(value)) {
+          const items = value.map((item) => item == null ? includeUndefinedParameters ? "" : void 0 : String(item)).filter((item) => item !== void 0);
+          if (items.length === 0 && !includeUndefinedParameters) continue;
+          const encoded = items.map((item) => encodeURIComponent(item));
+          params.push(`${key}=${encoded.join(",")}`);
+          continue;
         }
-        if (Array.isArray(entry[1])) {
-          return `${entry[0]}=` + entry[1].map((value) => value || includeUndefinedParameters ? `${value},` : void 0).filter((x) => x !== void 0).join("");
+        if (typeof value === "object") {
+          for (const [subKey, subValue] of Object.entries(value)) {
+            if (subValue == null && !includeUndefinedParameters) continue;
+            params.push(`${key}[${subKey}]=${encodeURIComponent(String(subValue ?? ""))}`);
+          }
+          continue;
         }
-        if (typeof entry[1] === "object") {
-          return Object.keys(entry[1]).map((key) => `${entry[0]}[${key}]=${entry[1][key]}`).join("&");
-        }
-        return `${entry[0]}=${entry[1]}`;
-      }).filter((x) => x !== void 0).join("&");
+        params.push(`${key}=${encodeURIComponent(String(value))}`);
+      }
+      finalUrl += params.length > 0 ? `?${params.join("&")}` : "";
       return finalUrl;
     }
   };
@@ -1097,7 +1104,7 @@ var _Sources = (() => {
       let page = metadata?.page ?? 1;
       if (page === -1) return App.createPagedResults({ results: [], metadata: { page: -1 } });
       const request = App.createRequest({
-        url: new URLBuilder(this.baseUrl).addPathComponent("search").addQueryParameter("name_sel", "contain").addQueryParameter("wd", encodeURIComponent(query?.title ?? "")).addQueryParameter("page", page.toString()).addQueryParameter("type", "high").buildUrl({ addTrailingSlash: true, includeUndefinedParameters: false }),
+        url: new URLBuilder(this.baseUrl).addPathComponent("search").addQueryParameter("name_sel", "contain").addQueryParameter("wd", query?.title ?? "").addQueryParameter("page", page.toString()).addQueryParameter("type", "high").buildUrl({ addTrailingSlash: true, includeUndefinedParameters: false }),
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);

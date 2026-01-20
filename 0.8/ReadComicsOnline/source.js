@@ -831,7 +831,9 @@ var _Sources = (() => {
         if (url) {
           url = url.trim();
           if (url.startsWith("/")) url = BASE_URL + url;
-          if (!url.startsWith("http")) url = url.trim();
+          if (!url.startsWith("http")) {
+            url = url.startsWith("/") ? BASE_URL + url : `${BASE_URL}/${url.replace(/^\/+/, "")}`;
+          }
           if (!pages.includes(url)) {
             pages.push(url);
           }

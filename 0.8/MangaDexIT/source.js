@@ -792,7 +792,7 @@ var _Sources = (() => {
       });
       for (const chapter of data) {
         const attr = chapter.attributes;
-        if (attr.pages === 0 || attr.externalUrl !== null) continue;
+        if (attr.pages === 0 || attr.externalUrl) continue;
         const chapNum = parseFloat(attr.chapter);
         const chapNumId = !isNaN(chapNum) ? String(chapNum) : `id:${chapter.id}`;
         if (seenChapters.has(chapNumId) && !isNaN(chapNum)) {
@@ -969,9 +969,11 @@ var _Sources = (() => {
       const response = await this.requestManager.schedule(request, 1);
       const data = JSON.parse(response.data ?? "{}");
       const results = this.parser.parseSearchResults(data, false);
+      const nextOffset = offset + limit;
+      const hasMore = typeof data.total === "number" ? nextOffset < data.total : results.length >= limit;
       return App.createPagedResults({
         results,
-        metadata: { offset: offset + limit }
+        metadata: hasMore ? { offset: nextOffset } : void 0
       });
     }
     async getHomePageSections(sectionCallback) {
@@ -1026,9 +1028,11 @@ var _Sources = (() => {
       const response = await this.requestManager.schedule(request, 1);
       const data = JSON.parse(response.data ?? "{}");
       const results = this.parser.parseSearchResults(data, false);
+      const nextOffset = offset + limit;
+      const hasMore = typeof data.total === "number" ? nextOffset < data.total : results.length >= limit;
       return App.createPagedResults({
         results,
-        metadata: { offset: offset + limit }
+        metadata: hasMore ? { offset: nextOffset } : void 0
       });
     }
   };
