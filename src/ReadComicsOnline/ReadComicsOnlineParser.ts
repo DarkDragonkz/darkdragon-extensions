@@ -150,7 +150,11 @@ export class ReadComicsOnlineParser {
                 url = url.trim();
                 // Assicuriamoci che l'URL sia assoluto e corretto
                 if (url.startsWith('/')) url = BASE_URL + url
-                if (!url.startsWith('http')) url = url.trim() // A volte sono url relativi strani
+                if (!url.startsWith('http')) {
+                    url = url.startsWith('/')
+                        ? BASE_URL + url
+                        : `${BASE_URL}/${url.replace(/^\/+/, '')}`
+                }
                 
                 // Evitiamo duplicati
                 if (!pages.includes(url)) {

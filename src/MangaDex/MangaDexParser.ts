@@ -110,8 +110,17 @@ export class MangaDexParser {
 
     parseChapterDetails(data: any, mangaId: string, chapterId: string): ChapterDetails {
         const baseUrl = data.baseUrl
-        const hash = data.chapter.hash
-        const files = data.chapter.data 
+        const chapter = data.chapter
+        const hash = chapter?.hash
+        const files = chapter?.data
+
+        if (!baseUrl || !hash || !Array.isArray(files)) {
+            return App.createChapterDetails({
+                id: chapterId,
+                mangaId: mangaId,
+                pages: []
+            })
+        }
 
         const pages = files.map((file: string) => `${baseUrl}/data/${hash}/${file}`)
 
@@ -130,7 +139,7 @@ export class MangaDexParser {
             const attr = manga.attributes
             const title = attr.title?.en ?? Object.values(attr.title || {})[0] ?? 'Unknown'
             
-            const coverRel = manga.relationships.find((r: any) => r.type === 'cover_art')
+            const coverRel = manga.relationships?.find((r: any) => r.type === 'cover_art')
             const fileName = coverRel?.attributes?.fileName
             
             let image = 'https://paperback.moe/icons/logo-alt.svg'

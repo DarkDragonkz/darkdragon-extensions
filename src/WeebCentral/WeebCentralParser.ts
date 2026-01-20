@@ -163,7 +163,7 @@ export class Parser {
         const results: PartialSourceManga[] = []
         for (const item of $('article.flex.gap-4').toArray()) {
             const id = $('a', item).attr('href')?.split('/series/')[1]?.split('/')[0] ?? ''
-            if (id == '' || typeof id != 'string') throw new Error('Id is empty')
+            if (id == '' || typeof id != 'string') continue
             
             const title = $('a.link.link-hover', item).first().text().trim() ?? ''
             const image = $('img', item).attr('src') ?? $('img', item).attr('data-src') ?? ''

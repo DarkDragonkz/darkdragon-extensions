@@ -128,7 +128,7 @@ export class WeebCentral implements SearchResultsProviding, MangaProviding, Chap
 
         // Title search
         if (query.title) {
-            searchParams = searchParams.concat(encodeURI(`&text=${query.title ?? ''}`))
+            searchParams = searchParams.concat(`&text=${encodeURIComponent(query.title)}`)
         }
 
         // Tag search

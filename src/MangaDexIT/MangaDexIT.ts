@@ -147,10 +147,12 @@ export class MangaDexIT implements SearchResultsProviding, MangaProviding, Chapt
         const data = JSON.parse(response.data ?? '{}')
         
         const results = this.parser.parseSearchResults(data, false)
+        const nextOffset = offset + limit
+        const hasMore = typeof data.total === 'number' ? nextOffset < data.total : results.length >= limit
 
         return App.createPagedResults({
             results: results,
-            metadata: { offset: offset + limit }
+            metadata: hasMore ? { offset: nextOffset } : undefined
         })
     }
 
@@ -211,10 +213,12 @@ export class MangaDexIT implements SearchResultsProviding, MangaProviding, Chapt
         const data = JSON.parse(response.data ?? '{}')
         
         const results = this.parser.parseSearchResults(data, false)
+        const nextOffset = offset + limit
+        const hasMore = typeof data.total === 'number' ? nextOffset < data.total : results.length >= limit
 
         return App.createPagedResults({
             results: results,
-            metadata: { offset: offset + limit }
+            metadata: hasMore ? { offset: nextOffset } : undefined
         })
     }
 }

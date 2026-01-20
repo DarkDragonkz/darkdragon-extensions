@@ -193,7 +193,7 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
                 .addQueryParameter('page', page.toString())
 
         if (query?.title) {
-            builder.addQueryParameter('keyword', encodeURIComponent(query.title))
+            builder.addQueryParameter('keyword', query.title)
         }
 
         if (query?.includedTags && query.includedTags.length > 0) {

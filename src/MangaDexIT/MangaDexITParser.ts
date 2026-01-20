@@ -85,7 +85,7 @@ export class MangaDexITParser {
             const attr = chapter.attributes
             
             // Saltiamo capitoli esterni o senza pagine
-            if (attr.pages === 0 || attr.externalUrl !== null) continue;
+            if (attr.pages === 0 || attr.externalUrl) continue;
 
             const chapNum = parseFloat(attr.chapter)
             // Usa una chiave univoca per il numero (gestisce decimali es. 10.5)
