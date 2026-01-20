@@ -830,9 +830,14 @@ ${item.alt_titles.join(", ")}`;
           chapterMap.set(chapNumStr, item);
         } else {
           const existing = chapterMap.get(chapNumStr);
+          const isOfficial = (entry) => Boolean(entry.is_official ?? entry.isOfficial ?? entry.official);
           const scoreExisting = (existing.likes ?? existing.up_count ?? 0) * 1e3 + (existing.views ?? 0);
           const scoreCurrent = (item.likes ?? item.up_count ?? 0) * 1e3 + (item.views ?? 0);
-          if (scoreCurrent > scoreExisting) {
+          const existingOfficial = isOfficial(existing);
+          const currentOfficial = isOfficial(item);
+          if (currentOfficial && !existingOfficial) {
+            chapterMap.set(chapNumStr, item);
+          } else if (currentOfficial === existingOfficial && scoreCurrent > scoreExisting) {
             chapterMap.set(chapNumStr, item);
           }
         }
