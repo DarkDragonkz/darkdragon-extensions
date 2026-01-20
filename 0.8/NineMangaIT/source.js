@@ -743,6 +743,9 @@ var _Sources = (() => {
       else if (src.startsWith("http:")) src = src.replace("http:", "https:");
       return src;
     }
+    escapeRegExp(value) {
+      return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
     parseMangaDetails($, mangaId) {
       let title = $('h1[itemprop="name"]').first().text().trim();
       if (!title) title = $(".book-title").text().trim();
@@ -804,7 +807,9 @@ var _Sources = (() => {
         if (filePart.match(/-\d+-\d+\.html$/)) continue;
         seenIds.add(chapterId);
         let titleRaw = $link.attr("title") || $link.text().trim();
-        titleRaw = titleRaw.replace(new RegExp(`^${mangaId.replace(/-/g, " ")}\\s+`, "i"), "");
+        const mangaName = mangaId.replace(/-/g, " ");
+        const mangaNameRegex = new RegExp(`^${this.escapeRegExp(mangaName)}\\s+`, "i");
+        titleRaw = titleRaw.replace(mangaNameRegex, "");
         titleRaw = titleRaw.replace(mangaId, "").trim();
         const dateText = $link.parent().find("span").last().text().trim();
         let time = /* @__PURE__ */ new Date();
@@ -852,8 +857,13 @@ var _Sources = (() => {
           pages: singlePageImages
         });
       }
-      const promises = pageUrls.map((url) => this.getImage(url, source));
-      const results = await Promise.all(promises);
+      const results = [];
+      const batchSize = 5;
+      for (let i = 0; i < pageUrls.length; i += batchSize) {
+        const batch = pageUrls.slice(i, i + batchSize);
+        const batchResults = await Promise.all(batch.map((url) => this.getImage(url, source)));
+        results.push(...batchResults);
+      }
       const allPages = [...new Set(results.flat())];
       return App.createChapterDetails({
         id: chapterId,

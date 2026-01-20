@@ -823,9 +823,12 @@ ${item.alt_titles.join(", ")}`;
     }
     parseChapters(items) {
       const chapters = [];
+      const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const chapterMap = /* @__PURE__ */ new Map();
       for (const item of items) {
-        const chapNumStr = String(item.number);
+        const chapNumRaw = item.number;
+        const chapNumStr = chapNumRaw != null ? String(chapNumRaw) : `id:${item.chapter_id ?? item.id ?? ""}`;
+        if (!chapNumStr) continue;
         if (!chapterMap.has(chapNumStr)) {
           chapterMap.set(chapNumStr, item);
         } else {
@@ -849,16 +852,19 @@ ${item.alt_titles.join(", ")}`;
         if (item.created_at) {
           time = new Date(item.created_at * 1e3);
         }
-        const chapNum = parseFloat(item.number);
-        const chapNumStr = String(item.number);
+        const chapNumRaw = item.number;
+        const chapNumStr = chapNumRaw != null ? String(chapNumRaw) : "";
+        const chapNum = chapNumRaw != null ? parseFloat(chapNumRaw) : NaN;
+        const chapNumValue = Number.isNaN(chapNum) ? 0 : chapNum;
         const volumeNum = item.volume ? parseFloat(item.volume) : void 0;
         const volumeStr = item.volume ? String(item.volume) : "";
         let name = item.name ? String(item.name).trim() : "";
-        if (name === chapNumStr) name = "";
-        name = name.replace(new RegExp(`^(chapter|ch\\.?)\\s*${chapNum}`, "i"), "").trim();
+        if (chapNumStr && name === chapNumStr) name = "";
+        if (!Number.isNaN(chapNum)) {
+          name = name.replace(new RegExp(`^(chapter|ch\\.?)\\s*${escapeRegExp(chapNumStr)}`, "i"), "").trim();
+        }
         name = name.replace(/^[---]\s*/, "").trim();
         if (volumeStr && name) {
-          const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
           const volPattern = escapeRegExp(volumeStr);
           const chPattern = escapeRegExp(chapNumStr);
           const volChRegex = new RegExp(`^vol(?:ume)?\\.?\\s*${volPattern}\\s*ch(?:apter)?\\.?\\s*${chPattern}$`, "i");
@@ -869,7 +875,7 @@ ${item.alt_titles.join(", ")}`;
         chapters.push(App.createChapter({
           id: String(item.chapter_id),
           name,
-          chapNum,
+          chapNum: chapNumValue,
           volume: volumeNum,
           time,
           langCode: item.language || "en",

@@ -738,7 +738,7 @@ var _Sources = (() => {
      */
     extractNextData(html) {
       try {
-        const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">([^<]+)<\/script>/);
+        const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
         if (match && match[1]) {
           return JSON.parse(match[1]);
         }
@@ -828,7 +828,11 @@ var _Sources = (() => {
         }
       }
       if (pages.length === 0) {
-        throw new Error(`MangaPark: No images found for chapter ${chapterId}.`);
+        return App.createChapterDetails({
+          id: chapterId,
+          mangaId,
+          pages: ["https://paperback.moe/icons/logo-alt.svg"]
+        });
       }
       return App.createChapterDetails({
         id: chapterId,

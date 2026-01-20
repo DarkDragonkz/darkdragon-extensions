@@ -1211,7 +1211,7 @@ var _Sources = (() => {
       const $ = this.cheerio.load(response.data);
       return this.parser.parseChapterDetails($, mangaId, chapterId);
     }
-    async getTags() {
+    async getSearchTags() {
       const request = App.createRequest({
         url: `${this.baseUrl}/archive`,
         // Carichiamo archive che è più leggero della home per i tag
@@ -1220,6 +1220,9 @@ var _Sources = (() => {
       const response = await this.requestManager.schedule(request, this.RETRIES);
       const $ = this.cheerio.load(response.data);
       return this.parser.parseTags($, this.baseUrl);
+    }
+    async getTags() {
+      return this.getSearchTags();
     }
     async getSearchResults(query, metadata) {
       let page = metadata?.page ?? 1;
