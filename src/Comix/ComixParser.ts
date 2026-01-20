@@ -130,20 +130,33 @@ export class ComixParser {
             }
 
             const chapNum = parseFloat(item.number)
+            const chapNumStr = String(item.number)
+            const volumeNum = item.volume ? parseFloat(item.volume) : undefined
+            const volumeStr = item.volume ? String(item.volume) : ''
 
             // FIX NOMENCLATURA
             let name = item.name ? String(item.name).trim() : ''
 
-            if (name === String(chapNum)) name = ''
+            if (name === chapNumStr) name = ''
 
             name = name.replace(new RegExp(`^(chapter|ch\\.?)\\s*${chapNum}`, 'i'), '').trim()
-            name = name.replace(/^[-–—]\s*/, '').trim()
+            name = name.replace(/^[---]\s*/, '').trim()
+
+            if (volumeStr && name) {
+                const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+                const volPattern = escapeRegExp(volumeStr)
+                const chPattern = escapeRegExp(chapNumStr)
+                const volChRegex = new RegExp(`^vol(?:ume)?\\.?\\s*${volPattern}\\s*ch(?:apter)?\\.?\\s*${chPattern}$`, 'i')
+                if (volChRegex.test(name)) {
+                    name = `Ch. ${chapNumStr} Vol. ${volumeStr}`
+                }
+            }
 
             chapters.push(App.createChapter({
                 id: String(item.chapter_id),
                 name: name,
                 chapNum: chapNum,
-                volume: item.volume ? parseFloat(item.volume) : undefined,
+                volume: volumeNum,
                 time: time,
                 langCode: item.language || 'en',
                 sortingIndex: i 
