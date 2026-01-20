@@ -46,7 +46,7 @@ export class Parser {
         }
 
         const genres: Tag[] = []
-        for (const genreObj of $('a', $('strong:contains("Tags(s)")').siblings()).toArray()) {
+        for (const genreObj of $('a', $('strong:contains("Tags")').siblings()).toArray()) {
             const genre = $(genreObj).text().trim()
             const id = encodeURI(genre)
             genres.push(App.createTag({ id, label: genre }))

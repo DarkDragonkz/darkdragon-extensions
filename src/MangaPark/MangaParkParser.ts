@@ -19,7 +19,7 @@ export class MangaParkParser {
      */
     private extractNextData(html: string): any {
         try {
-            const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">([^<]+)<\/script>/)
+            const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/)
             if (match && match[1]) {
                 return JSON.parse(match[1])
             }
@@ -158,8 +158,11 @@ export class MangaParkParser {
 
         if (pages.length === 0) {
             // Fallback estremo se il JSON non ha le immagini (raro ma possibile su capitoli protetti)
-            // In quel caso probabilmente serve un token o cookie che non abbiamo.
-            throw new Error(`MangaPark: No images found for chapter ${chapterId}.`)
+            return App.createChapterDetails({
+                id: chapterId,
+                mangaId: mangaId,
+                pages: ['https://paperback.moe/icons/logo-alt.svg']
+            })
         }
 
         return App.createChapterDetails({

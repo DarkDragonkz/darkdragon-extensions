@@ -27,6 +27,10 @@ export class NineMangaITParser {
         return src
     }
 
+    private escapeRegExp(value: string): string {
+        return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    }
+
     parseMangaDetails($: any, mangaId: string): SourceManga {
         let title = $('h1[itemprop="name"]').first().text().trim()
         if (!title) title = $('.book-title').text().trim()
@@ -105,7 +109,9 @@ export class NineMangaITParser {
 
             let titleRaw = $link.attr('title') || $link.text().trim()
             // Rimuoviamo il nome del manga dal titolo del capitolo per pulizia
-            titleRaw = titleRaw.replace(new RegExp(`^${mangaId.replace(/-/g, ' ')}\\s+`, 'i'), '')
+            const mangaName = mangaId.replace(/-/g, ' ')
+            const mangaNameRegex = new RegExp(`^${this.escapeRegExp(mangaName)}\\s+`, 'i')
+            titleRaw = titleRaw.replace(mangaNameRegex, '')
             titleRaw = titleRaw.replace(mangaId, '').trim()
 
             const dateText = $link.parent().find('span').last().text().trim()
@@ -171,10 +177,13 @@ export class NineMangaITParser {
         // PARALLEL REQUESTS:
         // Creiamo una promise per ogni pagina. Il RequestManager di Paperback gestirà la coda
         // per non superare il rate limit (3 req/s), ma non aspettiamo il parsing di una per iniziare l'altra.
-        const promises = pageUrls.map(url => this.getImage(url, source))
-        
-        // Attendiamo che tutte finiscano
-        const results = await Promise.all(promises)
+        const results: string[][] = []
+        const batchSize = 5
+        for (let i = 0; i < pageUrls.length; i += batchSize) {
+            const batch = pageUrls.slice(i, i + batchSize)
+            const batchResults = await Promise.all(batch.map(url => this.getImage(url, source)))
+            results.push(...batchResults)
+        }
         
         // Appiattiamo l'array di array e rimuoviamo duplicati
         const allPages = [...new Set(results.flat())]

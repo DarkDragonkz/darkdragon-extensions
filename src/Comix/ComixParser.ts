@@ -84,12 +84,15 @@ export class ComixParser {
 
     parseChapters(items: any[]): Chapter[] {
         const chapters: Chapter[] = []
+        const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
         
         // --- LOGICA DI DEDUPLICAZIONE (BEST VERSION) ---
         const chapterMap = new Map<string, any>()
 
         for (const item of items) {
-            const chapNumStr = String(item.number) // Usiamo stringa per evitare problemi float
+            const chapNumRaw = item.number
+            const chapNumStr = chapNumRaw != null ? String(chapNumRaw) : `id:${item.chapter_id ?? item.id ?? ''}` // Usiamo stringa per evitare problemi float
+            if (!chapNumStr) continue
 
             // Se è il primo che incontriamo con questo numero, lo salviamo
             if (!chapterMap.has(chapNumStr)) {
@@ -129,21 +132,24 @@ export class ComixParser {
                 time = new Date(item.created_at * 1000) 
             }
 
-            const chapNum = parseFloat(item.number)
-            const chapNumStr = String(item.number)
+            const chapNumRaw = item.number
+            const chapNumStr = chapNumRaw != null ? String(chapNumRaw) : ''
+            const chapNum = chapNumRaw != null ? parseFloat(chapNumRaw) : NaN
+            const chapNumValue = Number.isNaN(chapNum) ? 0 : chapNum
             const volumeNum = item.volume ? parseFloat(item.volume) : undefined
             const volumeStr = item.volume ? String(item.volume) : ''
 
             // FIX NOMENCLATURA
             let name = item.name ? String(item.name).trim() : ''
 
-            if (name === chapNumStr) name = ''
+            if (chapNumStr && name === chapNumStr) name = ''
 
-            name = name.replace(new RegExp(`^(chapter|ch\\.?)\\s*${chapNum}`, 'i'), '').trim()
+            if (!Number.isNaN(chapNum)) {
+                name = name.replace(new RegExp(`^(chapter|ch\\.?)\\s*${escapeRegExp(chapNumStr)}`, 'i'), '').trim()
+            }
             name = name.replace(/^[---]\s*/, '').trim()
 
             if (volumeStr && name) {
-                const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
                 const volPattern = escapeRegExp(volumeStr)
                 const chPattern = escapeRegExp(chapNumStr)
                 const volChRegex = new RegExp(`^vol(?:ume)?\\.?\\s*${volPattern}\\s*ch(?:apter)?\\.?\\s*${chPattern}$`, 'i')
@@ -155,7 +161,7 @@ export class ComixParser {
             chapters.push(App.createChapter({
                 id: String(item.chapter_id),
                 name: name,
-                chapNum: chapNum,
+                chapNum: chapNumValue,
                 volume: volumeNum,
                 time: time,
                 langCode: item.language || 'en',

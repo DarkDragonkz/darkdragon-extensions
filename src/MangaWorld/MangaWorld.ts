@@ -104,7 +104,7 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
         return this.parser.parseChapterDetails($, mangaId, chapterId)
     }
 
-    async getTags(): Promise<TagSection[]> {
+    async getSearchTags(): Promise<TagSection[]> {
         const request = App.createRequest({
             url: `${this.baseUrl}/archive`, // Carichiamo archive che è più leggero della home per i tag
             method: 'GET',
@@ -112,6 +112,9 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
         const response = await this.requestManager.schedule(request, this.RETRIES)
         const $ = this.cheerio.load(response.data)
         return this.parser.parseTags($, this.baseUrl)
+    }
+    async getTags(): Promise<TagSection[]> {
+        return this.getSearchTags()
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
@@ -211,3 +214,6 @@ export class MangaWorld implements SearchResultsProviding, MangaProviding, Chapt
         })
     }
 }
+
+
+

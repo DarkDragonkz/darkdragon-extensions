@@ -88,8 +88,18 @@ export class ReadAllComics implements SearchResultsProviding, MangaProviding, Ch
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
+        let url = chapterId
+        if (!url.startsWith('http')) {
+            url = `${this.baseUrl}/${url.replace(/^\/+/, '')}`
+        }
+        const baseHost = new URL(this.baseUrl).host
+        const parsedUrl = new URL(url)
+        if (parsedUrl.host !== baseHost) {
+            throw new Error('Invalid chapter URL')
+        }
+
         const request = App.createRequest({
-            url: chapterId,
+            url: url,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
