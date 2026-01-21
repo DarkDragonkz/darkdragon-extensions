@@ -5,6 +5,7 @@ import {
     HomeSection,
     PagedResults,
     SearchRequest,
+    TagSection,
     SourceInfo,
     SourceIntents,
     SourceManga,
@@ -156,6 +157,18 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
             results: manga,
             metadata: { page: page },
         })
+    }
+
+    async getSearchTags(): Promise<TagSection[]> {
+        const request = App.createRequest({ url: `${this.baseUrl}/category/`, method: 'GET' })
+        const response = await this.requestManager.schedule(request, 1)
+        this.checkResponseError(response)
+        const $ = this.cheerio.load(response.data)
+        return this.parser.parseTags($)
+    }
+
+    async getTags(): Promise<TagSection[]> {
+        return this.getSearchTags()
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {

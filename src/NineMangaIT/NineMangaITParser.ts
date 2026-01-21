@@ -31,6 +31,35 @@ export class NineMangaITParser {
         return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     }
 
+    parseTags($: any): TagSection[] {
+        const tags: Tag[] = []
+        const seen = new Set<string>()
+
+        $('a[href*="/category/"]').each((_: any, el: any) => {
+            const $el = $(el)
+            const href = $el.attr('href') ?? ''
+            const match = href.match(/\/category\/([^?#]+?)(?:\.html)?(?:$|[?#])/i)
+            const rawId = match?.[1]?.trim() ?? ''
+            if (!rawId) return
+
+            if (/^index_\d+$/i.test(rawId)) return
+            if (/^(updated|completed)$/i.test(rawId)) return
+            if (/^[a-z]$/i.test(rawId) || rawId === '0-9') return
+
+            const label = ($el.attr('title') ?? $el.text()).replace(/\s+/g, ' ').trim()
+            if (!label || /^(in corso|completato)$/i.test(label)) return
+
+            const normalizedId = rawId.replace(/\s+/g, ' ').trim()
+            const dedupeKey = normalizedId.toLowerCase()
+            if (seen.has(dedupeKey)) return
+            seen.add(dedupeKey)
+
+            tags.push(App.createTag({ id: normalizedId, label: label }))
+        })
+
+        return [App.createTagSection({ id: '0', label: 'Generi', tags: tags })]
+    }
+
     parseMangaDetails($: any, mangaId: string): SourceManga {
         let title = $('h1[itemprop="name"]').first().text().trim()
         if (!title) title = $('.book-title').text().trim()
@@ -279,6 +308,10 @@ export class NineMangaITParser {
         const latestItems: PartialSourceManga[] = []
 
         const cleanTitle = (t: string) => t.replace(/(\s+(Vol\.|Ch\.|Chapter\.)?\s*\d+(\.\d+)?)+$/i, '').trim()
+        const extractChapterNumber = (t: string) => {
+            const matches = t.match(/(\d+(\.\d+)?)/g)
+            return matches && matches.length > 0 ? matches[matches.length - 1] : undefined
+        }
 
         const parseList = (selector: string, targetArray: PartialSourceManga[], subtitlePrefix: string | undefined) => {
             const list = $home(selector).toArray()
@@ -298,8 +331,8 @@ export class NineMangaITParser {
                 let subtitle = undefined
                 if (subtitlePrefix) {
                      // Cerca info capitolo
-                     const numMatch = rawTitle.match(/(\d+(\.\d+)?)$/)
-                     if (numMatch) subtitle = `Ch. ${numMatch[0]}`
+                     const numMatch = extractChapterNumber(rawTitle)
+                     if (numMatch) subtitle = `Ch. ${numMatch}`
                 }
 
                 targetArray.push(App.createPartialSourceManga({ 
@@ -319,7 +352,30 @@ export class NineMangaITParser {
         newSection.items = newItems
         sectionCallback(newSection)
 
-        parseList('#tab_content_2 li', latestItems, 'Ch.')
+        const updateCards = $home('div.middle-box dl').toArray()
+        for (const card of updateCards) {
+            const $card = $home(card)
+            const mangaLink = $card.find('dt a[href*="/manga/"]').first()
+            const href = mangaLink.attr('href')
+            const id = href?.split('/manga/')[1]?.replace('.html', '')
+            if (!id) continue
+
+            const image = this.getImageSrc($card.find('dt').first())
+            const rawTitle = mangaLink.attr('title') ?? $card.find('dd.book-list b').text().trim()
+            const title = cleanTitle(rawTitle)
+            const subtitle = $card.find('dd.chapter a').first().text().trim() || undefined
+
+            latestItems.push(App.createPartialSourceManga({
+                mangaId: id,
+                image: image,
+                title: title,
+                subtitle: subtitle
+            }))
+        }
+
+        if (latestItems.length === 0) {
+            parseList('#tab_content_2 li', latestItems, 'Ch.')
+        }
         latestSection.items = latestItems
         sectionCallback(latestSection)
     }
