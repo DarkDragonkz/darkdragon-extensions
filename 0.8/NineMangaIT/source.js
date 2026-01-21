@@ -746,6 +746,28 @@ var _Sources = (() => {
     escapeRegExp(value) {
       return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     }
+    parseTags($) {
+      const tags = [];
+      const seen = /* @__PURE__ */ new Set();
+      $('a[href*="/category/"]').each((_, el) => {
+        const $el = $(el);
+        const href = $el.attr("href") ?? "";
+        const match = href.match(/\/category\/([^?#]+?)(?:\.html)?(?:$|[?#])/i);
+        const rawId = match?.[1]?.trim() ?? "";
+        if (!rawId) return;
+        if (/^index_\d+$/i.test(rawId)) return;
+        if (/^(updated|completed)$/i.test(rawId)) return;
+        if (/^[a-z]$/i.test(rawId) || rawId === "0-9") return;
+        const label = ($el.attr("title") ?? $el.text()).replace(/\s+/g, " ").trim();
+        if (!label || /^(in corso|completato)$/i.test(label)) return;
+        const normalizedId = rawId.replace(/\s+/g, " ").trim();
+        const dedupeKey = normalizedId.toLowerCase();
+        if (seen.has(dedupeKey)) return;
+        seen.add(dedupeKey);
+        tags.push(App.createTag({ id: normalizedId, label }));
+      });
+      return [App.createTagSection({ id: "0", label: "Generi", tags })];
+    }
     parseMangaDetails($, mangaId) {
       let title = $('h1[itemprop="name"]').first().text().trim();
       if (!title) title = $(".book-title").text().trim();
@@ -937,6 +959,10 @@ var _Sources = (() => {
       const newItems = [];
       const latestItems = [];
       const cleanTitle = (t) => t.replace(/(\s+(Vol\.|Ch\.|Chapter\.)?\s*\d+(\.\d+)?)+$/i, "").trim();
+      const extractChapterNumber = (t) => {
+        const matches = t.match(/(\d+(\.\d+)?)/g);
+        return matches && matches.length > 0 ? matches[matches.length - 1] : void 0;
+      };
       const parseList = (selector, targetArray, subtitlePrefix) => {
         const list = $home(selector).toArray();
         for (const item of list) {
@@ -950,8 +976,8 @@ var _Sources = (() => {
           const title = cleanTitle(rawTitle);
           let subtitle = void 0;
           if (subtitlePrefix) {
-            const numMatch = rawTitle.match(/(\d+(\.\d+)?)$/);
-            if (numMatch) subtitle = `Ch. ${numMatch[0]}`;
+            const numMatch = extractChapterNumber(rawTitle);
+            if (numMatch) subtitle = `Ch. ${numMatch}`;
           }
           targetArray.push(App.createPartialSourceManga({
             mangaId: id,
@@ -967,7 +993,27 @@ var _Sources = (() => {
       parseList("#tab_content_1 li", newItems, void 0);
       newSection.items = newItems;
       sectionCallback(newSection);
-      parseList("#tab_content_2 li", latestItems, "Ch.");
+      const updateCards = $home("div.middle-box dl").toArray();
+      for (const card of updateCards) {
+        const $card = $home(card);
+        const mangaLink = $card.find('dt a[href*="/manga/"]').first();
+        const href = mangaLink.attr("href");
+        const id = href?.split("/manga/")[1]?.replace(".html", "");
+        if (!id) continue;
+        const image = this.getImageSrc($card.find("dt").first());
+        const rawTitle = mangaLink.attr("title") ?? $card.find("dd.book-list b").text().trim();
+        const title = cleanTitle(rawTitle);
+        const subtitle = $card.find("dd.chapter a").first().text().trim() || void 0;
+        latestItems.push(App.createPartialSourceManga({
+          mangaId: id,
+          image,
+          title,
+          subtitle
+        }));
+      }
+      if (latestItems.length === 0) {
+        parseList("#tab_content_2 li", latestItems, "Ch.");
+      }
       latestSection.items = latestItems;
       sectionCallback(latestSection);
     }
@@ -1127,6 +1173,16 @@ var _Sources = (() => {
         results: manga,
         metadata: { page }
       });
+    }
+    async getSearchTags() {
+      const request = App.createRequest({ url: `${this.baseUrl}/category/`, method: "GET" });
+      const response = await this.requestManager.schedule(request, 1);
+      this.checkResponseError(response);
+      const $ = this.cheerio.load(response.data);
+      return this.parser.parseTags($);
+    }
+    async getTags() {
+      return this.getSearchTags();
     }
     async getHomePageSections(sectionCallback) {
       const requestHome = App.createRequest({ url: this.baseUrl, method: "GET" });
