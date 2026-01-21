@@ -818,21 +818,39 @@ var _Sources = (() => {
       if (chapterLinks.length === 0) {
         chapterLinks = $('a[href*="/chapter/"]').toArray();
       }
+      const normalizeTitle = (value) => value.replace(/\s+/g, " ").trim();
+      const normalizeMangaName = (value) => {
+        const normalized = value.replace(/\+/g, " ").replace(/-/g, " ");
+        try {
+          return decodeURIComponent(normalized).trim();
+        } catch {
+          return normalized.trim();
+        }
+      };
+      const mangaName = normalizeMangaName(mangaId);
+      const mangaNameRegex = mangaName ? new RegExp(`^${this.escapeRegExp(mangaName)}\\s+`, "i") : void 0;
       for (const link of chapterLinks) {
         const $link = $(link);
-        const href = $link.attr("href");
-        if (!href) continue;
-        const parts = href.split("/");
+        const hrefRaw = $link.attr("href")?.trim();
+        if (!hrefRaw) continue;
+        let chapterId = hrefRaw;
+        if (chapterId.startsWith("//")) chapterId = `https:${chapterId}`;
+        chapterId = chapterId.split("?")[0].split("#")[0];
+        if (!chapterId.startsWith("http") && !chapterId.startsWith("/")) {
+          chapterId = `/${chapterId}`;
+        }
+        const cleanedPath = chapterId.replace(/\/+$/, "");
+        const parts = cleanedPath.split("/");
         const filePart = parts.pop() ?? "";
-        const chapterId = filePart.split("?")[0].replace(".html", "");
-        if (seenIds.has(chapterId)) continue;
-        if (filePart.match(/-\d+-\d+\.html$/)) continue;
-        seenIds.add(chapterId);
-        let titleRaw = $link.attr("title") || $link.text().trim();
-        const mangaName = mangaId.replace(/-/g, " ");
-        const mangaNameRegex = new RegExp(`^${this.escapeRegExp(mangaName)}\\s+`, "i");
-        titleRaw = titleRaw.replace(mangaNameRegex, "");
-        titleRaw = titleRaw.replace(mangaId, "").trim();
+        if (!filePart) continue;
+        const chapterKey = filePart.replace(/\.html$/i, "");
+        if (seenIds.has(chapterKey)) continue;
+        if (/-\d+-\d+$/i.test(chapterKey)) continue;
+        seenIds.add(chapterKey);
+        let titleRaw = $link.attr("title") || $link.text();
+        titleRaw = normalizeTitle(titleRaw);
+        if (mangaNameRegex) titleRaw = titleRaw.replace(mangaNameRegex, "");
+        titleRaw = titleRaw.replace(mangaId.replace(/\+/g, " "), "").trim();
         const dateText = $link.parent().find("span").last().text().trim();
         let time = /* @__PURE__ */ new Date();
         if (dateText) {
@@ -916,13 +934,21 @@ var _Sources = (() => {
     async getImageFromCheerio($, source) {
       const arrImages = [];
       $("div.pic_box img.manga_pic").each((_, img) => {
-        const src = $(img).attr("src");
+        const $img = $(img);
+        const src = $img.attr("src") || $img.attr("data-src") || $img.attr("data-original");
         if (src) arrImages.push(src);
       });
       if (arrImages.length === 0) {
         $("img.manga_pic").each((_, img) => {
-          const src = $(img).attr("src");
+          const $img = $(img);
+          const src = $img.attr("src") || $img.attr("data-src") || $img.attr("data-original");
           if (src) arrImages.push(src);
+        });
+      }
+      if (arrImages.length === 0) {
+        $("a.pic_download").each((_, link) => {
+          const href = $(link).attr("href");
+          if (href) arrImages.push(href);
         });
       }
       return arrImages;
