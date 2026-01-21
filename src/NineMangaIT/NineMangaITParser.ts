@@ -121,27 +121,49 @@ export class NineMangaITParser {
             chapterLinks = $('a[href*="/chapter/"]').toArray()
         }
 
+        const normalizeTitle = (value: string) => value.replace(/\s+/g, ' ').trim()
+        const normalizeMangaName = (value: string) => {
+            const normalized = value.replace(/\+/g, ' ').replace(/-/g, ' ')
+            try {
+                return decodeURIComponent(normalized).trim()
+            } catch {
+                return normalized.trim()
+            }
+        }
+        const mangaName = normalizeMangaName(mangaId)
+        const mangaNameRegex = mangaName
+            ? new RegExp(`^${this.escapeRegExp(mangaName)}\\s+`, 'i')
+            : undefined
+
         for (const link of chapterLinks) {
             const $link = $(link)
-            const href = $link.attr('href')
-            if (!href) continue
+            const hrefRaw = $link.attr('href')?.trim()
+            if (!hrefRaw) continue
 
-            const parts = href.split('/')
-            const filePart = parts.pop() ?? '' 
-            const chapterId = filePart.split('?')[0].replace('.html', '')
+            let chapterId = hrefRaw
+            if (chapterId.startsWith('//')) chapterId = `https:${chapterId}`
+            chapterId = chapterId.split('?')[0].split('#')[0]
+            if (!chapterId.startsWith('http') && !chapterId.startsWith('/')) {
+                chapterId = `/${chapterId}`
+            }
+
+            const cleanedPath = chapterId.replace(/\/+$/, '')
+            const parts = cleanedPath.split('/')
+            const filePart = parts.pop() ?? ''
+            if (!filePart) continue
+            const chapterKey = filePart.replace(/\.html$/i, '')
 
             // Evitiamo duplicati o link a pagine specifiche del capitolo (es. -10-1.html)
-            if (seenIds.has(chapterId)) continue
-            if (filePart.match(/-\d+-\d+\.html$/)) continue 
+            if (seenIds.has(chapterKey)) continue
+            if (/-\d+-\d+$/i.test(chapterKey)) continue 
 
-            seenIds.add(chapterId)
+            seenIds.add(chapterKey)
 
-            let titleRaw = $link.attr('title') || $link.text().trim()
+            let titleRaw = $link.attr('title') || $link.text()
+            titleRaw = normalizeTitle(titleRaw)
             // Rimuoviamo il nome del manga dal titolo del capitolo per pulizia
-            const mangaName = mangaId.replace(/-/g, ' ')
-            const mangaNameRegex = new RegExp(`^${this.escapeRegExp(mangaName)}\\s+`, 'i')
-            titleRaw = titleRaw.replace(mangaNameRegex, '')
-            titleRaw = titleRaw.replace(mangaId, '').trim()
+            if (mangaNameRegex) titleRaw = titleRaw.replace(mangaNameRegex, '')
+            titleRaw = titleRaw.replace(mangaId.replace(/\+/g, ' '), '').trim()
 
             const dateText = $link.parent().find('span').last().text().trim()
             let time = new Date()
@@ -251,16 +273,25 @@ export class NineMangaITParser {
         
         // Selettore Desktop
         $('div.pic_box img.manga_pic').each((_: any, img: any) => {
-             const src = $(img).attr('src')
-             if (src) arrImages.push(src)
+            const $img = $(img)
+            const src = $img.attr('src') || $img.attr('data-src') || $img.attr('data-original')
+            if (src) arrImages.push(src)
         })
 
         // Selettore Mobile/Fallback
         if (arrImages.length === 0) {
-             $('img.manga_pic').each((_: any, img: any) => {
-                 const src = $(img).attr('src')
-                 if (src) arrImages.push(src)
-             })
+            $('img.manga_pic').each((_: any, img: any) => {
+                const $img = $(img)
+                const src = $img.attr('src') || $img.attr('data-src') || $img.attr('data-original')
+                if (src) arrImages.push(src)
+            })
+        }
+
+        if (arrImages.length === 0) {
+            $('a.pic_download').each((_: any, link: any) => {
+                const href = $(link).attr('href')
+                if (href) arrImages.push(href)
+            })
         }
 
         return arrImages
