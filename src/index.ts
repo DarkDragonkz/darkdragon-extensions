@@ -16,6 +16,7 @@ import { NineMangaIT, NineMangaITInfo } from './NineMangaIT'
 import { ReadAllComics, ReadAllComicsInfo } from './ReadAllComics'
 import { ReadComicsOnline, ReadComicsOnlineInfo } from './ReadComicsOnline'
 import { WeebCentral, WeebCentralInfo } from './WeebCentral'
+import { MangaBall, MangaBallInfo } from './MangaBall'
 // Aggiungi XoxoComic qui
 import { XoxoComic, XoxoComicInfo } from './XoxoComic'
 
@@ -32,5 +33,6 @@ export const NineMangaITSource = new NineMangaIT(cheerio)
 export const ReadAllComicsSource = new ReadAllComics(cheerio)
 export const ReadComicsOnlineSource = new ReadComicsOnline(cheerio)
 export const WeebCentralSource = new WeebCentral(cheerio)
+export const MangaBallSource = new MangaBall(cheerio)
 // Esportazione corretta per XoxoComic
 export const XoxoComicSource = new XoxoComic(cheerio)
