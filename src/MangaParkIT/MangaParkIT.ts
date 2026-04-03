@@ -28,9 +28,9 @@ const MP_DOMAIN = 'https://mangapark.io'
 export const MangaParkITInfo: SourceInfo = {
     version: '1.0.5',
     name: 'MangaPark IT',
-    description: 'Estensione per MangaPark (Solo Italiano)',
+    description: 'Italian-only MangaPark source.',
     author: 'DarkDragonkz',
-    authorWebsite: 'http://github.com/DarkDragonkz',
+    authorWebsite: 'https://github.com/DarkDragonkz',
     icon: 'icon.png',
     contentRating: ContentRating.EVERYONE,
     language: 'it',
@@ -180,7 +180,7 @@ export class MangaParkIT implements SearchResultsProviding, MangaProviding, Chap
     }
 
     // QUESTA E' LA FUNZIONE CHE MANCAVA
-    async getCloudflareBypassRequest(): Promise<Request> {
+    async getCloudflareBypassRequestAsync(): Promise<Request> {
         return App.createRequest({
             url: this.baseUrl,
             method: 'GET',

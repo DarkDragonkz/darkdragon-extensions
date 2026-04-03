@@ -169,7 +169,7 @@ export class MangaBallParser {
         const raw = $('.alternate-name-container').first().text().replace(/\s+/g, ' ').trim()
         if (!raw) return []
 
-        const parts = raw.split('/').map((part) => part.trim()).filter(Boolean)
+        const parts = raw.split('/').map((part: string) => part.trim()).filter(Boolean)
         return Array.from(new Set(parts))
     }
 

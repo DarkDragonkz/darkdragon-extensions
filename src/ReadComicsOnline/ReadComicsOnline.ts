@@ -102,7 +102,7 @@ export class ReadComicsOnline implements SearchResultsProviding, MangaProviding,
 
         const response = await this.requestManager.schedule(request, 1)
         try {
-            const json = JSON.parse(response.data)
+            const json = JSON.parse(response.data ?? '{}')
             const manga = this.parser.parseSearchJson(json)
             return App.createPagedResults({
                 results: manga,

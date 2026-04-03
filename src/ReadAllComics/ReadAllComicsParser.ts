@@ -222,7 +222,7 @@ export class ReadAllComicsParser {
             id: 'latest', 
             title: 'Latest Added 🔥', 
             containsMoreItems: true,
-            type: HomeSectionType.continuous 
+            type: HomeSectionType.doubleRow
         })
         
         latestSection.items = this.parseGridItems($)

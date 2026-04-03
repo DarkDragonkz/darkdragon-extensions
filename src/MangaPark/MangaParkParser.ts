@@ -231,7 +231,7 @@ export class MangaParkParser {
             id: 'latest', 
             title: 'Latest Releases 🆕', 
             containsMoreItems: true, 
-            type: HomeSectionType.continuous 
+            type: HomeSectionType.doubleRow
         })
         const latItems = this.mapJSONToItems(blocks.latest_comics || [])
         latestSection.items = latItems

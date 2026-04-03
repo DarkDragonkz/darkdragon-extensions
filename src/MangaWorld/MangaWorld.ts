@@ -26,8 +26,8 @@ export const MangaWorldInfo: SourceInfo = {
     version: '3.6.0', // Bump version: Safety & Logic Fixes
     name: 'MangaWorld',
     description: 'Extension that pulls manga from MangaWorld. Optimized for speed and safety.',
-    author: 'DarkDragonkzz',
-    authorWebsite: 'https://github.com/DarkDragonkzz',
+    author: 'DarkDragonkz',
+    authorWebsite: 'https://github.com/DarkDragonkz',
     icon: 'icon.png',
     contentRating: ContentRating.MATURE,
     language: 'it',

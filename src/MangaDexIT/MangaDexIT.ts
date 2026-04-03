@@ -1,5 +1,4 @@
 import {
-    Source,
     Chapter,
     ChapterDetails,
     HomeSection,
@@ -26,8 +25,9 @@ export const MangaDexITInfo: SourceInfo = {
     version: '1.2.0', // Bump version (Pagination & Deduplication)
     name: 'MangaDex IT',
     icon: 'icon.png',
-    author: 'DarkDragonkzz',
-    description: 'Estensione Italiana per MangaDex. Include ricerca Smart ID e copertine HD. Filtra duplicati.',
+    author: 'DarkDragonkz',
+    authorWebsite: 'https://github.com/DarkDragonkz',
+    description: 'Italian MangaDex source with smart ID search and deduplicated chapters.',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: 'https://mangadex.org',
     sourceTags: [
@@ -160,7 +160,7 @@ export class MangaDexIT implements SearchResultsProviding, MangaProviding, Chapt
         // La Home italiana è già leggera (3 sezioni), la manteniamo così ma con limit ottimizzato a 15
         const sections = [
             App.createHomeSection({ id: 'popular', title: 'Popolari (IT) 🔥', containsMoreItems: true, type: HomeSectionType.singleRowLarge }),
-            App.createHomeSection({ id: 'latest', title: 'Ultime Uscite (IT) 🆙', containsMoreItems: true, type: HomeSectionType.continuous }),
+            App.createHomeSection({ id: 'latest', title: 'Ultime Uscite (IT) 🆙', containsMoreItems: true, type: HomeSectionType.doubleRow }),
             App.createHomeSection({ id: 'new', title: 'Nuovi Arrivi (IT) 🆕', containsMoreItems: true, type: HomeSectionType.singleRowNormal })
         ]
 
@@ -182,7 +182,7 @@ export class MangaDexIT implements SearchResultsProviding, MangaProviding, Chapt
                 const response = await this.requestManager.schedule(request, 1)
                 const data = JSON.parse(response.data ?? '{}')
                 
-                const useHighQuality = (section.type === HomeSectionType.singleRowLarge)
+                const useHighQuality = section.id === 'popular'
                 section.items = this.parser.parseSearchResults(data, useHighQuality)
                 
                 sectionCallback(section)

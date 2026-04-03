@@ -280,7 +280,7 @@ export class BatCaveParser {
             id: 'latest', 
             title: 'Latest Updates 🆙', 
             containsMoreItems: true, 
-            type: HomeSectionType.continuous 
+            type: HomeSectionType.doubleRow
         })
         latestSection.items = this.parseGridItems($, '.sect--latest .latest', '.latest__chapter')
         sectionCallback(latestSection)

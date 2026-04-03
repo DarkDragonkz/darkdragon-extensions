@@ -25,9 +25,10 @@ const IT_DOMAIN = 'https://it.ninemanga.com'
 
 export const NineMangaITInfo: SourceInfo = {
     version: '1.4.0', // Major bump per l'ottimizzazione parallela
-    name: 'NineMangaIT',
-    description: 'Extension that pulls manga from it.ninemanga.com',
-    author: 'DarkDragonkzz',
+    name: 'NineManga IT',
+    description: 'Italian NineManga source.',
+    author: 'DarkDragonkz',
+    authorWebsite: 'https://github.com/DarkDragonkz',
     icon: 'icon.png',
     contentRating: ContentRating.EVERYONE,
     language: 'it',
@@ -203,7 +204,7 @@ export class NineMangaIT implements SearchResultsProviding, MangaProviding, Chap
         return App.createPagedResults({ results: [] })
     }
 
-    async getCloudflareBypassRequest(): Promise<Request> {
+    async getCloudflareBypassRequestAsync(): Promise<Request> {
         return App.createRequest({
             url: this.baseUrl,
             method: 'GET',

@@ -228,7 +228,7 @@ export class ReadComicsOnlineParser {
             id: 'latest', 
             title: 'Latest Comics 🆕', 
             containsMoreItems: true, 
-            type: HomeSectionType.continuous // UI MIGLIORATA
+            type: HomeSectionType.doubleRow
         })
         
         // Riutilizziamo parseGridItems logic

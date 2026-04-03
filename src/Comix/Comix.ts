@@ -193,12 +193,12 @@ export class Comix implements SearchResultsProviding, MangaProviding, ChapterPro
             },
             {
                 request: App.createRequest({ url: `${this.apiUrl}/manga?order[chapter_updated_at]=desc&page=1&limit=20&scope=hot`, method: 'GET' }),
-                section: App.createHomeSection({ id: 'updatesHot', title: 'Hot Updates ⚡', containsMoreItems: true, type: HomeSectionType.continuous }),
+                section: App.createHomeSection({ id: 'updatesHot', title: 'Hot Updates ⚡', containsMoreItems: true, type: HomeSectionType.doubleRow }),
                 context: 'latest'
             },
             {
                 request: App.createRequest({ url: `${this.apiUrl}/manga?order[chapter_updated_at]=desc&page=1&limit=20&scope=new`, method: 'GET' }),
-                section: App.createHomeSection({ id: 'updatesNew', title: 'Latest Updates 🆙', containsMoreItems: true, type: HomeSectionType.continuous }),
+                section: App.createHomeSection({ id: 'updatesNew', title: 'Latest Updates 🆙', containsMoreItems: true, type: HomeSectionType.doubleRow }),
                 context: 'latest'
             }
         ]

@@ -22,11 +22,11 @@ const MD_API = 'https://api.mangadex.org'
 
 export const MangaDexInfo: SourceInfo = {
     version: '3.2.0', // Bump version (Deduplication & Light Home)
-    name: 'MangaDex (EN)',
+    name: 'MangaDex',
     icon: 'icon.png',
     author: 'DarkDragonkz',
     authorWebsite: 'https://github.com/DarkDragonkz',
-    description: 'MangaDex English source. Deduplicates chapters and optimized for speed.',
+    description: 'English MangaDex source with deduplicated chapters.',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: 'https://mangadex.org',
     sourceTags: [
@@ -141,7 +141,7 @@ export class MangaDex implements SearchResultsProviding, MangaProviding, Chapter
         // OTTIMIZZAZIONE HOME: Rimosse 2 sezioni meno utili e ridotto il carico
         
         const s1 = App.createHomeSection({ id: 'popular_new', title: 'Popular New Titles 🔥', containsMoreItems: false, type: HomeSectionType.singleRowLarge })
-        const s2 = App.createHomeSection({ id: 'latest', title: 'Latest Updates 🆕', containsMoreItems: true, type: HomeSectionType.continuous })
+        const s2 = App.createHomeSection({ id: 'latest', title: 'Latest Updates 🆕', containsMoreItems: true, type: HomeSectionType.doubleRow })
         const s3 = App.createHomeSection({ id: 'recommended', title: 'Recommended ⭐', containsMoreItems: false, type: HomeSectionType.singleRowLarge })
         const s4 = App.createHomeSection({ id: 'featured', title: 'Featured ⚡', containsMoreItems: false, type: HomeSectionType.singleRowNormal })
         

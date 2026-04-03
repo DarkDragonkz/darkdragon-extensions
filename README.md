@@ -1,26 +1,37 @@
 # DarkDragonkz Paperback Extensions
 
-This repository contains a collection of extensions (sources) for the [Paperback](https://paperback.moe/) application, optimized and maintained to ensure the best reading experience, with a specific focus on Italian sources.
+Collection of Paperback 0.8 sources for manga and comics, focused on English and Italian catalogs.
 
-## 🚀 Installation
+## Installation
 
-1.  Open the **Paperback** app on your iOS device.
-2.  Go to **Settings** > **External Sources**.
-3.  Tap **Add Source** and enter the URL of this repository.
-4.  Browse the list and install the extensions you prefer.
+1. Open the Paperback app on iOS.
+2. Go to **Settings** -> **External Sources**.
+3. Add the repository URL:
+   `https://darkdragonkz.github.io/extensions-foreign/0.8`
+4. Install the sources you want.
 
-## 🙏 Credits
+## Available Sources
 
-This repository is based on the work of the open-source community. Special thanks to the original authors of the extensions, whose code was fundamental for creating these updated versions:
+- BatCave
+- Comix
+- MangaBall
+- MangaDex
+- MangaDex IT
+- MangaPark
+- MangaPark IT
+- MangaWorld
+- NineManga IT
+- ReadAllComics
+- ReadComicsOnline
+- WeebCentral
+- XoxoComic
 
-* **pandeynmn (NmN)**: Original author of the **MangaWorld** and **NineManga** extensions.
+## Credits
 
-The credit for creating these sources goes to them; this repository handles applying fixes, updates, and optimizations to keep them functional with the latest site changes.
+Special thanks to the original open-source authors, including **pandeynmn (NmN)** for the initial MangaWorld and NineManga work.
 
-## ⚠️ Notes
+## Notes
 
-* This repository uses the Paperback `extensions-common` framework (v0.8).
-
----
-*Repository maintained by DarkDragonkz*
+- Built with Paperback `extensions-common` v0.8.
+- Repository maintained by DarkDragonkz.
 

@@ -21,8 +21,9 @@ export const MangaParkInfo: SourceInfo = {
     version: '2.0.0', // Major bump per riscrittura JSON
     name: 'MangaPark',
     icon: 'icon.png',
-    author: 'DarkDragonkzz',
-    description: 'Ultra-fast extension using Next.js Data Extraction. Filters duplicates.',
+    author: 'DarkDragonkz',
+    authorWebsite: 'https://github.com/DarkDragonkz',
+    description: 'MangaPark source using Next.js data extraction and chapter deduplication.',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: MP_DOMAIN,
     sourceTags: [
@@ -63,7 +64,7 @@ export class MangaPark extends Source {
         })
         const response = await this.requestManager.schedule(request, 1)
         // Passiamo direttamente la stringa HTML per estrarre il JSON
-        return this.parser.parseMangaDetails(response.data, mangaId)
+        return this.parser.parseMangaDetails(response.data ?? '', mangaId)
     }
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
@@ -72,7 +73,7 @@ export class MangaPark extends Source {
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        return this.parser.parseChapters(response.data, mangaId)
+        return this.parser.parseChapters(response.data ?? '', mangaId)
     }
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
@@ -83,7 +84,7 @@ export class MangaPark extends Source {
         })
 
         const response = await this.requestManager.schedule(request, 1)
-        return this.parser.parseChapterDetails(response.data, mangaId, chapterId)
+        return this.parser.parseChapterDetails(response.data ?? '', mangaId, chapterId)
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
@@ -93,7 +94,7 @@ export class MangaPark extends Source {
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        const manga = this.parser.parseSearchResults(response.data)
+        const manga = this.parser.parseSearchResults(response.data ?? '')
         
         return App.createPagedResults({
             results: manga,
@@ -107,7 +108,7 @@ export class MangaPark extends Source {
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        this.parser.parseHomeSections(response.data, sectionCallback)
+        this.parser.parseHomeSections(response.data ?? '', sectionCallback)
     }
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
@@ -128,7 +129,7 @@ export class MangaPark extends Source {
         })
 
         const response = await this.requestManager.schedule(request, 1)
-        const manga = this.parser.parseSearchResults(response.data)
+        const manga = this.parser.parseSearchResults(response.data ?? '')
         
         return App.createPagedResults({
             results: manga,
@@ -136,7 +137,7 @@ export class MangaPark extends Source {
         })
     }
 
-    async getCloudflareBypassRequest(): Promise<Request> {
+    async getCloudflareBypassRequestAsync(): Promise<Request> {
         return App.createRequest({
             url: MP_DOMAIN,
             method: 'GET',

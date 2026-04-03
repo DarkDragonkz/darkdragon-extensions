@@ -32,7 +32,7 @@ export const MangaBallInfo: SourceInfo = {
     websiteBaseURL: BASE_URL,
     sourceTags: [
         {
-            text: 'English',
+            text: 'English 🇬🇧',
             type: BadgeColor.GREEN,
         },
     ],

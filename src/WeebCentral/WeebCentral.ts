@@ -27,7 +27,7 @@ export const WeebCentralInfo: SourceInfo = {
     name: 'WeebCentral',
     description: 'Extension that pulls manga from WeebCentral.',
     author: 'DarkDragonkz',
-    authorWebsite: 'http://github.com/DarkDragonkz',
+    authorWebsite: 'https://github.com/DarkDragonkz',
     icon: 'icon.png',
     contentRating: ContentRating.EVERYONE,
     websiteBaseURL: BASE_DOMAIN,
