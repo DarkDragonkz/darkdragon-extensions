@@ -3,7 +3,7 @@ import { before, describe, it } from 'mocha'
 import * as cheerio from 'cheerio'
 
 import { ReadComicsOnlineParser } from './ReadComicsOnlineParser'
-import { installAppMock } from '../testUtils/mockApp'
+import { installAppMock } from '../mockAppTestUtils'
 
 describe('ReadComicsOnlineParser', () => {
     before(() => {

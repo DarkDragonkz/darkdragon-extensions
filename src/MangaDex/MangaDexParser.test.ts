@@ -2,7 +2,7 @@ import { strict as assert } from 'assert'
 import { before, describe, it } from 'mocha'
 
 import { MangaDexParser } from './MangaDexParser'
-import { installAppMock } from '../testUtils/mockApp'
+import { installAppMock } from '../mockAppTestUtils'
 
 describe('MangaDexParser', () => {
     before(() => {
