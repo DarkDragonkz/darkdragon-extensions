@@ -448,7 +448,7 @@ var _Sources = (() => {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.urlEncodeObject = exports.convertTime = exports.Source = void 0;
-      var Source2 = class {
+      var Source = class {
         constructor(cheerio) {
           this.cheerio = cheerio;
         }
@@ -465,7 +465,7 @@ var _Sources = (() => {
           return this.getSearchTags?.();
         }
       };
-      exports.Source = Source2;
+      exports.Source = Source;
       function convertTime(timeAgo) {
         let time;
         let trimmed = Number((/\d*/.exec(timeAgo) ?? [])[0]);
@@ -863,8 +863,9 @@ var _Sources = (() => {
     // Bump version (Pagination & Deduplication)
     name: "MangaDex IT",
     icon: "icon.png",
-    author: "DarkDragonkzz",
-    description: "Estensione Italiana per MangaDex. Include ricerca Smart ID e copertine HD. Filtra duplicati.",
+    author: "DarkDragonkz",
+    authorWebsite: "https://github.com/DarkDragonkz",
+    description: "Italian MangaDex source with smart ID search and deduplicated chapters.",
     contentRating: import_types.ContentRating.MATURE,
     websiteBaseURL: "https://mangadex.org",
     sourceTags: [
@@ -979,7 +980,7 @@ var _Sources = (() => {
     async getHomePageSections(sectionCallback) {
       const sections = [
         App.createHomeSection({ id: "popular", title: "Popolari (IT) \u{1F525}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowLarge }),
-        App.createHomeSection({ id: "latest", title: "Ultime Uscite (IT) \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.continuous }),
+        App.createHomeSection({ id: "latest", title: "Ultime Uscite (IT) \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.doubleRow }),
         App.createHomeSection({ id: "new", title: "Nuovi Arrivi (IT) \u{1F195}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal })
       ];
       sectionCallback(sections[0]);
@@ -996,7 +997,7 @@ var _Sources = (() => {
           const request = App.createRequest({ url: urls[section.id], method: "GET" });
           const response = await this.requestManager.schedule(request, 1);
           const data = JSON.parse(response.data ?? "{}");
-          const useHighQuality = section.type === import_types.HomeSectionType.singleRowLarge;
+          const useHighQuality = section.id === "popular";
           section.items = this.parser.parseSearchResults(data, useHighQuality);
           sectionCallback(section);
         } catch (e) {

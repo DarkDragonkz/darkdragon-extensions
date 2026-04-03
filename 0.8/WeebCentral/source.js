@@ -1472,7 +1472,7 @@ var _Sources = (() => {
     name: "WeebCentral",
     description: "Extension that pulls manga from WeebCentral.",
     author: "DarkDragonkz",
-    authorWebsite: "http://github.com/DarkDragonkz",
+    authorWebsite: "https://github.com/DarkDragonkz",
     icon: "icon.png",
     contentRating: import_types2.ContentRating.EVERYONE,
     websiteBaseURL: BASE_DOMAIN,

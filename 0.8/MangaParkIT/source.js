@@ -935,9 +935,9 @@ var _Sources = (() => {
   var MangaParkITInfo = {
     version: "1.0.5",
     name: "MangaPark IT",
-    description: "Estensione per MangaPark (Solo Italiano)",
+    description: "Italian-only MangaPark source.",
     author: "DarkDragonkz",
-    authorWebsite: "http://github.com/DarkDragonkz",
+    authorWebsite: "https://github.com/DarkDragonkz",
     icon: "icon.png",
     contentRating: import_types2.ContentRating.EVERYONE,
     language: "it",
@@ -1061,7 +1061,7 @@ var _Sources = (() => {
       });
     }
     // QUESTA E' LA FUNZIONE CHE MANCAVA
-    async getCloudflareBypassRequest() {
+    async getCloudflareBypassRequestAsync() {
       return App.createRequest({
         url: this.baseUrl,
         method: "GET",

@@ -847,11 +847,11 @@ var _Sources = (() => {
   var MangaDexInfo = {
     version: "3.2.0",
     // Bump version (Deduplication & Light Home)
-    name: "MangaDex (EN)",
+    name: "MangaDex",
     icon: "icon.png",
     author: "DarkDragonkz",
     authorWebsite: "https://github.com/DarkDragonkz",
-    description: "MangaDex English source. Deduplicates chapters and optimized for speed.",
+    description: "English MangaDex source with deduplicated chapters.",
     contentRating: import_types.ContentRating.MATURE,
     websiteBaseURL: "https://mangadex.org",
     sourceTags: [
@@ -947,7 +947,7 @@ var _Sources = (() => {
     }
     async getHomePageSections(sectionCallback) {
       const s1 = App.createHomeSection({ id: "popular_new", title: "Popular New Titles \u{1F525}", containsMoreItems: false, type: import_types.HomeSectionType.singleRowLarge });
-      const s2 = App.createHomeSection({ id: "latest", title: "Latest Updates \u{1F195}", containsMoreItems: true, type: import_types.HomeSectionType.continuous });
+      const s2 = App.createHomeSection({ id: "latest", title: "Latest Updates \u{1F195}", containsMoreItems: true, type: import_types.HomeSectionType.doubleRow });
       const s3 = App.createHomeSection({ id: "recommended", title: "Recommended \u2B50", containsMoreItems: false, type: import_types.HomeSectionType.singleRowLarge });
       const s4 = App.createHomeSection({ id: "featured", title: "Featured \u26A1", containsMoreItems: false, type: import_types.HomeSectionType.singleRowNormal });
       sectionCallback(s1);

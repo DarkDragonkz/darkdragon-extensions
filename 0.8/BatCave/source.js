@@ -954,7 +954,7 @@ var _Sources = (() => {
         id: "latest",
         title: "Latest Updates \u{1F199}",
         containsMoreItems: true,
-        type: import_types.HomeSectionType.continuous
+        type: import_types.HomeSectionType.doubleRow
       });
       latestSection.items = this.parseGridItems($, ".sect--latest .latest", ".latest__chapter");
       sectionCallback(latestSection);

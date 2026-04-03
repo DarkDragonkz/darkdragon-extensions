@@ -892,8 +892,7 @@ var _Sources = (() => {
         id: "latest",
         title: "Latest Comics \u{1F195}",
         containsMoreItems: true,
-        type: import_types.HomeSectionType.continuous
-        // UI MIGLIORATA
+        type: import_types.HomeSectionType.doubleRow
       });
       const latestItems = this.parseGridItems($);
       latestSection.items = latestItems;
@@ -1001,7 +1000,7 @@ var _Sources = (() => {
       });
       const response = await this.requestManager.schedule(request, 1);
       try {
-        const json = JSON.parse(response.data);
+        const json = JSON.parse(response.data ?? "{}");
         const manga = this.parser.parseSearchJson(json);
         return App.createPagedResults({
           results: manga,

@@ -1078,12 +1078,12 @@ ${item.alt_titles.join(", ")}`;
         },
         {
           request: App.createRequest({ url: `${this.apiUrl}/manga?order[chapter_updated_at]=desc&page=1&limit=20&scope=hot`, method: "GET" }),
-          section: App.createHomeSection({ id: "updatesHot", title: "Hot Updates \u26A1", containsMoreItems: true, type: import_types.HomeSectionType.continuous }),
+          section: App.createHomeSection({ id: "updatesHot", title: "Hot Updates \u26A1", containsMoreItems: true, type: import_types.HomeSectionType.doubleRow }),
           context: "latest"
         },
         {
           request: App.createRequest({ url: `${this.apiUrl}/manga?order[chapter_updated_at]=desc&page=1&limit=20&scope=new`, method: "GET" }),
-          section: App.createHomeSection({ id: "updatesNew", title: "Latest Updates \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.continuous }),
+          section: App.createHomeSection({ id: "updatesNew", title: "Latest Updates \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.doubleRow }),
           context: "latest"
         }
       ];

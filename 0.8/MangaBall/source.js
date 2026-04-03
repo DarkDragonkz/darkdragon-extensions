@@ -939,7 +939,7 @@ var _Sources = (() => {
     websiteBaseURL: BASE_URL,
     sourceTags: [
       {
-        text: "English",
+        text: "English \u{1F1EC}\u{1F1E7}",
         type: import_types.BadgeColor.GREEN
       }
     ],

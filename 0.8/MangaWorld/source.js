@@ -1141,8 +1141,8 @@ var _Sources = (() => {
     // Bump version: Safety & Logic Fixes
     name: "MangaWorld",
     description: "Extension that pulls manga from MangaWorld. Optimized for speed and safety.",
-    author: "DarkDragonkzz",
-    authorWebsite: "https://github.com/DarkDragonkzz",
+    author: "DarkDragonkz",
+    authorWebsite: "https://github.com/DarkDragonkz",
     icon: "icon.png",
     contentRating: import_types2.ContentRating.MATURE,
     language: "it",

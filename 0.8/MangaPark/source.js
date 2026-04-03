@@ -883,7 +883,7 @@ var _Sources = (() => {
         id: "latest",
         title: "Latest Releases \u{1F195}",
         containsMoreItems: true,
-        type: import_types.HomeSectionType.continuous
+        type: import_types.HomeSectionType.doubleRow
       });
       const latItems = this.mapJSONToItems(blocks.latest_comics || []);
       latestSection.items = latItems;
@@ -912,8 +912,9 @@ var _Sources = (() => {
     // Major bump per riscrittura JSON
     name: "MangaPark",
     icon: "icon.png",
-    author: "DarkDragonkzz",
-    description: "Ultra-fast extension using Next.js Data Extraction. Filters duplicates.",
+    author: "DarkDragonkz",
+    authorWebsite: "https://github.com/DarkDragonkz",
+    description: "MangaPark source using Next.js data extraction and chapter deduplication.",
     contentRating: import_types2.ContentRating.MATURE,
     websiteBaseURL: MP_DOMAIN,
     sourceTags: [
@@ -956,7 +957,7 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      return this.parser.parseMangaDetails(response.data, mangaId);
+      return this.parser.parseMangaDetails(response.data ?? "", mangaId);
     }
     async getChapters(mangaId) {
       const request = App.createRequest({
@@ -964,7 +965,7 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      return this.parser.parseChapters(response.data, mangaId);
+      return this.parser.parseChapters(response.data ?? "", mangaId);
     }
     async getChapterDetails(mangaId, chapterId) {
       const request = App.createRequest({
@@ -972,7 +973,7 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      return this.parser.parseChapterDetails(response.data, mangaId, chapterId);
+      return this.parser.parseChapterDetails(response.data ?? "", mangaId, chapterId);
     }
     async getSearchResults(query, metadata) {
       const page = metadata?.page ?? 1;
@@ -981,7 +982,7 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      const manga = this.parser.parseSearchResults(response.data);
+      const manga = this.parser.parseSearchResults(response.data ?? "");
       return App.createPagedResults({
         results: manga,
         metadata: manga.length > 0 ? { page: page + 1 } : void 0
@@ -993,7 +994,7 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      this.parser.parseHomeSections(response.data, sectionCallback);
+      this.parser.parseHomeSections(response.data ?? "", sectionCallback);
     }
     async getViewMoreItems(homepageSectionId, metadata) {
       const page = metadata?.page ?? 1;
@@ -1010,13 +1011,13 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      const manga = this.parser.parseSearchResults(response.data);
+      const manga = this.parser.parseSearchResults(response.data ?? "");
       return App.createPagedResults({
         results: manga,
         metadata: manga.length > 0 ? { page: page + 1 } : void 0
       });
     }
-    async getCloudflareBypassRequest() {
+    async getCloudflareBypassRequestAsync() {
       return App.createRequest({
         url: MP_DOMAIN,
         method: "GET",

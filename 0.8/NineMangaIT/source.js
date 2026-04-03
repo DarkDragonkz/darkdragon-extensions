@@ -980,7 +980,7 @@ var _Sources = (() => {
     parseHomeSections($home, $updates, sectionCallback, baseUrl) {
       const popularSection = App.createHomeSection({ id: "popular", title: "Popolari \u{1F525}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowLarge });
       const newSection = App.createHomeSection({ id: "new", title: "Nuove Uscite \u{1F195}", containsMoreItems: true, type: import_types.HomeSectionType.singleRowNormal });
-      const latestSection = App.createHomeSection({ id: "latest", title: "Ultimi Aggiornamenti \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.continuous });
+      const latestSection = App.createHomeSection({ id: "latest", title: "Ultimi Aggiornamenti \u{1F199}", containsMoreItems: true, type: import_types.HomeSectionType.doubleRow });
       const popularItems = [];
       const newItems = [];
       const latestItems = [];
@@ -1093,9 +1093,10 @@ var _Sources = (() => {
   var NineMangaITInfo = {
     version: "1.4.0",
     // Major bump per l'ottimizzazione parallela
-    name: "NineMangaIT",
-    description: "Extension that pulls manga from it.ninemanga.com",
-    author: "DarkDragonkzz",
+    name: "NineManga IT",
+    description: "Italian NineManga source.",
+    author: "DarkDragonkz",
+    authorWebsite: "https://github.com/DarkDragonkz",
     icon: "icon.png",
     contentRating: import_types2.ContentRating.EVERYONE,
     language: "it",
@@ -1234,7 +1235,7 @@ var _Sources = (() => {
       }
       return App.createPagedResults({ results: [] });
     }
-    async getCloudflareBypassRequest() {
+    async getCloudflareBypassRequestAsync() {
       return App.createRequest({
         url: this.baseUrl,
         method: "GET",
